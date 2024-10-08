@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>Rust Item Creator</title>
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive; /* Fuente estilo retro */
+            background-color: #3B3B3B; /* Color de fondo gris oscuro */
+            color: #FFFFFF; /* Texto en blanco */
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 20px;
+            background-color: #2C2C2C; /* Fondo de contenedor más oscuro */
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        h1, h2, h3 {
+            color: #FFD700; /* Color dorado para títulos */
+            text-align: center;
+        }
+
+        button {
+            background-color: #5C5C5C; /* Color gris para botones */
+            color: #FFD700; /* Color dorado para texto de botones */
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #FFD700; /* Efecto hover dorado */
+            color: #2C2C2C; /* Texto gris oscuro al pasar el mouse */
+        }
+
+        .form {
+            display: none; /* Ocultar formularios por defecto */
+            margin-top: 20px;
+        }
+
+        label {
+            display: block;
+            margin: 10px 0 5px;
+        }
+
+        input, select {
+            width: calc(100% - 22px);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #5C5C5C; /* Bordes grises */
+            background-color: #3B3B3B; /* Fondo de campos de entrada */
+            color: #FFFFFF; /* Texto en blanco */
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #FFD700; /* Color dorado en foco */
+        }
+
+        #result, #seasonalResult {
+            margin-top: 20px;
+            background-color: #444; /* Fondo de resultados */
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Rust Item Creator</h1>
+                <div class="section">
+            <h2>Selecciona una sección: Munición</h2>
+            <button id="selectAmmo">Munición</button>
+        </div>
+
+        <div class="form" id="ammoForm" style="display: none;">
+            <h3>Formulario de Munición</h3>
+
+            <label for="itemName">Escribe el nombre:</label>
+            <input type="text" id="itemName" placeholder="Ejemplo: Balas de escopeta">
+
+            <label for="ammoItems">Elige un item:</label>
+            <select id="ammoItems">
+                <option value="ammo.shotgun">12 Gauge Buckshot</option>
+                <option value="ammo.shotgun.fire">12 Gauge Incendiary Shell</option>
+                <option value="ammo.shotgun.slug">12 Gauge Slug</option>
+                <option value="ammo.grenadelauncher.he">40mm HE Grenade</option>
+                <option value="ammo.grenadelauncher.buckshot">40mm Shotgun Round</option>
+                <option value="ammo.grenadelauncher.smoke">40mm Smoke Grenade</option>
+                <option value="ammo.rifle">5.56 Rifle Ammo</option>
+                <option value="ammo.rifle.explosive">Explosive 5.56 Rifle Ammo</option>
+                <option value="ammo.handmade.shell">Handmade Shell</option>
+                <option value="ammo.rocket.hv">High Velocity Rocket</option>
+                <option value="ammo.rifle.hv">HV 5.56 Rifle Ammo</option>
+                <option value="ammo.pistol.hv">HV Pistol Ammo</option>
+                <option value="ammo.rifle.incendiary">Incendiary 5.56 Rifle Ammo</option>
+                <option value="ammo.pistol.fire">Incendiary Pistol Bullet</option>
+                <option value="ammo.rocket.fire">Incendiary Rocket</option>
+                <option value="ammo.nailgun.nails">Nailgun Nails</option>
+                <option value="ammo.pistol">Pistol Bullet</option>
+                <option value="ammo.rocket.basic">Rocket</option>
+                <option value="submarine.torpedo.straight">Torpedo</option>
+            </select>
+
+            <label for="quantity">Cantidad:</label>
+            <input type="number" id="quantity" placeholder="Ejemplo: 100">
+
+            <label for="cost">Costo:</label>
+            <input type="number" id="cost" placeholder="Ejemplo: 500">
+
+            <label for="server">Servidor:</label>
+            <input type="number" id="server" placeholder="Ejemplo: 1">
+
+            <button id="submit">Guardar</button>
+
+            <div id="result"></div>
+        </div>
+                <div class="section">
+            <h2>Selecciona una sección: Componentes</h2>
+            <button id="selectComponents">Componentes</button>
+        </div>
+
+        <div class="form" id="componentsForm" style="display: none;">
+            <h3>Formulario de Componentes</h3>
+
+            <label for="componentName">Escribe el nombre:</label>
+            <input type="text" id="componentName" placeholder="Ejemplo: Cuerpo de Rifle">
+
+            <label for="componentSelect">Elige un item:</label>
+            <select id="componentSelect">
+                <option value="fuse">Electric Fuse</option>
+                <option value="propanetank">Empty Propane Tank</option>
+                <option value="gears">Gears</option>
+                <option value="metalblade">Metal Blade</option>
+                <option value="metalpipe">Metal Pipe</option>
+                <option value="metalspring">Metal Spring</option>
+                <option value="riflebody">Rifle Body</option>
+                <option value="roadsigns">Road Signs</option>
+                <option value="rope">Rope</option>
+                <option value="semibody">Semi Automatic Body</option>
+                <option value="sewingkit">Sewing Kit</option>
+                <option value="sheetmetal">Sheet Metal</option>
+                <option value="smgbody">SMG Body</option>
+                <option value="tarp">Tarp</option>
+                <option value="techparts">Tech Trash</option>
+            </select>
+
+            <label for="componentQuantity">Cantidad:</label>
+            <input type="number" id="componentQuantity" placeholder="Ejemplo: 10">
+
+            <label for="componentCost">Costo:</label>
+            <input type="number" id="componentCost" placeholder="Ejemplo: 200">
+
+            <label for="componentServer">Servidor:</label>
+            <input type="number" id="componentServer" placeholder="Ejemplo: 1">
+
+            <button id="submitComponents">Guardar</button>
+
+            <div id="componentResult"></div>
+        </div>
+        
