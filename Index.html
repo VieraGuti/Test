@@ -3,169 +3,177 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="styles.css">
-    <title>Rust Item Creator</title>
+    <title>Formulario de Recursos</title>
     <style>
         body {
-            font-family: 'Press Start 2P', cursive; /* Fuente estilo retro */
-            background-color: #3B3B3B; /* Color de fondo gris oscuro */
-            color: #FFFFFF; /* Texto en blanco */
-            margin: 0;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: auto;
-            padding: 20px;
-            background-color: #2C2C2C; /* Fondo de contenedor más oscuro */
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            font-family: Arial, sans-serif;
+            margin: 20px;
         }
 
-        h1, h2, h3 {
-            color: #FFD700; /* Color dorado para títulos */
-            text-align: center;
-        }
-
-        button {
-            background-color: #5C5C5C; /* Color gris para botones */
-            color: #FFD700; /* Color dorado para texto de botones */
-            border: none;
-            padding: 10px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-
-        button:hover {
-            background-color: #FFD700; /* Efecto hover dorado */
-            color: #2C2C2C; /* Texto gris oscuro al pasar el mouse */
+        .section {
+            margin-bottom: 20px;
         }
 
         .form {
-            display: none; /* Ocultar formularios por defecto */
-            margin-top: 20px;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
         }
 
         label {
             display: block;
-            margin: 10px 0 5px;
+            margin-bottom: 5px;
         }
 
         input, select {
-            width: calc(100% - 22px);
-            padding: 10px;
+            margin-bottom: 10px;
+            padding: 5px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 10px 15px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
             border-radius: 5px;
-            border: 1px solid #5C5C5C; /* Bordes grises */
-            background-color: #3B3B3B; /* Fondo de campos de entrada */
-            color: #FFFFFF; /* Texto en blanco */
+            cursor: pointer;
         }
 
-        input:focus, select:focus {
-            outline: none;
-            border-color: #FFD700; /* Color dorado en foco */
+        button:hover {
+            background-color: #0056b3;
         }
 
-        #result, #seasonalResult {
-            margin-top: 20px;
-            background-color: #444; /* Fondo de resultados */
+        #constructionResult, #outfitsResult {
+            margin-top: 10px;
             padding: 10px;
+            border: 1px solid #ccc;
             border-radius: 5px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Rust Item Creator</h1>
-                <div class="section">
-            <h2>Selecciona una sección: Munición</h2>
-            <button id="selectAmmo">Munición</button>
-        </div>
+    <h1>Registro de Recursos</h1>
 
-        <div class="form" id="ammoForm" style="display: none;">
-            <h3>Formulario de Munición</h3>
+    <div class="section">
+        <h2>Selecciona una sección: Construcción</h2>
+        <button id="selectConstruction">Construcción</button>
+    </div>
 
-            <label for="itemName">Escribe el nombre:</label>
-            <input type="text" id="itemName" placeholder="Ejemplo: Balas de escopeta">
+    <div class="form" id="constructionForm" style="display: none;">
+        <h3>Formulario de Construcción</h3>
 
-            <label for="ammoItems">Elige un item:</label>
-            <select id="ammoItems">
-                <option value="ammo.shotgun">12 Gauge Buckshot</option>
-                <option value="ammo.shotgun.fire">12 Gauge Incendiary Shell</option>
-                <option value="ammo.shotgun.slug">12 Gauge Slug</option>
-                <option value="ammo.grenadelauncher.he">40mm HE Grenade</option>
-                <option value="ammo.grenadelauncher.buckshot">40mm Shotgun Round</option>
-                <option value="ammo.grenadelauncher.smoke">40mm Smoke Grenade</option>
-                <option value="ammo.rifle">5.56 Rifle Ammo</option>
-                <option value="ammo.rifle.explosive">Explosive 5.56 Rifle Ammo</option>
-                <option value="ammo.handmade.shell">Handmade Shell</option>
-                <option value="ammo.rocket.hv">High Velocity Rocket</option>
-                <option value="ammo.rifle.hv">HV 5.56 Rifle Ammo</option>
-                <option value="ammo.pistol.hv">HV Pistol Ammo</option>
-                <option value="ammo.rifle.incendiary">Incendiary 5.56 Rifle Ammo</option>
-                <option value="ammo.pistol.fire">Incendiary Pistol Bullet</option>
-                <option value="ammo.rocket.fire">Incendiary Rocket</option>
-                <option value="ammo.nailgun.nails">Nailgun Nails</option>
-                <option value="ammo.pistol">Pistol Bullet</option>
-                <option value="ammo.rocket.basic">Rocket</option>
-                <option value="submarine.torpedo.straight">Torpedo</option>
-            </select>
+        <label for="constructionName">Escribe el nombre del artículo:</label>
+        <input type="text" id="constructionName" placeholder="Ejemplo: Edificio">
 
-            <label for="quantity">Cantidad:</label>
-            <input type="number" id="quantity" placeholder="Ejemplo: 100">
+        <label for="constructionItems">Elige un item:</label>
+        <select id="constructionItems">
+            <option value="door.wood">Wooden Door</option>
+            <option value="door.double.hinged.toptier">Armored Double Door</option>
+            <option value="door.hinged">Hinged Door</option>
+            <option value="door.double.hinged">Double Hinged Door</option>
+            <option value="foundation">Foundation</option>
+            <option value="wall">Wall</option>
+            <option value="floor">Floor</option>
+            <option value="roof">Roof</option>
+            <option value="window">Window</option>
+            <option value="stair">Stair</option>
+            <option value="ladder">Ladder</option>
+            <option value="ceiling">Ceiling</option>
+            <option value="hatch">Hatch</option>
+            <option value="floor.tiers">Floor Tier</option>
+        </select>
 
-            <label for="cost">Costo:</label>
-            <input type="number" id="cost" placeholder="Ejemplo: 500">
+        <label for="constructionQuantity">Cantidad:</label>
+        <input type="number" id="constructionQuantity" placeholder="Ejemplo: 10">
 
-            <label for="server">Servidor:</label>
-            <input type="number" id="server" placeholder="Ejemplo: 1">
+        <label for="constructionCost">Costo:</label>
+        <input type="number" id="constructionCost" placeholder="Ejemplo: 500">
 
-            <button id="submit">Guardar</button>
+        <label for="constructionServer">Servidor:</label>
+        <input type="number" id="constructionServer" placeholder="Ejemplo: 1">
 
-            <div id="result"></div>
-        </div>
-                <div class="section">
-            <h2>Selecciona una sección: Componentes</h2>
-            <button id="selectComponents">Componentes</button>
-        </div>
+        <button id="submitConstruction">Guardar</button>
 
-        <div class="form" id="componentsForm" style="display: none;">
-            <h3>Formulario de Componentes</h3>
+        <div id="constructionResult"></div>
+    </div>
 
-            <label for="componentName">Escribe el nombre:</label>
-            <input type="text" id="componentName" placeholder="Ejemplo: Cuerpo de Rifle">
+    <div class="section">
+        <h2>Selecciona una sección: Atuendos</h2>
+        <button id="selectOutfits">Atuendos</button>
+    </div>
 
-            <label for="componentSelect">Elige un item:</label>
-            <select id="componentSelect">
-                <option value="fuse">Electric Fuse</option>
-                <option value="propanetank">Empty Propane Tank</option>
-                <option value="gears">Gears</option>
-                <option value="metalblade">Metal Blade</option>
-                <option value="metalpipe">Metal Pipe</option>
-                <option value="metalspring">Metal Spring</option>
-                <option value="riflebody">Rifle Body</option>
-                <option value="roadsigns">Road Signs</option>
-                <option value="rope">Rope</option>
-                <option value="semibody">Semi Automatic Body</option>
-                <option value="sewingkit">Sewing Kit</option>
-                <option value="sheetmetal">Sheet Metal</option>
-                <option value="smgbody">SMG Body</option>
-                <option value="tarp">Tarp</option>
-                <option value="techparts">Tech Trash</option>
-            </select>
+    <div class="form" id="outfitsForm" style="display: none;">
+        <h3>Formulario de Atuendos</h3>
 
-            <label for="componentQuantity">Cantidad:</label>
-            <input type="number" id="componentQuantity" placeholder="Ejemplo: 10">
+        <label for="outfitName">Escribe el nombre del atuendo:</label>
+        <input type="text" id="outfitName" placeholder="Ejemplo: Atuendo de Combate">
 
-            <label for="componentCost">Costo:</label>
-            <input type="number" id="componentCost" placeholder="Ejemplo: 200">
+        <label for="outfitItems">Elige un item:</label>
+        <select id="outfitItems">
+            <option value="armor.wood">Wood Armor</option>
+            <option value="armor.leather">Leather Armor</option>
+            <option value="armor.tactical">Tactical Armor</option>
+            <option value="armor.heavy">Heavy Armor</option>
+            <option value="clothing.helmet">Helmet</option>
+            <option value="clothing.jacket">Jacket</option>
+            <option value="clothing.pants">Pants</option>
+            <option value="clothing.boots">Boots</option>
+            <option value="clothing.mask">Mask</option>
+            <option value="clothing.bonniehat">Bonnie Hat</option>
+            <option value="clothing.bonehat">Bone Helmet</option>
+            <option value="clothing.fur">Fur Armor</option>
+            <option value="clothing.ghillie">Ghillie Suit</option>
+        </select>
 
-            <label for="componentServer">Servidor:</label>
-            <input type="number" id="componentServer" placeholder="Ejemplo: 1">
+        <label for="outfitQuantity">Cantidad:</label>
+        <input type="number" id="outfitQuantity" placeholder="Ejemplo: 1">
 
-            <button id="submitComponents">Guardar</button>
+        <label for="outfitCost">Costo:</label>
+        <input type="number" id="outfitCost" placeholder="Ejemplo: 1500">
 
-            <div id="componentResult"></div>
-        </div>
-        
+        <label for="outfitServer">Servidor:</label>
+        <input type="number" id="outfitServer" placeholder="Ejemplo: 1">
+
+        <button id="submitOutfits">Guardar</button>
+
+        <div id="outfitsResult"></div>
+    </div>
+
+    <script>
+        document.getElementById('selectConstruction').addEventListener('click', function() {
+            document.getElementById('constructionForm').style.display = 'block';
+            document.getElementById('outfitsForm').style.display = 'none';
+        });
+
+        document.getElementById('selectOutfits').addEventListener('click', function() {
+            document.getElementById('outfitsForm').style.display = 'block';
+            document.getElementById('constructionForm').style.display = 'none';
+        });
+
+        document.getElementById('submitConstruction').addEventListener('click', function() {
+            const name = document.getElementById('constructionName').value;
+            const item = document.getElementById('constructionItems').value;
+            const quantity = document.getElementById('constructionQuantity').value;
+            const cost = document.getElementById('constructionCost').value;
+            const server = document.getElementById('constructionServer').value;
+
+            const result = `Construcción: ${name}, Item: ${item}, Cantidad: ${quantity}, Costo: ${cost}, Servidor: ${server}`;
+            document.getElementById('constructionResult').innerText = result;
+        });
+
+        document.getElementById('submitOutfits').addEventListener('click', function() {
+            const name = document.getElementById('outfitName').value;
+            const item = document.getElementById('outfitItems').value;
+            const quantity = document.getElementById('outfitQuantity').value;
+            const cost = document.getElementById('outfitCost').value;
+            const server = document.getElementById('outfitServer').value;
+
+            const result = `Atuendo: ${name}, Item: ${item}, Cantidad: ${quantity}, Costo: ${cost}, Servidor: ${server}`;
+            document.getElementById('outfitsResult').innerText = result;
+        });
+    </script>
+</body>
+</html>
