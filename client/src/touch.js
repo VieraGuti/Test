@@ -1,5 +1,7 @@
 const JOYSTICK_SIZE = 116;
 const KNOB_SIZE = 46;
+const JOYSTICK_DEADZONE = 0.10;
+const JOYSTICK_CURVE = 1.28;
 
 export class TouchControls {
   constructor(onShoot, settings = {}) {
@@ -30,9 +32,9 @@ export class TouchControls {
       #joystick-zone{position:absolute;left:0;bottom:0;width:46%;height:64%;pointer-events:auto;touch-action:none}
       #joystick-base{position:fixed;width:${JOYSTICK_SIZE}px;height:${JOYSTICK_SIZE}px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.055),rgba(255,255,255,.10));border:1px solid rgba(255,255,255,.26);box-shadow:inset 0 0 0 1px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.16);backdrop-filter:blur(2px);pointer-events:none}
       #joystick-base::after{content:'';position:absolute;inset:18px;border-radius:50%;border:1px solid rgba(255,255,255,.10)}
-      #joystick-knob{position:absolute;left:50%;top:50%;width:${KNOB_SIZE}px;height:${KNOB_SIZE}px;margin-left:-${KNOB_SIZE/2}px;margin-top:-${KNOB_SIZE/2}px;border-radius:50%;background:rgba(215,228,242,.38);border:1px solid rgba(255,255,255,.50);box-shadow:0 4px 12px rgba(0,0,0,.25)}
+      #joystick-knob{position:absolute;left:50%;top:50%;width:${KNOB_SIZE}px;height:${KNOB_SIZE}px;margin-left:-${KNOB_SIZE/2}px;margin-top:-${KNOB_SIZE/2}px;border-radius:50%;background:rgba(215,228,242,.38);border:1px solid rgba(255,255,255,.50);box-shadow:0 4px 12px rgba(0,0,0,.25);will-change:transform}
       #look-zone{position:absolute;right:0;top:0;width:64%;height:100%;pointer-events:auto;touch-action:none}
-      #shoot-btn{position:fixed;width:76px;height:76px;border-radius:50%;background:radial-gradient(circle at 40% 32%,rgba(255,115,92,.86),rgba(166,38,34,.78));border:1px solid rgba(255,180,164,.8);box-shadow:0 8px 20px rgba(65,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.08);color:white;font-size:13px;font-weight:900;letter-spacing:.12em;pointer-events:auto;touch-action:none;z-index:5;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+      #shoot-btn{position:fixed;width:76px;height:76px;border-radius:50%;background:radial-gradient(circle at 40% 32%,rgba(255,115,92,.86),rgba(166,38,34,.78));border:1px solid rgba(255,180,164,.8);box-shadow:0 8px 20px rgba(65,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.08);color:white;font-size:13px;font-weight:900;letter-spacing:.12em;pointer-events:auto;touch-action:none;z-index:5;text-shadow:0 1px 2px rgba(0,0,0,.4);will-change:transform}
       #shoot-btn:active{transform:translate(-50%,-50%) scale(.91)!important;filter:brightness(1.14)}
       body.vs-ui-open #touch-controls{opacity:.28}
       body.vs-ui-open #touch-controls *{pointer-events:none!important}
@@ -74,7 +76,7 @@ export class TouchControls {
     this.moveY = 0;
     this.lookDX = 0;
     this.lookDY = 0;
-    this.joystickKnob.style.transform = 'translate(0px, 0px)';
+    this.joystickKnob.style.transform = 'translate3d(0px, 0px, 0)';
   }
 
   _bindEvents() {
@@ -86,18 +88,21 @@ export class TouchControls {
       try { this.joystickZone.setPointerCapture(e.pointerId); } catch {}
       this._updateJoystick(e);
     };
+
     this._moveMove = (e) => {
       if (this.movePointer !== e.pointerId || this.blocked) return;
       e.preventDefault();
       this._updateJoystick(e);
     };
+
     this._moveUp = (e) => {
       if (this.movePointer !== e.pointerId) return;
       this.movePointer = null;
       this.moveX = 0;
       this.moveY = 0;
-      this.joystickKnob.style.transform = 'translate(0px, 0px)';
+      this.joystickKnob.style.transform = 'translate3d(0px, 0px, 0)';
     };
+
     this.joystickZone.addEventListener('pointerdown', this._moveDown, { passive: false });
     this.joystickZone.addEventListener('pointermove', this._moveMove, { passive: false });
     this.joystickZone.addEventListener('pointerup', this._moveUp, { passive: false });
@@ -113,18 +118,29 @@ export class TouchControls {
       this._lastLookY = e.clientY;
       try { this.lookZone.setPointerCapture(e.pointerId); } catch {}
     };
+
     this._lookMove = (e) => {
       if (this.lookPointer !== e.pointerId || this.blocked) return;
       e.preventDefault();
-      this.lookDX += e.clientX - this._lastLookX;
-      this.lookDY += e.clientY - this._lastLookY;
-      this._lastLookX = e.clientX;
-      this._lastLookY = e.clientY;
+
+      // Safari/Chromium may bundle several high-frequency samples into one event.
+      // Consuming coalesced samples gives noticeably smoother aim on 60/120 Hz phones.
+      const samples = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [e];
+      if (!samples.length) return;
+
+      for (const sample of samples) {
+        this.lookDX += sample.clientX - this._lastLookX;
+        this.lookDY += sample.clientY - this._lastLookY;
+        this._lastLookX = sample.clientX;
+        this._lastLookY = sample.clientY;
+      }
     };
+
     this._lookUp = (e) => {
       if (this.lookPointer !== e.pointerId) return;
       this.lookPointer = null;
     };
+
     this.lookZone.addEventListener('pointerdown', this._lookDown, { passive: false });
     this.lookZone.addEventListener('pointermove', this._lookMove, { passive: false });
     this.lookZone.addEventListener('pointerup', this._lookUp, { passive: false });
@@ -136,6 +152,7 @@ export class TouchControls {
       e.stopPropagation();
       if (this.onShoot) this.onShoot();
     };
+
     this.shootBtn.addEventListener('pointerdown', this._fireDown, { passive: false });
   }
 
@@ -147,13 +164,31 @@ export class TouchControls {
     let dy = e.clientY - centerY;
     const maxDist = JOYSTICK_SIZE / 2 - KNOB_SIZE / 4;
     const dist = Math.hypot(dx, dy);
+
     if (dist > maxDist) {
       dx = (dx / dist) * maxDist;
       dy = (dy / dist) * maxDist;
     }
-    this.joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-    this.moveX = dx / maxDist;
-    this.moveY = -dy / maxDist;
+
+    this.joystickKnob.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+
+    const rawX = dx / maxDist;
+    const rawY = -dy / maxDist;
+    const rawMagnitude = Math.min(1, Math.hypot(rawX, rawY));
+
+    if (rawMagnitude <= JOYSTICK_DEADZONE) {
+      this.moveX = 0;
+      this.moveY = 0;
+      return;
+    }
+
+    // Radial deadzone + response curve. Small thumb movements become precise walking,
+    // while the outer ring still reaches full speed without feeling sluggish.
+    const normalizedMagnitude = (rawMagnitude - JOYSTICK_DEADZONE) / (1 - JOYSTICK_DEADZONE);
+    const curvedMagnitude = Math.pow(normalizedMagnitude, JOYSTICK_CURVE);
+    const invMagnitude = 1 / Math.max(rawMagnitude, 0.0001);
+    this.moveX = rawX * invMagnitude * curvedMagnitude;
+    this.moveY = rawY * invMagnitude * curvedMagnitude;
   }
 
   consumeLook() {
