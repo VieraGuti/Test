@@ -1,8 +1,8 @@
 import * as THREE from 'https://esm.sh/three@0.185.0';
 import { GLTFLoader } from 'https://esm.sh/three@0.185.0/examples/jsm/loaders/GLTFLoader.js';
-import { OBSTACLES, DECOR, SITES } from '/shared/map.js';
+import { OBSTACLES, SITES } from '/shared/map.js';
 
-const BUILD='VIERASTRIKE_VISUAL_V5_2026-09-12';
+const BUILD='VIERASTRIKE_VISUAL_V5_1_2026-09-12';
 const KBUILD='https://cdn.jsdelivr.net/gh/petroulacl/fps-buildings-env-kit@main/buildings/kenney-modular-buildings/Models/GLB%20format/';
 const SURV='https://cdn.jsdelivr.net/gh/euuuuuuan/fatal-funnel-public@main/packages/renderer/assets/models/kenney-survival/';
 const WEST='https://cdn.jsdelivr.net/gh/petroulacl/fps-asset-kit@main/weapons/flat_guns_west/Flat%20Guns%20West/GLB/';
@@ -33,7 +33,6 @@ const mats={
  stuccoB:new THREE.MeshStandardMaterial({map:noiseTexture('#9e805f',10),color:0xb0936d,roughness:.98}),
  tunnel:new THREE.MeshStandardMaterial({map:noiseTexture('#6f6251',8),color:0x756958,roughness:1}),
  trim:new THREE.MeshStandardMaterial({color:0xd5c294,roughness:.9}),
- door:new THREE.MeshStandardMaterial({color:0x4d3627,roughness:.82,metalness:.08}),
  road:new THREE.MeshStandardMaterial({map:noiseTexture('#857b6d',10),color:0x8e8373,roughness:1}),
  crate:new THREE.MeshStandardMaterial({color:0x6f5138,roughness:.9})
 };
@@ -51,6 +50,7 @@ function restyleLegacy(scene){scene.traverse(o=>{
   if(obs?.kind==='door'){o.visible=false;return}
   if(obs?.kind==='tunnel'){o.material=mats.tunnel;return}
   if((p.height||0)<=.3){o.material=mats.trim;return}
+  if((p.height||0)<1&&((p.width||0)>8||(p.depth||0)>8)){o.material=mats.tunnel;return}
   if((p.height||0)>=4){o.material=(o.position.x+o.position.z)%2>0?mats.stuccoA:mats.stuccoB;return}
   if((p.height||0)<=3.4)o.material=mats.crate;
  })}
@@ -58,32 +58,28 @@ function restyleLegacy(scene){scene.traverse(o=>{
 function addSky(scene){const geo=new THREE.SphereGeometry(150,20,12),mat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{top:{value:new THREE.Color(0x5a8eac)},mid:{value:new THREE.Color(0xb8cbd0)},low:{value:new THREE.Color(0xe6c993)}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:'varying vec3 v;uniform vec3 top;uniform vec3 mid;uniform vec3 low;void main(){float h=normalize(v).y;vec3 c=mix(mid,top,smoothstep(.08,.78,h));c=mix(low,c,smoothstep(-.16,.06,h));gl_FragColor=vec4(c,1.0);}'});const sky=new THREE.Mesh(geo,mat);sky.userData.vieraAsset=true;scene.add(sky);const sun=new THREE.Mesh(new THREE.CircleGeometry(4.2,20),new THREE.MeshBasicMaterial({color:0xffe4aa,transparent:true,opacity:.5,depthWrite:false}));sun.position.set(-62,58,-116);sun.lookAt(0,13,0);sun.userData.vieraAsset=true;scene.add(sun)}
 
 function routePlane(scene,x,z,w,d,shade=0){const m=mats.road.clone();m.color.offsetHSL(0,0,shade);const q=new THREE.Mesh(new THREE.PlaneGeometry(w,d),m);q.rotation.x=-Math.PI/2;q.position.set(x,.014,z);q.receiveShadow=true;q.userData.vieraAsset=true;scene.add(q)}
-function addRoutes(scene){routePlane(scene,0,-9,8,52,.03);routePlane(scene,0,-34,40,7,.01);routePlane(scene,0,25,44,7,.02);routePlane(scene,-32,-2,7,31,-.03);routePlane(scene,-29,16,15,6,-.01);routePlane(scene,32,-2,7,32,.01);routePlane(scene,29,16,15,6,.02);routePlane(scene,-18,4,16,5,-.02);routePlane(scene,18,4,16,5,.02)}
+function addRoutes(scene){routePlane(scene,0,-10,8,47,.03);routePlane(scene,0,-38,70,5,.01);routePlane(scene,0,19.5,8,10,.02);routePlane(scene,0,37,70,4,.02);routePlane(scene,-35,-5,8.5,35,-.03);routePlane(scene,-31,15,16,6,-.01);routePlane(scene,35,-5,8.5,35,.01);routePlane(scene,31,15,16,6,.02);routePlane(scene,-17,15,16,5,-.02);routePlane(scene,17,15,16,5,.02)}
 
 function siteDecal(scene,name,s){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d'),color=name==='A'?'#d9663a':'#3e83c8';x.clearRect(0,0,256,256);x.strokeStyle=color;x.lineWidth=18;x.beginPath();x.arc(128,128,93,0,Math.PI*2);x.stroke();x.fillStyle=color;x.font='900 128px system-ui';x.textAlign='center';x.textBaseline='middle';x.fillText(name,128,137);const t=new THREE.CanvasTexture(c),m=new THREE.MeshBasicMaterial({map:t,transparent:true,opacity:.78,depthWrite:false});const p=new THREE.Mesh(new THREE.PlaneGeometry(4.7,4.7),m);p.rotation.x=-Math.PI/2;p.position.set(s.x,.035,s.z);p.userData.vieraAsset=true;scene.add(p)}
 
 async function addArchitecture(scene){
- const skyline=[[-43,31,'building-sample-tower-a.glb',0],[-43,-28,'building-sample-tower-c.glb',Math.PI],[43,30,'building-sample-tower-b.glb',Math.PI],[43,-29,'building-sample-tower-d.glb',0],[-24,44,'building-sample-house-b.glb',0],[25,44,'building-sample-house-c.glb',Math.PI]];
- await Promise.all(skyline.map(([x,z,file,rot],i)=>addFitted(scene,KBUILD+file,{x,z,w:i<4?7:13,h:i<4?9:7,d:i<4?7:6,rot,fill:.96})));
+ const skyline=[[-44,31,'building-sample-tower-a.glb',0],[-44,-29,'building-sample-tower-c.glb',Math.PI],[44,31,'building-sample-tower-b.glb',Math.PI],[44,-29,'building-sample-tower-d.glb',0],[-24,44,'building-sample-house-b.glb',0],[25,44,'building-sample-house-c.glb',Math.PI]];
+ await Promise.all(skyline.map(([x,z,file,rot],i)=>addFitted(scene,KBUILD+file,{x,z,w:i<4?6:13,h:i<4?9:7,d:i<4?7:5,rot,fill:.96})));
  const facades=[
- ['building-window-awnings.glb',-6.95,1,-25,7.5,3.2,.75,0],['building-window-balcony.glb',7.9,1,-25,7,3.1,.75,0],
- ['building-windows-sills.glb',-7.05,1.2,-10,7.5,3.4,.72,Math.PI/2],['building-windows-round.glb',8.05,1.2,-9,7.2,3.4,.72,-Math.PI/2],
- ['building-window-awnings.glb',-15,1.1,27.45,7.2,3.2,.7,Math.PI],['building-window-balcony.glb',15,1.1,27.45,7.2,3.2,.7,Math.PI],
- ['building-windows.glb',-28.95,1.1,-3,6.2,3.1,.72,Math.PI/2],['building-windows.glb',28.95,1.1,-2,6.2,3.1,.72,-Math.PI/2],
- ['detail-ac-a.glb',-11.5,3.8,-17.48,1.2,1,.65,0],['detail-ac-b.glb',19,3.8,-16.48,1.3,1,.65,0],
- ['roof-flat-awning-a.glb',-16,5.7,-29.5,8,.7,2.4,0],['roof-flat-awning-b.glb',17,5.7,-29.5,8,.7,2.4,0]
+ ['building-window-awnings.glb',-18,1,-34.05,7.8,3.1,.7,0],['building-window-balcony.glb',18,1,-34.05,7.8,3.1,.7,0],
+ ['building-windows-sills.glb',-8.95,1.2,-15,.7,3.5,7.5,Math.PI/2],['building-windows-round.glb',8.95,1.2,-15,.7,3.5,7.5,-Math.PI/2],
+ ['building-window-awnings.glb',-8.95,1.1,4,.7,3.4,7.5,Math.PI/2],['building-window-balcony.glb',8.95,1.1,4,.7,3.4,7.5,-Math.PI/2],
+ ['building-windows-sills.glb',-17,1.1,27.45,7.2,3.2,.7,Math.PI],['building-windows-round.glb',17,1.1,27.45,7.2,3.2,.7,Math.PI],
+ ['building-windows.glb',-30.28,1.1,-5,.7,3.0,6.0,Math.PI/2],['building-windows.glb',30.28,1.1,-5,.7,3.0,6.0,-Math.PI/2],
+ ['detail-ac-a.glb',-9.1,3.8,-11.5,.65,1,1.2,Math.PI/2],['detail-ac-b.glb',9.1,3.8,-11.5,.65,1,1.2,-Math.PI/2],
+ ['roof-flat-awning-a.glb',-18,5.75,-34.0,8,.7,2.4,0],['roof-flat-awning-b.glb',18,5.75,-34.0,8,.7,2.4,0]
  ];
  await Promise.all(facades.map(([file,x,y,z,w,h,d,rot])=>addFitted(scene,KBUILD+file,{x,y,z,w,h,d,rot,fill:.92})));
  const doors=OBSTACLES.filter(o=>o.kind==='door');
  await Promise.all(doors.map(o=>addFitted(scene,KBUILD+'door-brown.glb',{x:o.x,y:.06,z:o.z-.08,w:o.w*.82,h:o.h*.91,d:.42,rot:0,fill:.95})));
 }
 
-async function addCollisionProps(scene){
- const crates=OBSTACLES.filter(o=>o.kind==='crate');
- await Promise.all(crates.map((o,i)=>addFitted(scene,SURV+(i%3===0?'box.glb':'box-large.glb'),{x:o.x,y:0,z:o.z,w:o.w*.96,h:o.h*.96,d:o.d*.96,rot:i%2?Math.PI/2:0,fill:.96,cast:false})));
- const barrels=[[-34.1,20.1],[-25.1,20.9],[34,22],[23.4,25.6]];
- await Promise.all(barrels.map(([x,z],i)=>addFitted(scene,SURV+(i%2?'barrel-open.glb':'barrel.glb'),{x,y:0,z,w:.75,h:1.1,d:.75,rot:i*.8,fill:.95})));
-}
+async function addCollisionProps(scene){const crates=OBSTACLES.filter(o=>o.kind==='crate');await Promise.all(crates.map((o,i)=>addFitted(scene,SURV+(i%3===0?'box.glb':'box-large.glb'),{x:o.x,y:0,z:o.z,w:o.w*.96,h:o.h*.96,d:o.d*.96,rot:i%2?Math.PI/2:0,fill:.96,cast:false})))}
 
 function tuneViewmodel(camera){for(const g of camera.children){if(!g.isGroup||g.userData.vieraTuned)continue;let capsules=0;g.traverse(o=>{if(o.geometry?.type==='CapsuleGeometry')capsules++});if(capsules<2)continue;g.userData.vieraTuned=true;g.scale.setScalar(.76);g.position.set(.28,-.28,-.47);g.traverse(o=>{if(!o.isMesh)return;if(o.geometry?.type==='CapsuleGeometry'&&o.material?.color)o.material.color.set(0xa97859);if(o.geometry?.type==='SphereGeometry'&&o.material?.color)o.material.color.set(0x202425)})}}
 
