@@ -15,7 +15,7 @@ echo '=== Fetch ETA ==='
 git clone --depth 1 --branch master https://github.com/PiePieDesign/eta-multiplayer.git work/eta
 git -C work/eta rev-parse HEAD | tee dist/ETA-UPSTREAM-COMMIT.txt
 
-echo '=== Apply VieraStrike private branding / stock-SDK test patch ==='
+echo '=== Apply VieraStrike private branding / stock engine compatibility ==='
 python3 - <<'PY'
 from pathlib import Path
 root = Path('work/eta/Game')
@@ -32,10 +32,10 @@ e = e.replace('application/product_name="ETA"', 'application/product_name="Viera
 e = e.replace('custom_template/release="../Engine/Templates/windows_release.x86_64.exe"', 'custom_template/release=""')
 presets.write_text(e, encoding='utf-8')
 
-# ETA normally pins Godot packages to a locally patched engine feed which is not
-# committed to the repository. For the private automated build, first test the
-# official 4.6.3 SDK. If source code genuinely requires a patched-only API,
-# compilation will identify the exact call sites and we can shim those next.
+# Upstream pins Godot packages to a local patched engine SDK which is intentionally
+# not committed. This private build uses official Godot 4.6.3 and a compatibility
+# shim for ETA's allocation-free raycast API. Behaviour is preserved; only the
+# zero-allocation optimization is lost in this build.
 nuget = root / 'NuGet.config'
 nuget.write_text('''<?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -44,6 +44,83 @@ nuget.write_text('''<?xml version="1.0" encoding="utf-8"?>
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
   </packageSources>
 </configuration>
+''', encoding='utf-8')
+
+compat_dir = root / 'codebase' / 'compat'
+compat_dir.mkdir(parents=True, exist_ok=True)
+(compat_dir / 'PhysicsRayQueryResultCompat.cs').write_text(r'''using Godot.Collections;
+
+namespace Godot;
+
+/// <summary>
+/// Compatibility holder for ETA's patched-engine PhysicsRayQueryResult3D.
+/// The original engine patch avoids Dictionary allocations. This private build
+/// preserves the same call-site API while using stock Godot IntersectRay().
+/// </summary>
+public sealed class PhysicsRayQueryResult3D
+{
+    private bool _hit;
+    private Vector3 _position;
+    private Vector3 _normal;
+    private int _faceIndex = -1;
+    private ulong _colliderId;
+    private GodotObject _collider;
+    private int _shape;
+    private Rid _rid;
+
+    internal void SetFrom(Dictionary hit)
+    {
+        _hit = hit != null && hit.Count > 0;
+        if (!_hit)
+        {
+            Clear();
+            return;
+        }
+
+        _position = hit["position"].AsVector3();
+        _normal = hit["normal"].AsVector3();
+        _faceIndex = (int)hit["face_index"].AsInt64();
+        _colliderId = (ulong)hit["collider_id"].AsInt64();
+        _collider = hit["collider"].AsGodotObject();
+        _shape = (int)hit["shape"].AsInt64();
+        _rid = hit["rid"].AsRid();
+    }
+
+    internal void Clear()
+    {
+        _hit = false;
+        _position = Vector3.Zero;
+        _normal = Vector3.Zero;
+        _faceIndex = -1;
+        _colliderId = 0;
+        _collider = null;
+        _shape = 0;
+        _rid = default;
+    }
+
+    public bool HasHit() => _hit;
+    public Vector3 GetPosition() => _position;
+    public Vector3 GetNormal() => _normal;
+    public int GetFaceIndex() => _faceIndex;
+    public ulong GetColliderId() => _colliderId;
+    public GodotObject GetCollider() => _collider;
+    public int GetShape() => _shape;
+    public Rid GetRid() => _rid;
+}
+
+/// <summary>Stock-Godot replacement for ETA's patched IntersectRayInto method.</summary>
+public static class PhysicsDirectSpaceState3DCompatExtensions
+{
+    public static bool IntersectRayInto(
+        this PhysicsDirectSpaceState3D space,
+        PhysicsRayQueryParameters3D parameters,
+        PhysicsRayQueryResult3D result)
+    {
+        Dictionary hit = space.IntersectRay(parameters);
+        result.SetFrom(hit);
+        return hit.Count > 0;
+    }
+}
 ''', encoding='utf-8')
 PY
 
