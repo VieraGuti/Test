@@ -1,0 +1,14 @@
+import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import { Server, WebSocketTransport } from 'colyseus';
+import StrikeRoom from './StrikeRoom.js';
+const __dirname=path.dirname(fileURLToPath(import.meta.url));
+const root=path.resolve(__dirname,'..');
+const port=Number(process.env.PORT||2567);
+const httpServer=http.createServer();
+const gameServer=new Server({transport:new WebSocketTransport({server:httpServer}),express:(app)=>{app.get('/healthz',(_req,res)=>res.json({ok:true,game:'VieraStrike',version:'0.1.0'}));app.use('/shared',express.static(path.join(root,'shared')));app.use(express.static(path.join(root,'public')));}});
+gameServer.define('strike',StrikeRoom);
+await gameServer.listen(port);
+console.log(`VieraStrike running on http://localhost:${port}`);
