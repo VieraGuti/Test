@@ -7,76 +7,75 @@ export const SITES = Object.freeze({
 
 export const SPAWNS = Object.freeze({
   attackers: [
-    { x: -4, z: -38 }, { x: -2, z: -39 }, { x: 0, z: -38 }, { x: 2, z: -39 }, { x: 4, z: -38 }
+    { x: -4, z: -39 }, { x: -2, z: -40 }, { x: 0, z: -39 }, { x: 2, z: -40 }, { x: 4, z: -39 }
   ],
   defenders: [
-    { x: -4, z: 38 }, { x: -2, z: 39 }, { x: 0, z: 38 }, { x: 2, z: 39 }, { x: 4, z: 38 }
+    { x: -4, z: 39 }, { x: -2, z: 40 }, { x: 0, z: 39 }, { x: 2, z: 40 }, { x: 4, z: 39 }
   ]
 });
 
-// Original Dust-style layout built from simple primitives. Extra metadata is ignored by
-// server collision code but used by the web client for materials and visual landmarks.
+// VieraStrike layout v2: readable three-lane tactical map.
+// South = Attackers. North = Defenders. Center = Mid. East = Long A. West = B tunnel.
 export const OBSTACLES = Object.freeze([
-  // T spawn buildings / exits
-  { x: -16, z: -34, w: 18, d: 8, h: 6, kind: 'sandstone' },
-  { x: 17, z: -34, w: 18, d: 8, h: 6, kind: 'sandstone' },
-  { x: -7, z: -25, w: 9, d: 7, h: 5, kind: 'sandstone' },
-  { x: 8, z: -25, w: 10, d: 7, h: 5, kind: 'sandstone' },
+  // T courtyard: central Mid exit + wide outside access to Long/Tunnel.
+  { x: -18, z: -30.5, w: 18, d: 7, h: 6.2, kind: 'sandstone' },
+  { x: 18, z: -30.5, w: 18, d: 7, h: 6.2, kind: 'sandstone' },
 
-  // Mid buildings with a clear central lane
-  { x: -15, z: -10, w: 16, d: 15, h: 7, kind: 'sandstone' },
-  { x: 16, z: -9, w: 16, d: 15, h: 7, kind: 'sandstone' },
-  { x: -16, z: 8, w: 14, d: 12, h: 6, kind: 'sandstone' },
-  { x: 17, z: 9, w: 14, d: 11, h: 6, kind: 'sandstone' },
+  // Lower Mid. The 18 m center lane is deliberately clean and readable.
+  { x: -18, z: -15, w: 18, d: 14, h: 7, kind: 'sandstone' },
+  { x: 18, z: -15, w: 18, d: 14, h: 7, kind: 'sandstone' },
 
-  // Mid double-door frame + doors, leaving a playable slit in the middle
-  { x: -4.6, z: 1, w: 3.2, d: 1.1, h: 4.8, kind: 'door' },
-  { x: 4.6, z: 1, w: 3.2, d: 1.1, h: 4.8, kind: 'door' },
-  { x: -7.7, z: 1, w: 2.4, d: 3.4, h: 5.6, kind: 'sandstone' },
-  { x: 7.7, z: 1, w: 2.4, d: 3.4, h: 5.6, kind: 'sandstone' },
+  // Upper Mid / connector buildings.
+  { x: -18, z: 4, w: 18, d: 16, h: 6.4, kind: 'sandstone' },
+  { x: 18, z: 4, w: 18, d: 16, h: 6.4, kind: 'sandstone' },
 
-  // B tunnels / upper B route on the west side
-  { x: -38, z: -4, w: 4, d: 28, h: 5.5, kind: 'tunnel' },
-  { x: -27, z: -3, w: 4, d: 24, h: 5.5, kind: 'tunnel' },
-  { x: -34, z: 13, w: 12, d: 4, h: 5, kind: 'sandstone' },
-  { x: -22, z: 16, w: 5, d: 9, h: 5.5, kind: 'sandstone' },
+  // Mid double doors: two leaves with a clear central gap and side frame pillars.
+  { x: -3.7, z: 14, w: 2.7, d: 1.1, h: 4.8, kind: 'door' },
+  { x: 3.7, z: 14, w: 2.7, d: 1.1, h: 4.8, kind: 'door' },
+  { x: -7.3, z: 14, w: 2.0, d: 3.0, h: 5.5, kind: 'sandstone' },
+  { x: 7.3, z: 14, w: 2.0, d: 3.0, h: 5.5, kind: 'sandstone' },
 
-  // A long route on the east side
-  { x: 38, z: -2, w: 4, d: 29, h: 6, kind: 'sandstone' },
-  { x: 28, z: -2, w: 4, d: 23, h: 5.2, kind: 'sandstone' },
-  { x: 34, z: 14, w: 11, d: 4, h: 5, kind: 'sandstone' },
-  { x: 22, z: 17, w: 5, d: 8, h: 5.5, kind: 'sandstone' },
+  // B tunnel lane: 9 m playable corridor between the two long walls.
+  { x: -41.5, z: -5, w: 3.5, d: 35, h: 6.2, kind: 'tunnel' },
+  { x: -28.5, z: -5, w: 3.5, d: 29, h: 6.0, kind: 'tunnel' },
+  { x: -35, z: 14, w: 10, d: 3.5, h: 5.4, kind: 'sandstone' },
+  { x: -21.5, z: 16.5, w: 5, d: 7, h: 5.5, kind: 'sandstone' },
 
-  // CT-side structures
-  { x: -15, z: 32, w: 16, d: 9, h: 6.5, kind: 'sandstone' },
-  { x: 15, z: 32, w: 16, d: 9, h: 6.5, kind: 'sandstone' },
-  { x: 0, z: 24, w: 10, d: 6, h: 5, kind: 'sandstone' },
+  // A Long lane mirrors B but remains open-air and slightly wider at the site entrance.
+  { x: 41.5, z: -5, w: 3.5, d: 35, h: 6.4, kind: 'sandstone' },
+  { x: 28.5, z: -5, w: 3.5, d: 29, h: 5.7, kind: 'sandstone' },
+  { x: 35, z: 14, w: 10, d: 3.5, h: 5.4, kind: 'sandstone' },
+  { x: 21.5, z: 17.2, w: 5, d: 7, h: 5.5, kind: 'sandstone' },
 
-  // B site cover / boxes
+  // CT courtyard and a central cover building that splits rotations toward A/B.
+  { x: -17, z: 31.5, w: 18, d: 8, h: 6.5, kind: 'sandstone' },
+  { x: 17, z: 31.5, w: 18, d: 8, h: 6.5, kind: 'sandstone' },
+  { x: 0, z: 25.5, w: 8, d: 5, h: 4.8, kind: 'sandstone' },
+
+  // B site cover. Positions are intentional firing/planting cover, not random clutter.
   { x: -31.5, z: 22.5, w: 2.8, d: 2.8, h: 2.8, kind: 'crate' },
-  { x: -28.1, z: 23.1, w: 2.5, d: 2.5, h: 2.5, kind: 'crate' },
-  { x: -23.4, z: 18.2, w: 3.2, d: 2.3, h: 2.2, kind: 'crate' },
-  { x: -33.5, z: 18.2, w: 2.3, d: 4.8, h: 2.3, kind: 'crate' },
+  { x: -27.7, z: 24.2, w: 2.5, d: 2.5, h: 2.5, kind: 'crate' },
+  { x: -23.2, z: 18.4, w: 3.2, d: 2.3, h: 2.2, kind: 'crate' },
+  { x: -34.0, z: 18.4, w: 2.3, d: 4.5, h: 2.3, kind: 'crate' },
 
-  // A site cover / boxes
+  // A site cover.
   { x: 30.8, z: 25.2, w: 3.0, d: 3.0, h: 3.0, kind: 'crate' },
-  { x: 26.8, z: 28.2, w: 2.5, d: 4.0, h: 2.5, kind: 'crate' },
-  { x: 22.7, z: 22.8, w: 3.2, d: 2.2, h: 2.2, kind: 'crate' },
-  { x: 33.5, z: 20.0, w: 2.5, d: 5.0, h: 2.4, kind: 'crate' },
+  { x: 26.6, z: 28.0, w: 2.5, d: 4.0, h: 2.5, kind: 'crate' },
+  { x: 22.8, z: 22.5, w: 3.2, d: 2.2, h: 2.2, kind: 'crate' },
+  { x: 33.6, z: 20.2, w: 2.5, d: 4.8, h: 2.4, kind: 'crate' },
 
-  // Mid cover / catwalk feel
-  { x: -5.5, z: 13.5, w: 3.5, d: 3.5, h: 2.4, kind: 'crate' },
-  { x: 6.0, z: 15.5, w: 3.0, d: 3.0, h: 2.2, kind: 'crate' },
-  { x: 0, z: -16.5, w: 4.0, d: 2.2, h: 2.0, kind: 'crate' }
+  // Mid cover, deliberately sparse so aim duels remain readable.
+  { x: -5.6, z: 19.0, w: 3.0, d: 3.0, h: 2.2, kind: 'crate' },
+  { x: 5.8, z: 19.0, w: 3.0, d: 3.0, h: 2.2, kind: 'crate' }
 ]);
 
 export const DECOR = Object.freeze([
-  { x: -42, z: 30, w: 5, d: 18, h: 9, kind: 'distant' },
-  { x: 42, z: 29, w: 5, d: 19, h: 10, kind: 'distant' },
-  { x: -42, z: -30, w: 5, d: 18, h: 8, kind: 'distant' },
-  { x: 42, z: -31, w: 5, d: 18, h: 8, kind: 'distant' },
-  { x: -24, z: 42, w: 15, d: 5, h: 9, kind: 'distant' },
-  { x: 25, z: 42, w: 15, d: 5, h: 8, kind: 'distant' }
+  { x: -44, z: 31, w: 3, d: 18, h: 9, kind: 'distant' },
+  { x: 44, z: 31, w: 3, d: 18, h: 10, kind: 'distant' },
+  { x: -44, z: -30, w: 3, d: 18, h: 8, kind: 'distant' },
+  { x: 44, z: -30, w: 3, d: 18, h: 8, kind: 'distant' },
+  { x: -24, z: 44, w: 15, d: 3, h: 9, kind: 'distant' },
+  { x: 25, z: 44, w: 15, d: 3, h: 8, kind: 'distant' }
 ]);
 
 export function insideSite(x, z) {
