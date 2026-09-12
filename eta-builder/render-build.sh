@@ -8,6 +8,21 @@ GODOT_VERSION="4.6.3"
 GODOT_TAG="4.6.3-stable"
 GODOT_BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_TAG}"
 
+# Render's native build image does not ship git-lfs. Bootstrap the official
+# static Linux AMD64 binary into /tmp so nested public ETA clones can hydrate
+# their LFS-managed game assets before Godot imports them.
+if ! git lfs version >/dev/null 2>&1; then
+  echo '=== Bootstrap Git LFS 3.8.0 ==='
+  rm -rf /tmp/vs-git-lfs /tmp/vs-git-lfs.tar.gz
+  mkdir -p /tmp/vs-git-lfs
+  curl -fL --retry 5 --retry-delay 3 \
+    -o /tmp/vs-git-lfs.tar.gz \
+    https://github.com/git-lfs/git-lfs/releases/download/v3.8.0/git-lfs-linux-amd64-v3.8.0.tar.gz
+  tar -xzf /tmp/vs-git-lfs.tar.gz -C /tmp/vs-git-lfs --strip-components=1
+  export PATH="/tmp/vs-git-lfs:$PATH"
+fi
+git lfs version
+
 rm -rf work tools dist
 mkdir -p work tools dist
 
@@ -16,10 +31,6 @@ git clone --depth 1 --branch master https://github.com/PiePieDesign/eta-multipla
 git -C work/eta rev-parse HEAD | tee dist/ETA-UPSTREAM-COMMIT.txt
 
 echo '=== Fetch ETA Git LFS assets ==='
-if ! git lfs version; then
-  echo 'ERROR: git-lfs is not installed on the builder.' >&2
-  exit 1
-fi
 git -C work/eta lfs install --local
 git -C work/eta lfs pull
 
