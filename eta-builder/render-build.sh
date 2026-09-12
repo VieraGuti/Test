@@ -15,7 +15,7 @@ echo '=== Fetch ETA ==='
 git clone --depth 1 --branch master https://github.com/PiePieDesign/eta-multiplayer.git work/eta
 git -C work/eta rev-parse HEAD | tee dist/ETA-UPSTREAM-COMMIT.txt
 
-echo '=== Apply VieraStrike private branding ==='
+echo '=== Apply VieraStrike private branding / stock-SDK test patch ==='
 python3 - <<'PY'
 from pathlib import Path
 root = Path('work/eta/Game')
@@ -31,6 +31,20 @@ e = e.replace('export_path="../Export/Windows/eta.exe"', 'export_path="../Export
 e = e.replace('application/product_name="ETA"', 'application/product_name="VieraStrike"')
 e = e.replace('custom_template/release="../Engine/Templates/windows_release.x86_64.exe"', 'custom_template/release=""')
 presets.write_text(e, encoding='utf-8')
+
+# ETA normally pins Godot packages to a locally patched engine feed which is not
+# committed to the repository. For the private automated build, first test the
+# official 4.6.3 SDK. If source code genuinely requires a patched-only API,
+# compilation will identify the exact call sites and we can shim those next.
+nuget = root / 'NuGet.config'
+nuget.write_text('''<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+  </packageSources>
+</configuration>
+''', encoding='utf-8')
 PY
 
 echo '=== Install .NET 8 SDK locally ==='
@@ -38,6 +52,7 @@ curl -fsSL https://dot.net/v1/dotnet-install.sh -o tools/dotnet-install.sh
 bash tools/dotnet-install.sh --channel 8.0 --install-dir "$HERE/tools/dotnet" --no-path
 export DOTNET_ROOT="$HERE/tools/dotnet"
 export PATH="$DOTNET_ROOT:$PATH"
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
 dotnet --version
 
 echo '=== Download Godot 4.6.3 Mono Linux editor ==='
@@ -79,9 +94,9 @@ fi
 mkdir -p "$TEMPLATE_DST"
 cp -a "$TEMPLATE_SRC/." "$TEMPLATE_DST/"
 
-echo '=== Restore and compile ETA C# ==='
-dotnet restore work/eta/Game/keta.csproj
-dotnet build work/eta/Game/keta.csproj -c Release -nologo
+echo '=== Restore and compile ETA C# against official Godot 4.6.3 SDK ==='
+dotnet restore work/eta/Game/keta.csproj --configfile work/eta/Game/NuGet.config
+dotnet build work/eta/Game/keta.csproj -c Release -nologo --no-restore
 
 echo '=== Import Godot project ==='
 "$GODOT_EXE" --headless --path work/eta/Game --editor --quit-after 30
@@ -132,7 +147,6 @@ shutil.make_archive(str(out), 'zip', src)
 print(Path(str(out)+'.zip').stat().st_size)
 PY
 
-# Keep only the protected downloadable artifact in the deployed service.
 rm -rf work tools
 
 echo '=== VieraStrike build ready ==='
