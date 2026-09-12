@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE"
+
+GODOT_VERSION="4.6.3"
+GODOT_TAG="4.6.3-stable"
+GODOT_BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_TAG}"
+
+rm -rf work tools dist
+mkdir -p work tools dist
+
+echo '=== Fetch ETA ==='
+git clone --depth 1 --branch master https://github.com/PiePieDesign/eta-multiplayer.git work/eta
+git -C work/eta rev-parse HEAD | tee dist/ETA-UPSTREAM-COMMIT.txt
+
+echo '=== Apply VieraStrike private branding ==='
+python3 - <<'PY'
+from pathlib import Path
+root = Path('work/eta/Game')
+project = root / 'project.godot'
+p = project.read_text(encoding='utf-8-sig')
+p = p.replace('config/name="ETA"', 'config/name="VieraStrike"')
+p = p.replace('config/version="0.0.1"', 'config/version="0.1.0-private"')
+project.write_text(p, encoding='utf-8')
+
+presets = root / 'export_presets.cfg'
+e = presets.read_text(encoding='utf-8-sig')
+e = e.replace('export_path="../Export/Windows/eta.exe"', 'export_path="../Export/Windows/VieraStrike.exe"')
+e = e.replace('application/product_name="ETA"', 'application/product_name="VieraStrike"')
+e = e.replace('custom_template/release="../Engine/Templates/windows_release.x86_64.exe"', 'custom_template/release=""')
+presets.write_text(e, encoding='utf-8')
+PY
+
+echo '=== Install .NET 8 SDK locally ==='
+curl -fsSL https://dot.net/v1/dotnet-install.sh -o tools/dotnet-install.sh
+bash tools/dotnet-install.sh --channel 8.0 --install-dir "$HERE/tools/dotnet" --no-path
+export DOTNET_ROOT="$HERE/tools/dotnet"
+export PATH="$DOTNET_ROOT:$PATH"
+dotnet --version
+
+echo '=== Download Godot 4.6.3 Mono Linux editor ==='
+curl -fL --retry 5 --retry-delay 5 \
+  -o tools/godot-editor.zip \
+  "$GODOT_BASE/Godot_v${GODOT_TAG}_mono_linux_x86_64.zip"
+mkdir -p tools/godot-editor
+python3 - <<'PY'
+import zipfile
+with zipfile.ZipFile('tools/godot-editor.zip') as z:
+    z.extractall('tools/godot-editor')
+PY
+GODOT_EXE="$(find tools/godot-editor -type f -name 'Godot*mono*linux*x86_64*' ! -name '*.zip' | head -n 1)"
+if [ -z "$GODOT_EXE" ]; then
+  echo 'Godot Mono Linux editor was not found after extraction.' >&2
+  find tools/godot-editor -maxdepth 3 -type f | head -n 100
+  exit 1
+fi
+chmod +x "$GODOT_EXE"
+"$GODOT_EXE" --version
+
+echo '=== Download Godot Mono export templates ==='
+curl -fL --retry 5 --retry-delay 5 \
+  -o tools/godot-templates.tpz \
+  "$GODOT_BASE/Godot_v${GODOT_TAG}_mono_export_templates.tpz"
+mkdir -p tools/templates-unpacked
+python3 - <<'PY'
+import zipfile
+with zipfile.ZipFile('tools/godot-templates.tpz') as z:
+    z.extractall('tools/templates-unpacked')
+PY
+TEMPLATE_SRC="$HERE/tools/templates-unpacked/templates"
+TEMPLATE_DST="$HOME/.local/share/godot/export_templates/4.6.3.stable.mono"
+if [ ! -d "$TEMPLATE_SRC" ]; then
+  echo 'Mono export template directory missing.' >&2
+  find tools/templates-unpacked -maxdepth 2 -type d
+  exit 1
+fi
+mkdir -p "$TEMPLATE_DST"
+cp -a "$TEMPLATE_SRC/." "$TEMPLATE_DST/"
+
+echo '=== Restore and compile ETA C# ==='
+dotnet restore work/eta/Game/keta.csproj
+dotnet build work/eta/Game/keta.csproj -c Release -nologo
+
+echo '=== Import Godot project ==='
+"$GODOT_EXE" --headless --path work/eta/Game --editor --quit-after 30
+
+echo '=== Export VieraStrike Windows ==='
+mkdir -p work/export
+"$GODOT_EXE" --headless --path work/eta/Game --export-release Windows "$HERE/work/export/VieraStrike.exe"
+
+if [ ! -f work/export/VieraStrike.exe ]; then
+  echo 'VieraStrike.exe was not generated.' >&2
+  find work/export -maxdepth 3 -type f -print
+  exit 1
+fi
+
+cat > work/export/client.cmd <<'EOF'
+@echo off
+"%~dp0VieraStrike.exe" %*
+EOF
+
+cat > work/export/server.cmd <<'EOF'
+@echo off
+"%~dp0VieraStrike.exe" --headless -- --server --max-players 10 --bots 10 --gamemode competitive --host 0.0.0.0 --port 27015
+pause
+EOF
+
+cat > work/export/join-server.cmd <<'EOF'
+@echo off
+set /p VS_HOST=Server IP or hostname: 
+"%~dp0VieraStrike.exe" -- --connect %VS_HOST%:27015
+EOF
+
+cat > work/export/PRIVATE-USE-NOTICE.txt <<'EOF'
+VieraStrike private friends-only test build based on ETA.
+FREE / NO MONETIZATION.
+Do not sell access, skins, battle passes, items, or other content while ETA restricted assets are present.
+ETA source-code license notices remain applicable.
+EOF
+
+cp dist/ETA-UPSTREAM-COMMIT.txt work/export/ETA-UPSTREAM-COMMIT.txt
+cp work/eta/LICENSE.md work/export/ETA-LICENSE.md
+
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+src = Path('work/export')
+out = Path('dist/VieraStrike-ETA-Windows-private')
+shutil.make_archive(str(out), 'zip', src)
+print(Path(str(out)+'.zip').stat().st_size)
+PY
+
+# Keep only the protected downloadable artifact in the deployed service.
+rm -rf work tools
+
+echo '=== VieraStrike build ready ==='
+ls -lh dist/
