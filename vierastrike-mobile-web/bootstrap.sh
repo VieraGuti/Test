@@ -3,7 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 rm -rf app VieraStrike-MVP-ready.zip reconstructed.b64
 mkdir -p app
-cat parts/part00 parts/part01 parts/part02 parts/part03 parts/part04 parts/part05 > reconstructed.b64
+cat parts/part00 parts/part01 parts/part02a parts/part02b parts/part03 parts/part04 parts/part05 > reconstructed.b64
+actual_b64_size="$(wc -c < reconstructed.b64 | tr -d ' ')"
+[ "$actual_b64_size" = "31288" ] || { echo "Bad base64 size: $actual_b64_size" >&2; exit 1; }
 base64 -d reconstructed.b64 > VieraStrike-MVP-ready.zip
 actual_size="$(wc -c < VieraStrike-MVP-ready.zip | tr -d ' ')"
 [ "$actual_size" = "23465" ] || { echo "Bad ZIP size: $actual_size" >&2; exit 1; }
