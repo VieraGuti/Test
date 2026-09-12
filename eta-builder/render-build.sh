@@ -15,6 +15,30 @@ echo '=== Fetch ETA ==='
 git clone --depth 1 --branch master https://github.com/PiePieDesign/eta-multiplayer.git work/eta
 git -C work/eta rev-parse HEAD | tee dist/ETA-UPSTREAM-COMMIT.txt
 
+echo '=== Fetch ETA Git LFS assets ==='
+if ! git lfs version; then
+  echo 'ERROR: git-lfs is not installed on the builder.' >&2
+  exit 1
+fi
+git -C work/eta lfs install --local
+git -C work/eta lfs pull
+
+# Fail early if representative game assets are still Git LFS pointer text.
+python3 - <<'PY'
+from pathlib import Path
+samples = [
+    Path('work/eta/Game/props/ammo/ammo.glb'),
+    Path('work/eta/Game/weapons/AR15/import/RIG_InfimaGames_TFA_AssaultRifle.fbx'),
+]
+for p in samples:
+    if not p.exists():
+        raise SystemExit(f'Missing expected ETA asset: {p}')
+    head = p.read_bytes()[:80]
+    if head.startswith(b'version https://git-lfs.github.com/spec/v1'):
+        raise SystemExit(f'ETA LFS asset was not downloaded: {p}')
+    print(f'LFS OK: {p} ({p.stat().st_size} bytes)')
+PY
+
 echo '=== Apply VieraStrike private branding / stock engine compatibility ==='
 python3 - <<'PY'
 from pathlib import Path
