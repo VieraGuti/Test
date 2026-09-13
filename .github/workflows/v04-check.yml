@@ -1,0 +1,35 @@
+name: VAST v0.4 integrity
+
+on:
+  push:
+    branches: [vast-zombie-revival]
+    paths:
+      - 'public/v04/**'
+      - 'public/v04.css'
+      - 'public/game-v04-loader.js'
+      - 'public/index.html'
+      - '.github/workflows/v04-check.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rebuild browser module
+        run: cat public/v04/part-*.txt > /tmp/game-v04.js
+      - name: Check JavaScript syntax
+        run: |
+          node --check /tmp/game-v04.js
+          node --check public/game-v04-loader.js
+      - name: Check required v0.4 systems
+        run: |
+          grep -q "function updateZombies" /tmp/game-v04.js
+          grep -q "function triggerHeliEvent" /tmp/game-v04.js
+          grep -q "function renderInventory" /tmp/game-v04.js
+          grep -q "function updateBuildPreview" /tmp/game-v04.js
+          grep -q "const BUILD_RECIPES" /tmp/game-v04.js
+          grep -q "game-v04-loader.js" public/index.html
