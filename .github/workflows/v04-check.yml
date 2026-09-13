@@ -1,10 +1,11 @@
-name: VAST v0.4 integrity
+name: VAST v0.5 integrity
 
 on:
   push:
     branches: [vast-zombie-revival]
     paths:
       - 'public/v04/**'
+      - 'public/v05/**'
       - 'public/v04.css'
       - 'public/game-v04-loader.js'
       - 'public/index.html'
@@ -19,17 +20,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Rebuild browser module
-        run: cat public/v04/part-*.txt > /tmp/game-v04.js
+      - name: Rebuild browser modules
+        run: |
+          cat public/v04/part-*.txt > /tmp/game-v04.js
+          cat public/v04/part-*.txt public/v05/patch.txt > /tmp/game-v05.js
       - name: Check JavaScript syntax
         run: |
           node --check /tmp/game-v04.js
+          node --check /tmp/game-v05.js
           node --check public/game-v04-loader.js
-      - name: Check required v0.4 systems
+      - name: Check required systems
         run: |
-          grep -q "function updateZombies" /tmp/game-v04.js
-          grep -q "function triggerHeliEvent" /tmp/game-v04.js
-          grep -q "function renderInventory" /tmp/game-v04.js
-          grep -q "function updateBuildPreview" /tmp/game-v04.js
-          grep -q "const BUILD_RECIPES" /tmp/game-v04.js
+          grep -q "function updateZombies" /tmp/game-v05.js
+          grep -q "function triggerHeliEvent" /tmp/game-v05.js
+          grep -q "function renderInventory" /tmp/game-v05.js
+          grep -q "function updateBuildPreview" /tmp/game-v05.js
+          grep -q "v05CreateHeli" /tmp/game-v05.js
+          grep -q "v05StructureModel" /tmp/game-v05.js
+          grep -q "v05PolishWeapon" /tmp/game-v05.js
           grep -q "game-v04-loader.js" public/index.html
