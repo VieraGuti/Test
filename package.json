@@ -1,17 +1,9 @@
 {
-  "name": "vierastrike-mvp",
+  "name": "vierastrike-csmobile-test",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
-  "description": "Browser/mobile tactical FPS MVP with authoritative Colyseus server and Three.js client.",
-  "license": "MIT",
+  "description": "VieraStrike mobile FPS test based on CS:Mobile 3D with author permission.",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "check": "node --check server/index.js && node --check server/StrikeRoom.js && node --check server/state.js && node --check shared/map.js && node --check shared/weapons.js && node --check public/main.js"
-  },
-  "dependencies": {
-    "colyseus": "0.17.10",
-    "express": "5.2.1"
+    "start": "node server.js"
   }
 }
