@@ -1,0 +1,152 @@
+/* v0.5.4 — helicopter flight v2: engine, inertia, damage, fuel, repair, camera and fleet */
+Object.assign(ITEMS,{
+  fuelcan:{name:'Bidón de combustible',short:'FUEL',kind:'vehicle',desc:'+35% combustible de helicóptero',stack:2},
+  repairkit:{name:'Kit de reparación',short:'REPAIR',kind:'vehicle',desc:'+45% integridad de vehículo',stack:2}
+});
+
+const V054_FLEET_KEY='vast_dead_zone_heli_fleet_v054';
+const V054_HELI_DEFS=[
+  {id:'utility',name:'UH-7 UTILITY',x:101,z:-87,heading:Math.PI*.72,color:0x405047,maxSpeed:18,maxHealth:110,scale:1},
+  {id:'scout',name:'MH-2 SCOUT',x:-112,z:92,heading:-.55,color:0x505b5d,maxSpeed:23,maxHealth:85,scale:.84},
+  {id:'tactical',name:'VXR-9 TACTICAL',x:205,z:-120,heading:1.35,color:0x2f4138,maxSpeed:16,maxHealth:150,scale:1.08}
+];
+const v054Fleet=[];
+let v054HeliCamera=1;
+
+function v054FleetSaveData(){try{return JSON.parse(localStorage.getItem(V054_FLEET_KEY)||'{}')||{}}catch{return {}}}
+function v054SaveFleet(){
+  const out={};for(const h of v054Fleet)out[h.id]={x:h.group.position.x,y:h.group.position.y,z:h.group.position.z,heading:h.heading,fuel:h.fuel,health:h.health};
+  try{localStorage.setItem(V054_FLEET_KEY,JSON.stringify(out))}catch{}
+}
+v05SaveHeli=v054SaveFleet;
+
+function v054HeliMat(color,metalness=.3,roughness=.58){return new THREE.MeshStandardMaterial({color,metalness,roughness})}
+function v054MakeHeli(def,state){
+  const root=new THREE.Group();root.position.set(state.x,state.y,state.z);root.rotation.y=state.heading;scene.add(root);
+  const visual=new THREE.Group();visual.scale.setScalar(def.scale);root.add(visual);
+  const body=v054HeliMat(def.color,.28,.6),dark=v054HeliMat(0x151b19,.6,.42),edge=v054HeliMat(0x2a312f,.48,.48),glass=new THREE.MeshStandardMaterial({color:0x496a70,roughness:.08,metalness:.12,transparent:true,opacity:.48});
+  const fuselage=new THREE.Mesh(new THREE.CapsuleGeometry(.82,2.45,7,14),body);fuselage.rotation.z=Math.PI/2;fuselage.position.set(.25,.92,0);fuselage.scale.set(1,1,.9);visual.add(fuselage);
+  const cockpit=new THREE.Mesh(new THREE.SphereGeometry(.86,16,11),glass);cockpit.scale.set(1.18,.72,.86);cockpit.position.set(1.58,1.02,0);visual.add(cockpit);
+  const cabin=v05Box(1.5,1.22,1.62,-.12,.90,0,body);visual.add(cabin);
+  const tail=v05Box(3.85,.27,.30,-2.85,1.08,0,body);visual.add(tail);
+  const fin=v05Box(.18,1.12,.68,-4.64,1.52,0,body);fin.rotation.z=-.18;visual.add(fin);
+  const mast=v05Box(.13,.78,.13,-.18,2.02,0,dark);visual.add(mast);
+  const rotor=new THREE.Group();rotor.position.set(-.18,2.42,0);for(let i=0;i<2;i++){const b=v05Box(7.0,.045,.13,0,0,0,dark);b.rotation.y=i*Math.PI/2;rotor.add(b)}visual.add(rotor);
+  const tailRotor=new THREE.Group();tailRotor.position.set(-4.68,1.49,.36);for(let i=0;i<2;i++){const b=v05Box(.05,1.55,.10,0,0,0,dark);b.rotation.z=i*Math.PI/2;tailRotor.add(b)}visual.add(tailRotor);
+  for(const side of [-1,1]){const skid=v05Box(3.35,.08,.09,-.25,.10,side*.88,dark);visual.add(skid);for(const x of [-1.05,.72]){const leg=v05Box(.07,.62,.07,x,.40,side*.76,dark);leg.rotation.x=side*.18;visual.add(leg)}}
+  for(const side of [-1,1]){const door=v05Box(1.04,.96,.045,.02,.94,side*.82,glass);visual.add(door)}
+  if(def.id==='scout'){
+    const boom=v05Box(1.1,.18,.22,.78,.35,0,edge);visual.add(boom);
+  }else if(def.id==='tactical'){
+    for(const side of [-1,1]){const pod=new THREE.Mesh(new THREE.CylinderGeometry(.13,.13,1.2,10),edge);pod.rotation.z=Math.PI/2;pod.position.set(.35,.48,side*1.02);visual.add(pod)}
+    const armor=v05Box(1.25,.18,1.5,-.18,.26,0,edge);visual.add(armor);
+  }
+  const light=new THREE.PointLight(0xffe7c0,0,30,2);light.position.set(2.45,.75,0);visual.add(light);
+  const damageSmoke=new THREE.Group();damageSmoke.position.set(-.8,1.85,0);for(let i=0;i<5;i++){const s=new THREE.Mesh(new THREE.SphereGeometry(.20+i*.035,7,5),new THREE.MeshBasicMaterial({color:0x252927,transparent:true,opacity:.11,depthWrite:false}));s.position.set((i%2-.5)*.25,i*.24,(i%3-1)*.16);damageSmoke.add(s)}damageSmoke.visible=false;visual.add(damageSmoke);
+  return {type:'flyheli',id:def.id,name:def.name,def,group:root,visual,rotor,tailRotor,noseLight:light,damageSmoke,heading:state.heading,fuel:state.fuel,health:state.health,maxHealth:def.maxHealth,engine:false,engineState:'off',engineStartAt:0,speed:0,turnSpeed:0,verticalSpeed:0,lastSave:0};
+}
+
+v05CreateFlyHeli=function(){
+  v054Fleet.splice(0);const saved=v054FleetSaveData();
+  for(const def of V054_HELI_DEFS){const s=saved[def.id]||{x:def.x,y:.78,z:def.z,heading:def.heading,fuel:def.id==='utility'?78:def.id==='scout'?62:54,health:def.maxHealth};v054Fleet.push(v054MakeHeli(def,{x:Number.isFinite(s.x)?s.x:def.x,y:clamp(Number.isFinite(s.y)?s.y:.78,.78,35),z:Number.isFinite(s.z)?s.z:def.z,heading:Number.isFinite(s.heading)?s.heading:def.heading,fuel:clamp(Number.isFinite(s.fuel)?s.fuel:70,0,100),health:clamp(Number.isFinite(s.health)?s.health:def.maxHealth,0,def.maxHealth)}))}
+  flyHeli=v054Fleet[0]||null;
+};
+
+function v054Landed(h=flyHeli){return !!h&&h.group.position.y<=.92&&Math.abs(h.speed)<1.5&&Math.abs(h.verticalSpeed)<1.2}
+function v054SetEngine(on){
+  const h=flyHeli;if(!h)return;
+  if(on){
+    if(h.health<=0){toast('MOTOR BLOQUEADO · REPARA EL HELICÓPTERO','bad');return}
+    if(h.fuel<=.5){toast('SIN COMBUSTIBLE','bad');return}
+    if(h.engineState==='on'||h.engineState==='starting')return;
+    h.engineState='starting';h.engineStartAt=now()+1.15;h.engine=false;AudioFX.burst(.12,.42,380,62);toast('ARRANCANDO TURBINA…','good');
+  }else{
+    h.engine=false;h.engineState='off';h.engineStartAt=0;AudioFX.click();toast('MOTOR APAGADO');
+  }
+}
+function v054DamageHeli(h,amount,reason='IMPACTO'){
+  if(!h||amount<=0)return;h.health=clamp(h.health-amount,0,h.maxHealth);shake=Math.max(shake,.25);AudioFX.burst(.18,.18,520,70);toast(`${reason} · -${Math.ceil(amount)} INTEGRIDAD`,'bad');
+  if(h.health<=0){h.engine=false;h.engineState='off';toast('HELICÓPTERO AVERIADO · NECESITA REPARACIÓN','bad')}
+}
+function v054Refuel(){
+  const h=flyHeli;if(!h||!inFlyHeli)return;if(!v054Landed(h)||h.engineState!=='off'){toast('ATERRIZA Y APAGA EL MOTOR','bad');return}
+  if(!(player.inventory.fuelcan>0)){toast('NECESITAS UN BIDÓN DE COMBUSTIBLE','bad');return}
+  player.inventory.fuelcan--;h.fuel=clamp(h.fuel+35,0,100);AudioFX.pickup();toast('REPOSTADO · +35%','good');renderInventory();v054SaveFleet();saveGame();
+}
+function v054Repair(){
+  const h=flyHeli;if(!h||!inFlyHeli)return;if(!v054Landed(h)||h.engineState!=='off'){toast('ATERRIZA Y APAGA EL MOTOR','bad');return}
+  if(h.health>=h.maxHealth){toast('INTEGRIDAD AL MÁXIMO');return}
+  if(player.inventory.repairkit>0){player.inventory.repairkit--;h.health=clamp(h.health+45,0,h.maxHealth)}
+  else if((player.inventory.scrap||0)>=8&&(player.inventory.metal||0)>=4){player.inventory.scrap-=8;player.inventory.metal-=4;h.health=clamp(h.health+28,0,h.maxHealth)}
+  else{toast('NECESITAS KIT DE REPARACIÓN O 8 SCRAP + 4 METAL','bad');return}
+  AudioFX.pickup();toast('HELICÓPTERO REPARADO','good');renderInventory();updateResourceHUD();v054SaveFleet();saveGame();
+}
+
+v05EnterHeli=function(){
+  if(!flyHeli||inFlyHeli)return;inFlyHeli=true;heliEngine=false;flyHeli.engine=false;flyHeli.engineState='off';flyHeli.speed=0;flyHeli.verticalSpeed=0;aimHeld=fireHeld=runHeld=false;if(weaponRig)weaponRig.visible=false;document.body.classList.add('in-heli','heli-v2');$('heli-controls')?.classList.remove('hidden');v054HeliCamera=1;toast(`${flyHeli.name} · PULSA ENCENDER`,'good');
+};
+v05ExitHeli=function(){
+  const h=flyHeli;if(!inFlyHeli||!h)return;if(!v054Landed(h)){toast('ATERRIZA Y DETÉN EL HELICÓPTERO','bad');return}
+  inFlyHeli=false;h.engine=false;h.engineState='off';heliEngine=false;if(weaponRig)weaponRig.visible=true;document.body.classList.remove('in-heli','heli-v2');$('heli-controls')?.classList.add('hidden');camera.position.set(0,0,0);camera.rotation.set(0,0,0);camera.fov=settings.fov;camera.updateProjectionMatrix();const side=2.2;player.pos.set(h.group.position.x+Math.cos(h.heading)*side,1.68,h.group.position.z-Math.sin(h.heading)*side);yaw=h.heading;v054SaveFleet();saveGame();
+};
+
+v05UpdateFlyHeli=function(dt){
+  for(const x of v054Fleet){x.rotor.rotation.y+=dt*(x.engine?28:x.engineState==='starting'?8:1.2);x.tailRotor.rotation.z+=dt*(x.engine?35:x.engineState==='starting'?11:1.5);x.damageSmoke.visible=x.health/x.maxHealth<.35;if(x.damageSmoke.visible)x.damageSmoke.rotation.y+=dt*.35}
+  const h=flyHeli;if(!h||!inFlyHeli)return;
+  if(h.engineState==='starting'&&now()>=h.engineStartAt){h.engineState='on';h.engine=true;heliEngine=true;AudioFX.burst(.08,.25,700,95);toast('MOTOR ESTABLE','good')}
+  if(h.engineState==='on'&&(h.fuel<=0||h.health<=0)){h.engine=false;h.engineState='off'}
+  const f=clamp(touchMove.y+(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),-1,1),turn=clamp(touchMove.x+(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0),-1,1),vert=(heliUpHeld||keys.has('Space')?1:0)-(heliDownHeld||keys.has('ControlLeft')?1:0);
+  const powered=h.engineState==='on'&&h.fuel>0&&h.health>0;
+  const targetSpeed=powered?f*h.def.maxSpeed:0,targetTurn=powered?turn*1.55:0,targetVert=powered?vert*5.4:-3.6;
+  h.speed=lerp(h.speed,targetSpeed,clamp(dt*(Math.abs(targetSpeed)>Math.abs(h.speed)?1.15:1.9),0,1));h.turnSpeed=lerp(h.turnSpeed,targetTurn,clamp(dt*2.1,0,1));h.verticalSpeed=lerp(h.verticalSpeed,targetVert,clamp(dt*(powered?2.0:1.15),0,1));
+  h.heading-=h.turnSpeed*dt;h.group.rotation.y=h.heading;
+  const oldY=h.group.position.y,nextY=h.group.position.y+h.verticalSpeed*dt;h.group.position.y=Math.max(.78,nextY);
+  const dx=-Math.sin(h.heading)*h.speed*dt,dz=-Math.cos(h.heading)*h.speed*dt,blocked=h.group.position.y<2.2&&collidesAt(h.group.position.x+dx,h.group.position.z+dz,1.15);
+  if(!blocked){h.group.position.x+=dx;h.group.position.z+=dz}else if(Math.abs(h.speed)>2.8){v054DamageHeli(h,Math.min(24,Math.abs(h.speed)*1.05),'COLISIÓN');h.speed*=-.18}
+  if(oldY>.82&&h.group.position.y<=.78&&h.verticalSpeed< -3.8){v054DamageHeli(h,Math.min(38,(-h.verticalSpeed-3.2)*5.4),'ATERRIZAJE DURO');h.verticalSpeed=0}
+  if(h.group.position.y<=.78){h.group.position.y=.78;if(h.verticalSpeed<0)h.verticalSpeed=0}
+  const bank=powered?-h.turnSpeed*.12:0,pitchTilt=powered?-f*.10:0;h.visual.rotation.z=lerp(h.visual.rotation.z,bank,clamp(dt*4.2,0,1));h.visual.rotation.x=lerp(h.visual.rotation.x,pitchTilt,clamp(dt*4.2,0,1));
+  if(powered)h.fuel=clamp(h.fuel-dt*(.028+Math.abs(h.speed)/h.def.maxSpeed*.045+Math.abs(vert)*.03),0,100);
+  h.noseLight.intensity=powered?.55:0;
+  player.pos.set(h.group.position.x,h.group.position.y+1.25,h.group.position.z);yaw=h.heading;pitch=lerp(pitch,v054HeliCamera?-.14:-.04,clamp(dt*2.6,0,1));yawNode.position.copy(player.pos);yawNode.rotation.y=yaw;pitchNode.rotation.x=pitch;
+  const camTarget=v054HeliCamera?{x:0,y:2.5,z:8.4}:{x:0,y:.56,z:-2.05};camera.position.x=lerp(camera.position.x,camTarget.x,clamp(dt*4,0,1));camera.position.y=lerp(camera.position.y,camTarget.y,clamp(dt*4,0,1));camera.position.z=lerp(camera.position.z,camTarget.z,clamp(dt*4,0,1));camera.fov=lerp(camera.fov,v054HeliCamera?80:73,clamp(dt*3.5,0,1));camera.updateProjectionMatrix();noise=powered?.95:.15;player.stamina=clamp(player.stamina+dt*18,0,100);v052UpdateStreaming();
+  const spd=$('heli-speed'),alt=$('heli-alt'),fuel=$('heli-fuel'),hp=$('heli-hp'),eng=$('heli-engine-state'),model=$('heli-model');if(spd)spd.textContent=Math.round(Math.abs(h.speed)*3.6)+' km/h';if(alt)alt.textContent=Math.max(0,Math.round(h.group.position.y-.78))+' m';if(fuel)fuel.textContent=Math.round(h.fuel)+'%';if(hp)hp.textContent=Math.round(h.health/h.maxHealth*100)+'%';if(eng)eng.textContent=h.engineState==='on'?'ON':h.engineState==='starting'?'START':'OFF';if(model)model.textContent=h.name;
+  if(now()-h.lastSave>5){h.lastSave=now();v054SaveFleet()}
+};
+
+const v054UpdateInteractBase=updateInteract;
+updateInteract=function(dt){
+  v054UpdateInteractBase(dt);if(inFlyHeli||!v054Fleet.length)return;let nearest=null,bd=Infinity;for(const h of v054Fleet){const d=Math.hypot(player.pos.x-h.group.position.x,player.pos.z-h.group.position.z);if(d<bd){nearest=h;bd=d}}if(nearest)flyHeli=nearest;if(nearest&&bd<3.25){interactTarget=nearest;$('interact-prompt').classList.remove('hidden');$('interact-text').textContent='Pilotar '+nearest.name}
+};
+const v054InteractBase=interact;
+interact=function(){if(!inFlyHeli&&interactTarget?.type==='flyheli'&&interactTarget.id)flyHeli=interactTarget;return v054InteractBase()};
+
+const v054SpawnLooseBase=spawnLoose;
+spawnLoose=function(type,x,z,id,count=null){
+  v054SpawnLooseBase(type,x,z,id,count);if(!['fuelcan','repairkit'].includes(type))return;const l=loots.find(q=>q.id===id);if(!l)return;[...l.group.children].forEach(o=>l.group.remove(o));
+  if(type==='fuelcan'){
+    const red=new THREE.MeshStandardMaterial({color:0x8e3f32,roughness:.7,metalness:.25}),dark=v05Metal();const body=v05Box(.34,.48,.20,0,.02,0,red),handle=new THREE.Mesh(new THREE.TorusGeometry(.085,.025,6,12,Math.PI),dark);handle.rotation.z=Math.PI;handle.position.set(0,.30,0);const cap=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.07,8),dark);cap.position.set(.12,.27,0);cap.rotation.z=Math.PI/2;l.group.add(body,handle,cap)
+  }else{
+    const caseMat=new THREE.MeshStandardMaterial({color:0x5b665d,roughness:.82}),metal=v05Metal();l.group.add(v05Box(.46,.22,.28,0,.01,0,caseMat),v05Box(.18,.035,.035,0,.16,0,metal))
+  }
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.34,.018,5,18),new THREE.MeshBasicMaterial({color:type==='fuelcan'?0xd7684c:0x78a991,transparent:true,opacity:.55}));ring.rotation.x=Math.PI/2;ring.position.y=-.22;l.group.add(ring);l.ring=ring;
+};
+
+const v054ChunkBase=v052GenerateChunk;
+v052GenerateChunk=function(cx,cz){const c=v054ChunkBase(cx,cz);if(c._v054VehicleLoot)return c;c._v054VehicleLoot=true;const type=c.poi?.[0]?.type,chest=c.containers?.[0];if(chest&&type==='industrial'&&chest.items.fuelcan==null)chest.items.fuelcan=1;if(chest&&type==='military'&&chest.items.repairkit==null)chest.items.repairkit=1;return c};
+
+function v054SetupHeliUI(){
+  const controls=$('heli-controls');if(!controls)return;const read=controls.querySelector('.heli-readout');if(read)read.innerHTML='<b id="heli-model">HELICÓPTERO</b><span>SPD <strong id="heli-speed">0 km/h</strong></span><span>ALT <strong id="heli-alt">0 m</strong></span><span>FUEL <strong id="heli-fuel">0%</strong></span><span>HP <strong id="heli-hp">100%</strong></span><span>MOTOR <strong id="heli-engine-state">OFF</strong></span>';
+  const add=(id,text,fn)=>{let b=$(id);if(!b){b=document.createElement('button');b.id=id;b.textContent=text;controls.appendChild(b)}b.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();fn()});return b};
+  add('heli-engine','ENCENDER',()=>{const on=flyHeli?.engineState!=='on'&&flyHeli?.engineState!=='starting';v054SetEngine(on)});add('heli-cam','CÁMARA',()=>{v054HeliCamera=v054HeliCamera?0:1;toast(v054HeliCamera?'CÁMARA EXTERIOR':'CÁMARA CABINA')});add('heli-refuel','REPOSTAR',v054Refuel);add('heli-repair','REPARAR',v054Repair);
+  const css=document.createElement('style');css.textContent=`
+  #heli-controls{grid-template-columns:repeat(4,58px)!important;grid-template-rows:auto 48px 48px!important;gap:5px!important;right:calc(12px + var(--safe-r))!important;bottom:calc(10px + var(--safe-b))!important}.heli-readout{grid-column:1/-1!important;flex-wrap:wrap!important;gap:4px 9px!important;max-width:248px!important}.heli-readout>b{width:100%;text-align:center}.heli-readout span{white-space:nowrap}#heli-controls button{height:46px!important;font-size:7px!important}#heli-engine{border-color:rgba(91,191,235,.48)!important;color:#9bdaf4!important}#heli-refuel{border-color:rgba(213,147,69,.45)!important;color:#e7bd82!important}#heli-repair{border-color:rgba(107,190,139,.42)!important;color:#9bd5ae!important}body.in-heli #map-btn{opacity:.38;pointer-events:none!important}
+  @media (orientation:landscape) and (max-height:430px){#heli-controls{grid-template-columns:repeat(4,51px)!important;grid-template-rows:auto 42px 42px!important}.heli-readout{max-width:220px!important;gap:3px 7px!important}.heli-readout span{font-size:5.5px!important}#heli-controls button{height:40px!important;font-size:6.5px!important}}
+  `;document.head.appendChild(css);
+}
+
+const v054SetupBase=setupV05;
+setupV05=function(){
+  v054SetupBase();v054SetupHeliUI();spawnLoose('fuelcan',-44,22,'v054-fuel-gas');spawnLoose('fuelcan',30,-73,'v054-fuel-farm');spawnLoose('repairkit',82,-67,'v054-repair-base');
+  window.addEventListener('pagehide',v054SaveFleet,{passive:true});toast('HELICÓPTEROS v2 · MOTOR · INERCIA · DAÑO · COMBUSTIBLE','good')
+};
