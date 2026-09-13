@@ -1,0 +1,158 @@
+
+const V05_BLUE=0x2d8cff,V05_RED=0xd9453c;
+const v05BuiltDoors=[];
+let v05Heli=null,v05HeliUp=false,v05HeliDown=false,v05LastLootPolish=0;
+
+function v05Mat(color,rough=.78,metal=.05,extra={}){return new THREE.MeshStandardMaterial(Object.assign({color,roughness:rough,metalness:metal},extra))}
+function v05Box(g,sx,sy,sz,x,y,z,m){const q=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);q.position.set(x,y,z);q.castShadow=sy>.35;q.receiveShadow=true;g.add(q);return q}
+function v05StructureModel(type,preview=false){
+ const g=new THREE.Group(),ghost=preview?new THREE.MeshBasicMaterial({color:V05_BLUE,transparent:true,opacity:.36,depthWrite:false,side:THREE.DoubleSide}):null;
+ const wood=ghost||v05Mat(0x6b5137,.96,.01),woodDark=ghost||v05Mat(0x453524,.95,.01),metal=ghost||v05Mat(0x424a48,.55,.5),stone=ghost||v05Mat(0x696b66,.98,.02),glass=preview?ghost:new THREE.MeshStandardMaterial({color:0x6e9dac,transparent:true,opacity:.24,roughness:.15,metalness:.05});
+ const b=(sx,sy,sz,x,y,z,m=wood)=>v05Box(g,sx,sy,sz,x,y,z,m);
+ if(type==='foundation'){b(3,.18,3,0,.09,0,woodDark);for(let x=-1.2;x<=1.2;x+=.6)b(.08,.05,2.92,x,.2,0,metal)}
+ else if(type==='wall'){b(3,2.35,.18,0,1.175,0,wood);for(const x of [-1.42,0,1.42])b(.09,2.48,.28,x,1.24,0,woodDark);b(3.05,.1,.3,0,2.37,0,woodDark)}
+ else if(type==='wall_window'){b(.78,2.35,.18,-1.11,1.175,0,wood);b(.78,2.35,.18,1.11,1.175,0,wood);b(1.45,.55,.18,0,.275,0,wood);b(1.45,.48,.18,0,2.11,0,wood);b(1.34,1.22,.035,0,1.31,.01,glass);for(const x of [-.72,.72])b(.08,1.38,.28,x,1.31,0,woodDark);b(1.52,.08,.28,0,.62,0,woodDark);b(1.52,.08,.28,0,1.96,0,woodDark)}
+ else if(type==='doorway'){b(.72,2.35,.18,-1.14,1.175,0,wood);b(.72,2.35,.18,1.14,1.175,0,wood);b(1.6,.42,.18,0,2.14,0,wood);for(const x of [-.78,.78])b(.09,2.42,.27,x,1.21,0,woodDark)}
+ else if(type==='door_build'){const hinge=new THREE.Group();hinge.position.x=-.575;const slab=v05Box(hinge,1.12,2.08,.13,.56,1.04,0,wood);v05Box(hinge,1.0,.08,.17,.56,.48,-.01,metal);v05Box(hinge,1.0,.08,.17,.56,1.48,-.01,metal);const handle=new THREE.Mesh(new THREE.SphereGeometry(.055,8,6),metal);handle.position.set(1.0,1.04,-.1);hinge.add(handle);g.add(hinge);g.userData.v05DoorHinge=hinge}
+ else if(type==='roof'){b(3,.14,3,0,.12,0,woodDark);for(let z=-1.2;z<=1.2;z+=.6)b(2.92,.055,.09,0,.22,z,metal)}
+ else if(type==='stash'){b(1.2,.55,.8,0,.31,0,woodDark);const lid=b(1.24,.16,.84,0,.66,0,wood);lid.rotation.z=-.03;for(const x of [-.46,.46])b(.07,.76,.84,x,.38,0,metal);b(.22,.16,.08,0,.42,-.43,metal)}
+ else if(type==='barricade'){for(let i=0;i<4;i++){const q=b(2.7,.22,.12,0,.35+i*.25,0,wood);q.rotation.z=(i%2?.08:-.08)}for(const x of [-1.1,1.1]){const q=b(.13,1.55,.16,x,.7,0,woodDark);q.rotation.z=x<0?-.18:.18}}
+ else if(type==='campfire'){const ring=v05Mat(0x67665e,1,.02);for(let i=0;i<9;i++){const a=i/9*Math.PI*2,q=new THREE.Mesh(new THREE.DodecahedronGeometry(.14,0),ring);q.position.set(Math.cos(a)*.46,.12,Math.sin(a)*.46);g.add(q)}const ember=new THREE.Mesh(new THREE.CylinderGeometry(.28,.31,.1,12),preview?ghost:new THREE.MeshBasicMaterial({color:0xd35d2b}));ember.position.y=.1;g.add(ember);if(!preview){const l=new THREE.PointLight(0xff7d3a,1.1,7,2);l.position.y=.55;g.add(l)}}
+ return g;
+}
+function v05SetGhostColor(group,color){group.traverse(o=>{if(o.material?.color){o.material.color.setHex(color);if('opacity'in o.material)o.material.opacity=.36}})}
+
+const v05LegacySpawnStructure=spawnStructure;
+spawnStructure=function(type,x,z,rot=0,id='b-'+Date.now()){
+ const st=v05LegacySpawnStructure(type,x,z,rot,id);if(st)v05UpgradeStructure(st);return st
+};
+function v05AccurateObstacle(st,w,d,lx=0,lz=0){
+ const rot=st.rot||0,c=Math.cos(rot),sn=Math.sin(rot),cx=st.x+lx*c+lz*sn,cz=st.z-lx*sn+lz*c,quarter=Math.abs(Math.sin(rot))>.7,ww=quarter?d:w,dd=quarter?w:d;
+ return addObstacle(cx-ww/2,cx+ww/2,cz-dd/2,cz+dd/2,'build')
+}
+function v05UpgradeStructure(st){
+ if(!st?.group||st.group.userData.v05)return;st.group.userData.v05=true;
+ if(st.type==='campfire')return;
+ while(st.group.children.length)st.group.remove(st.group.children[0]);
+ const model=v05StructureModel(st.type,false);while(model.children.length)st.group.add(model.children[0]);
+ if(st.obs)st.obs.active=false;
+ if(st.type==='roof'){st.group.position.y=2.35}
+ if(st.type==='wall'||st.type==='wall_window')st.obs=v05AccurateObstacle(st,3,.28);
+ else if(st.type==='doorway'){v05AccurateObstacle(st,.7,.28,-1.15,0);v05AccurateObstacle(st,.7,.28,1.15,0)}
+ else if(st.type==='door_build')st.obs=v05AccurateObstacle(st,1.15,.18);
+ else if(st.type==='barricade')st.obs=v05AccurateObstacle(st,2.8,.35);
+ else if(st.type==='stash')st.obs=v05AccurateObstacle(st,1.2,.8);
+ if(st.type==='door_build'){
+   const hinge=st.group.children.find(c=>c.type==='Group')||st.group.userData.v05DoorHinge;
+   v05BuiltDoors.push({type:'v05door',id:'v05door-'+st.id,x:st.x,z:st.z,st,hinge,obs:st.obs,open:false});
+ }
+}
+structures.forEach(v05UpgradeStructure);
+
+createBuildPreview=function(type){
+ if(buildPreview){scene.remove(buildPreview);buildPreview=null}
+ buildPreview=v05StructureModel(type,true);scene.add(buildPreview)
+};
+function v05AabbBlocked(x,z,w,d,rot,ignoreBuild=false){const q=Math.abs(Math.sin(rot))>.7,ww=q?d:w,dd=q?w:d,minX=x-ww/2,maxX=x+ww/2,minZ=z-dd/2,maxZ=z+dd/2;return obstacles.some(o=>o.active&&(!ignoreBuild||o.tag!=='build')&&maxX>o.minX&&minX<o.maxX&&maxZ>o.minZ&&minZ<o.maxZ)}
+updateBuildPreview=function(){
+ if(!buildMode||!buildPreview||paused)return;
+ const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));dir.y=0;dir.normalize();
+ const d=3.65,r=BUILD_RECIPES[buildMode];let x=player.pos.x+dir.x*d,z=player.pos.z+dir.z*d,rot=Math.round(yaw/(Math.PI/2))*(Math.PI/2),y=r.h/2;
+ x=Math.round(x*2)/2;z=Math.round(z*2)/2;
+ const foundations=structures.filter(s=>s.type==='foundation'),nearestFoundation=foundations.sort((a,b)=>Math.hypot(x-a.x,z-a.z)-Math.hypot(x-b.x,z-b.z))[0];
+ if(buildMode==='roof'&&nearestFoundation&&Math.hypot(x-nearestFoundation.x,z-nearestFoundation.z)<3.2){x=nearestFoundation.x;z=nearestFoundation.z;rot=nearestFoundation.rot||0;y=2.42}
+ if(['wall','wall_window','doorway'].includes(buildMode)&&nearestFoundation&&Math.hypot(x-nearestFoundation.x,z-nearestFoundation.z)<4.1){const fx=nearestFoundation.x,fz=nearestFoundation.z,opts=[{x:fx+1.5,z:fz,rot:Math.PI/2},{x:fx-1.5,z:fz,rot:Math.PI/2},{x:fx,z:fz+1.5,rot:0},{x:fx,z:fz-1.5,rot:0}];opts.sort((a,b)=>Math.hypot(x-a.x,z-a.z)-Math.hypot(x-b.x,z-b.z));x=opts[0].x;z=opts[0].z;rot=opts[0].rot}
+ if(buildMode==='door_build'){const frame=structures.filter(s=>s.type==='doorway').sort((a,b)=>Math.hypot(x-a.x,z-a.z)-Math.hypot(x-b.x,z-b.z))[0];if(frame&&Math.hypot(x-frame.x,z-frame.z)<2.2){x=frame.x;z=frame.z;rot=frame.rot||0}}
+ buildPreview.position.set(x,y,z);buildPreview.rotation.y=rot;
+ let reason='AZUL · SE PUEDE CONSTRUIR';buildValid=true;
+ if(!canAfford(r.cost)){buildValid=false;reason='ROJO · FALTAN RECURSOS'}
+ else if(Math.abs(x)>WORLD-4||Math.abs(z)>WORLD-4){buildValid=false;reason='ROJO · FUERA DE LA ZONA'}
+ else if(buildMode==='roof'&&(!nearestFoundation||Math.hypot(x-nearestFoundation.x,z-nearestFoundation.z)>.2)){buildValid=false;reason='ROJO · NECESITA FUNDACIÓN'}
+ else if(buildMode==='door_build'&&!structures.some(s=>s.type==='doorway'&&Math.hypot(x-s.x,z-s.z)<.25)){buildValid=false;reason='ROJO · NECESITA MARCO DE PUERTA'}
+ else {
+   const duplicate=structures.find(s=>s.type===buildMode&&Math.hypot(x-s.x,z-s.z)<.28);
+   if(duplicate){buildValid=false;reason='ROJO · YA HAY UNA PIEZA AQUÍ'}
+   else if(buildMode==='roof'){}
+   else if(v05AabbBlocked(x,z,r.w,r.d,rot,false)){buildValid=false;reason='ROJO · ESPACIO OCUPADO / MUY CERCA'}
+ }
+ v05SetGhostColor(buildPreview,buildValid?V05_BLUE:V05_RED);const bp=$('build-placement');bp?.classList.toggle('valid',buildValid);bp?.classList.toggle('invalid',!buildValid);$('build-place')?.classList.toggle('invalid',!buildValid);if($('build-hint'))$('build-hint').textContent=reason
+};
+
+const v05LegacyInteract=interact,v05LegacyUpdateInteract=updateInteract;
+interact=function(){
+ const t=interactTarget;
+ if(t?.type==='v05door'){t.open=!t.open;if(t.hinge)t.hinge.rotation.y=t.open?-Math.PI/2:0;if(t.obs)t.obs.active=!t.open;AudioFX.click();toast(t.open?'Puerta abierta':'Puerta cerrada');return}
+ if(t?.type==='pilotHeli'){v05EnterHeli();return}
+ return v05LegacyInteract()
+};
+updateInteract=function(dt){
+ v05LegacyUpdateInteract(dt);if(v05Heli?.piloting)return;
+ let selected=null,best=2.15;for(const d of v05BuiltDoors){const dd=Math.hypot(player.pos.x-d.x,player.pos.z-d.z);if(dd<best){best=dd;selected=d}}
+ if(!selected&&v05Heli){const dd=Math.hypot(player.pos.x-v05Heli.group.position.x,player.pos.z-v05Heli.group.position.z);if(dd<3.4&&v05Heli.group.position.y<1.65)selected=v05Heli}
+ if(selected){interactTarget=selected;$('interact-prompt').classList.remove('hidden');$('interact-text').textContent=selected.type==='pilotHeli'?'Pilotar helicóptero':selected.open?'Cerrar puerta':'Abrir puerta'}
+ if(runTime-v05LastLootPolish>1.2){v05LastLootPolish=runTime;v05PolishLoot()}
+};
+
+function v05CreateFlightUI(){
+ const ui=document.createElement('div');ui.id='heli-flight-ui';ui.innerHTML='<div id="heli-flight-data"><span>ALT <b id="heli-alt">0 m</b></span><span>FUEL <b id="heli-fuel">100%</b></span><span>JOYSTICK <b>VUELO</b></span></div><button id="heli-up">SUBIR</button><button id="heli-down">BAJAR</button><button id="heli-exit">SALIR</button>';document.body.appendChild(ui);
+ const hold=(id,set)=>{const e=$(id);e.addEventListener('pointerdown',ev=>{ev.stopPropagation();e.setPointerCapture?.(ev.pointerId);set(true)});['pointerup','pointercancel'].forEach(n=>e.addEventListener(n,ev=>{ev.stopPropagation();set(false)}))};hold('heli-up',v=>v05HeliUp=v);hold('heli-down',v=>v05HeliDown=v);$('heli-exit').addEventListener('pointerdown',e=>{e.stopPropagation();v05ExitHeli()})
+}
+v05CreateFlightUI();
+
+function v05CreateHeli(){
+ const stored=safeJSON(localStorage.getItem(SAVE_KEY),{})?.pilotHeli||{},g=new THREE.Group();
+ const body=v05Mat(0x3b4b43,.55,.35),dark=v05Mat(0x151a19,.5,.55),glass=new THREE.MeshStandardMaterial({color:0x25444b,roughness:.15,metalness:.16,transparent:true,opacity:.72}),accent=v05Mat(0x657163,.68,.25);
+ const fus=new THREE.Mesh(new THREE.CapsuleGeometry(.72,2.55,6,12),body);fus.rotation.z=Math.PI/2;fus.position.y=1.05;g.add(fus);
+ const nose=new THREE.Mesh(new THREE.SphereGeometry(.82,12,9),glass);nose.scale.set(1.2,.72,.86);nose.position.set(1.45,1.12,0);g.add(nose);
+ v05Box(g,3.5,.24,.26,-2.75,1.13,0,body);v05Box(g,.18,1.35,.08,-4.35,1.65,0,accent);
+ const skidMat=dark;for(const z of [-.68,.68]){v05Box(g,3.25,.07,.08,0,.25,z,skidMat);for(const x of [-1.0,1.0]){const s=v05Box(g,.08,.75,.08,x,.58,z,skidMat);s.rotation.z=x<0?-.18:.18}}
+ const rotor=new THREE.Group();rotor.position.set(0,1.95,0);for(let i=0;i<4;i++){const blade=v05Box(rotor,5.8,.035,.12,2.8,0,0,dark);blade.rotation.y=i*Math.PI/2}g.add(rotor);
+ const tailRotor=new THREE.Group();tailRotor.position.set(-4.35,1.48,.08);for(let i=0;i<3;i++){const b=v05Box(tailRotor,.04,1.45,.09,0,.7,0,dark);b.rotation.z=i*Math.PI/3}g.add(tailRotor);
+ const light=new THREE.PointLight(0xd7f0ff,.45,7,2);light.position.set(1.7,.8,0);g.add(light);
+ const x=Number.isFinite(stored.x)?stored.x:78,z=Number.isFinite(stored.z)?stored.z:-87,y=Number.isFinite(stored.y)?stored.y:.92;g.position.set(x,y,z);g.rotation.y=Number(stored.yaw||0);scene.add(g);
+ const padMat=v05Mat(0x323736,.96,.08),pad=new THREE.Mesh(new THREE.CylinderGeometry(4.2,4.2,.08,28),padMat);pad.position.set(78,.04,-87);scene.add(pad);const hm=v05Mat(0xc7c9c2,.7,.1);v05Box(scene,3.2,.03,.34,78,.1,-87,hm);v05Box(scene,.34,.03,2.7,78,.1,-87,hm);
+ v05Heli={type:'pilotHeli',group:g,rotor,tailRotor,piloting:false,fuel:clamp(Number(stored.fuel??100),0,100),speed:0};return v05Heli
+}
+v05CreateHeli();
+
+function v05EnterHeli(){if(!v05Heli||v05Heli.piloting)return;v05Heli.piloting=true;aimHeld=false;fireHeld=false;runHeld=false;$('aim-btn')?.classList.remove('aim-toggle-on');weaponRig.visible=false;document.body.classList.add('heli-piloting');toast('HELICÓPTERO · JOYSTICK PARA VOLAR','good');AudioFX.resume()}
+function v05ExitHeli(){if(!v05Heli?.piloting)return;if(v05Heli.group.position.y>1.55){toast('Aterriza antes de salir','bad');return}v05Heli.piloting=false;document.body.classList.remove('heli-piloting');weaponRig.visible=true;camera.position.set(0,0,0);const side=2.5,px=v05Heli.group.position.x+Math.cos(yaw)*side,pz=v05Heli.group.position.z-Math.sin(yaw)*side;if(!collidesAt(px,pz,.42)){player.pos.x=px;player.pos.z=pz}player.pos.y=1.68;saveGame();toast('Has salido del helicóptero')}
+function v05UpdateHeli(dt){
+ if(!v05Heli)return;const h=v05Heli;h.rotor.rotation.y+=dt*(h.piloting?25:3.5);h.tailRotor.rotation.z+=dt*(h.piloting?31:4.5);if(!h.piloting)return;
+ const jm=Math.hypot(touchMove.x,touchMove.y),f=touchMove.y,r=touchMove.x,c=Math.cos(yaw),s=Math.sin(yaw),spd=11.5;
+ let nx=h.group.position.x+(r*c-f*s)*spd*dt,nz=h.group.position.z+(-r*s-f*c)*spd*dt;let vertical=(v05HeliUp?1:0)-(v05HeliDown?1:0);
+ if(h.fuel<=0){vertical=-.48;nx=h.group.position.x;nz=h.group.position.z}else h.fuel=clamp(h.fuel-dt*(.20+jm*.24+Math.abs(vertical)*.16),0,100);
+ const ny=clamp(h.group.position.y+vertical*7*dt,.92,31);if(ny>2.4||!collidesAt(nx,nz,1.25)){h.group.position.x=clamp(nx,-WORLD+5,WORLD-5);h.group.position.z=clamp(nz,-WORLD+5,WORLD-5)}h.group.position.y=ny;h.group.rotation.y=yaw;
+ player.pos.x=h.group.position.x;player.pos.z=h.group.position.z;player.pos.y=Math.max(1.68,h.group.position.y);player.stamina=clamp(player.stamina+dt*16,0,100);
+ yawNode.position.set(h.group.position.x,h.group.position.y+1.1,h.group.position.z);yawNode.rotation.y=yaw;pitchNode.rotation.x=clamp(pitch,-.5,.28);camera.position.x=lerp(camera.position.x,0,clamp(dt*5,0,1));camera.position.y=lerp(camera.position.y,1.45,clamp(dt*5,0,1));camera.position.z=lerp(camera.position.z,6.6,clamp(dt*5,0,1));camera.fov=lerp(camera.fov,78,clamp(dt*5,0,1));camera.updateProjectionMatrix();
+ if($('heli-alt'))$('heli-alt').textContent=`${Math.max(0,Math.round((h.group.position.y-.92)*2)/2)} m`;if($('heli-fuel'))$('heli-fuel').textContent=`${Math.round(h.fuel)}%`;
+}
+const v05LegacyUpdatePlayer=updatePlayer;
+updatePlayer=function(dt){v05UpdateHeli(dt);if(v05Heli?.piloting)return;v05LegacyUpdatePlayer(dt)};
+
+const v05LegacySaveGame=saveGame;
+saveGame=function(){v05LegacySaveGame();try{const s=safeJSON(localStorage.getItem(SAVE_KEY),{});if(v05Heli)s.pilotHeli={x:v05Heli.group.position.x,y:v05Heli.group.position.y,z:v05Heli.group.position.z,yaw:v05Heli.group.rotation.y,fuel:v05Heli.fuel};localStorage.setItem(SAVE_KEY,JSON.stringify(s))}catch{}};
+
+const v05LegacyBuildWeapon=buildWeapon;
+buildWeapon=function(){v05LegacyBuildWeapon();v05PolishWeapon()};
+function v05PolishWeapon(){if(!weaponRig)return;const skin=v05Mat(0x8b6751,.92,.01),glove=v05Mat(0x2b302d,.95,.01),dark=v05Mat(0x111514,.52,.55);const handL=new THREE.Mesh(new THREE.CapsuleGeometry(.055,.22,3,7),glove);handL.rotation.z=-.45;handL.position.set(-.10,-.16,-.22);const handR=handL.clone();handR.rotation.z=.28;handR.position.set(.09,-.15,.04);weaponRig.add(handL,handR);const rear=v05Box(weaponRig,.055,.075,.035,0,.11,-.05,dark),front=v05Box(weaponRig,.035,.085,.025,0,.11,-.42,dark);rear.userData.v05Sight=true;front.userData.v05Sight=true}
+v05PolishWeapon();
+
+function v05PolishLoot(){
+ for(const l of loots){if(l.group.userData.v05Model)continue;l.group.userData.v05Model=true;const keep=l.ring;l.group.children.slice().forEach(c=>{if(c!==keep)l.group.remove(c)});const d=ITEMS[l.itemType];if(!d)continue;
+   if(l.itemType==='backpack_small'||l.itemType==='backpack_large'){const big=l.itemType==='backpack_large',m=v05Mat(big?0x3f5144:0x586452,.93,.04),strap=v05Mat(0x252b28,.96,.02);v05Box(l.group,big?.62:.52,big?.72:.6,.28,0,.12,0,m);v05Box(l.group,big?.56:.46,.22,.31,0,.36,-.01,m);for(const x of [-.2,.2]){const s=v05Box(l.group,.07,.62,.06,x,.08,.17,strap);s.rotation.x=.08}}
+   else if(d.kind==='weapon'){const m=v05Mat(0x2b312f,.58,.5),wood=v05Mat(0x5d4130,.9,.03);v05Box(l.group,.12,.12,.58,0,.03,0,m);const bar=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.55,8),m);bar.rotation.x=Math.PI/2;bar.position.z=-.48;l.group.add(bar);v05Box(l.group,.18,.16,.22,0,-.05,.32,l.itemType==='mosin'||l.itemType==='ak'?wood:m)}
+   else {const m=v05Mat(d.kind==='ammo'?0xa4945f:d.kind==='medical'?0xb7c6ba:d.kind==='drink'?0x4f8fa1:0x9b764f,.75,d.kind==='ammo'?.32:.04);v05Box(l.group,.34,.24,.22,0,0,0,m)}
+ }
+ for(const c of containers){if(c.group?.userData?.v05Polished)continue;c.group.userData.v05Polished=true;const m=v05Mat(0x2d3432,.5,.55);for(const x of [-.43,.43])v05Box(c.group,.055,.72,.76,x,.05,0,m)}
+}
+v05PolishLoot();
+
+function v05CrashDetails(x,z){const char=v05Mat(0x171b1a,.86,.28),rust=v05Mat(0x55372a,.92,.16);const g=new THREE.Group();g.position.set(x,0,z);const blade1=v05Box(g,5.2,.055,.14,0,.85,0,char);blade1.rotation.y=.32;blade1.rotation.z=.12;const blade2=v05Box(g,4.2,.055,.14,0,.72,0,rust);blade2.rotation.y=-1.0;blade2.rotation.z=-.18;const fire=new THREE.PointLight(0xff6534,1.25,8,2);fire.position.set(.4,.7,.2);g.add(fire);scene.add(g)}
+const v05LegacyCrash=buildHeliCrash;buildHeliCrash=function(x,z){v05LegacyCrash(x,z);v05CrashDetails(x,z)};if(heliEvent?.active)v05CrashDetails(heliEvent.x,heliEvent.z);
+
+(function(){const sand=v05Mat(0x766b55,1,.01),metal=v05Mat(0x414947,.62,.4);for(const z of [-91,-83])for(let i=0;i<7;i++){const b=v05Box(scene,.75,.32,.42,72+i*.85,.18,z,sand);b.rotation.y=(i%2?.08:-.05)}for(const x of [73,83]){const pole=new THREE.Mesh(new THREE.CylinderGeometry(.045,.06,3.1,8),metal);pole.position.set(x,1.55,-87);scene.add(pole)}})();
+
+const v05LegacyOpenInventory=openInventory;openInventory=function(container=null){aimHeld=false;$('aim-btn')?.classList.remove('aim-toggle-on');return v05LegacyOpenInventory(container)};
+
+const eyebrow=document.querySelector('.boot-card .eyebrow');if(eyebrow)eyebrow.textContent='VIERAGUTI PRESENTA · v0.5';const tag=document.querySelector('.boot-card .tagline');if(tag)tag.textContent='Saquea. Construye. Pilota. Sobrevive.';
