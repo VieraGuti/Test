@@ -1,0 +1,97 @@
+/* v0.5.5 — respawn loop + sleeping bag + death point + useful campfire + no day counter */
+const V055_RESPAWN_KEY='vast_dead_zone_respawn_v055';
+const V055_DEATH_KEY='vast_dead_zone_death_v055';
+const V055_DEATHS_KEY='vast_dead_zone_deaths_v055';
+let v055RespawnPoint=(()=>{try{return JSON.parse(localStorage.getItem(V055_RESPAWN_KEY)||'null')}catch{return null}})();
+let v055DeathPoint=(()=>{try{return JSON.parse(localStorage.getItem(V055_DEATH_KEY)||'null')}catch{return null}})();
+let v055Deaths=Math.max(0,Number(localStorage.getItem(V055_DEATHS_KEY)||0)||0);
+const V055_FIRE_SAFE_RADIUS=9.5;
+
+if(!V05_BUILD_TYPES.includes('sleepingbag'))V05_BUILD_TYPES.push('sleepingbag');
+BUILD_RECIPES.sleepingbag={label:'SACO DE DORMIR',cost:{wood:12,scrap:6},w:2,d:.82,h:.16};
+
+const v055StructureGroupBase=v05StructureGroup;
+v05StructureGroup=function(type,x,z,rot){
+  if(type!=='sleepingbag')return v055StructureGroupBase(type,x,z,rot);
+  const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=rot;
+  const cloth=new THREE.MeshStandardMaterial({color:0x52656a,roughness:.96}),dark=new THREE.MeshStandardMaterial({color:0x263238,roughness:.94}),strap=new THREE.MeshStandardMaterial({color:0x242827,roughness:.9});
+  g.add(v05Box(1.92,.13,.76,0,.09,0,cloth));
+  g.add(v05Box(.46,.16,.62,-.60,.17,0,new THREE.MeshStandardMaterial({color:0x778488,roughness:.98})));
+  for(const z0 of [-.28,.28])g.add(v05Box(1.96,.035,.035,0,.17,z0,dark));
+  for(const x0 of [-.38,.38])g.add(v05Box(.045,.20,.82,x0,.14,0,strap));
+  g.add(v05Box(.16,.045,.82,.79,.19,0,new THREE.MeshBasicMaterial({color:0x52bde8})));
+  return g;
+};
+const v055PreviewBase=v05PreviewModel;
+v05PreviewModel=function(type){
+  if(type!=='sleepingbag')return v055PreviewBase(type);
+  const g=new THREE.Group(),m=new THREE.MeshBasicMaterial({color:0x269dff,transparent:true,opacity:.38,depthWrite:false}),q=new THREE.Mesh(new THREE.BoxGeometry(2,.16,.82),m);q.position.y=.09;g.add(q);return g
+};
+
+function v055RemoveMarkerKind(kind){
+  if(!v052MapState?.pois)return;
+  for(const k of Object.keys(v052MapState.pois)){const a=v052MapState.pois[k];if(Array.isArray(a))v052MapState.pois[k]=a.filter(p=>p?.v055Kind!==kind)}
+}
+function v055PutMarker(kind,name,x,z,type){
+  if(!Number.isFinite(x)||!Number.isFinite(z)||!v052MapState?.pois)return;
+  v055RemoveMarkerKind(kind);const key=v052Key(v052ChunkCoord(x),v052ChunkCoord(z)),arr=Array.isArray(v052MapState.pois[key])?v052MapState.pois[key]:[];arr.push({name,type,x,z,v055Kind:kind});v052MapState.pois[key]=arr;v052Discovered.add(key);v052SaveMap()
+}
+function v055SetRespawn(x,z,rot=0,id='bag',silent=!started){
+  v055RespawnPoint={x,z,rot,id,label:'SACO DE DORMIR'};localStorage.setItem(V055_RESPAWN_KEY,JSON.stringify(v055RespawnPoint));v055PutMarker('respawn','RESPAWN · SACO',x,z,'respawn');if(!silent)toast('PUNTO DE RESPAWN ACTUALIZADO','good')
+}
+
+const v055SpawnStructureBase=spawnStructure;
+spawnStructure=function(type,x,z,rot=0,id=`b-${Date.now()}`){
+  const st=v055SpawnStructureBase(type,x,z,rot,id);if(type==='sleepingbag'&&st)v055SetRespawn(x,z,rot,id);if(type==='campfire'&&st)v055EnhanceCampfire(st);return st
+};
+
+function v055EnhanceCampfire(s){
+  if(!s?.group||s.group.userData.v055Fire)return;s.group.userData.v055Fire=true;
+  let light=s.group.children.find(o=>o.isPointLight);if(!light){light=new THREE.PointLight(0xff7b35,2.8,18,1.7);light.position.y=.75;s.group.add(light)}light.intensity=2.8;light.distance=18;light.decay=1.7;s.group.userData.fireLight=light;
+  const f1=new THREE.Mesh(new THREE.ConeGeometry(.22,.72,7),new THREE.MeshBasicMaterial({color:0xff7a2e,transparent:true,opacity:.88,depthWrite:false})),f2=new THREE.Mesh(new THREE.ConeGeometry(.13,.48,7),new THREE.MeshBasicMaterial({color:0xffc15c,transparent:true,opacity:.82,depthWrite:false}));f1.position.y=.47;f2.position.set(.08,.40,.04);s.group.add(f1,f2);s.group.userData.flames=[f1,f2]
+}
+const v055UpdateCampfiresBase=updateCampfires;
+updateCampfires=function(dt){
+  v055UpdateCampfiresBase(dt);let playerSafe=false;
+  for(const s of structures){if(s.type!=='campfire')continue;v055EnhanceCampfire(s);if(Math.hypot(player.pos.x-s.x,player.pos.z-s.z)<V055_FIRE_SAFE_RADIUS)playerSafe=true;
+    const L=s.group.userData.fireLight;if(L)L.intensity=2.45+Math.sin(runTime*13+s.x)*.34+Math.random()*.18;
+    for(const [i,f] of (s.group.userData.flames||[]).entries()){f.scale.y=.86+Math.sin(runTime*(10+i*2)+s.z)*.16;f.rotation.y+=dt*(1.2+i*.4)}
+    for(const z of zombies){if(!z.alive)continue;const dx=z.group.position.x-s.x,dz=z.group.position.z-s.z,d=Math.hypot(dx,dz);if(d>=V055_FIRE_SAFE_RADIUS)continue;const inv=1/Math.max(.15,d),nx=dx*inv,nz=dz*inv,push=(V055_FIRE_SAFE_RADIUS-d)*dt*1.8+.035,tx=z.group.position.x+nx*push,tz=z.group.position.z+nz*push;if(!collidesAt(tx,tz,.34)){z.group.position.x=tx;z.group.position.z=tz}z.state='wander';z.lastSeen={x:s.x+nx*(V055_FIRE_SAFE_RADIUS+5),z:s.z+nz*(V055_FIRE_SAFE_RADIUS+5)};z.searchUntil=runTime+.7;z.wanderAngle=Math.atan2(nx,nz)}
+  }
+  $('fire-safe-status')?.classList.toggle('active',playerSafe)
+};
+const v055RandomSpawnBase=randomSpawn;
+randomSpawn=function(min=28,max=80){let p=v055RandomSpawnBase(min,max);for(let i=0;i<8;i++){if(!structures.some(s=>s.type==='campfire'&&Math.hypot(p.x-s.x,p.z-s.z)<V055_FIRE_SAFE_RADIUS+5))return p;p=v055RandomSpawnBase(min,max)}return p};
+
+const v055UpdateWorldTimeBase=updateWorldTime;
+updateWorldTime=function(){v055UpdateWorldTimeBase();const dl=$('day-label');if(dl)dl.style.display='none';const dv=$('day-value');if(dv)dv.textContent=String(v055Deaths)};
+
+function v055NearestSafeRespawn(base){
+  const rot=base?.rot||0,bx=Number(base?.x??0),bz=Number(base?.z??62),c=[[bx-Math.sin(rot)*1.6,bz-Math.cos(rot)*1.6],[bx+1.8,bz],[bx-1.8,bz],[bx,bz+1.8],[bx,bz-1.8],[bx,bz]];for(const [x,z] of c)if(!collidesAt(x,z,.45))return{x,z};return{x:bx,z:bz}
+}
+function v055RecordDeath(){v055DeathPoint={x:player.pos.x,z:player.pos.z,t:Date.now()};localStorage.setItem(V055_DEATH_KEY,JSON.stringify(v055DeathPoint));v055PutMarker('death','ÚLTIMA MUERTE',v055DeathPoint.x,v055DeathPoint.z,'death')}
+
+die=function(){
+  if(dead)return;dead=true;paused=true;fireHeld=runHeld=aimHeld=false;v055Deaths++;localStorage.setItem(V055_DEATHS_KEY,String(v055Deaths));v055RecordDeath();saveGame();$('death-kills').textContent=player.kills;$('death-time').textContent=formatTime(runTime);$('death-day').textContent=v055RespawnPoint?'SACO':'INICIO';$('hud').classList.add('hidden');$('death').classList.remove('hidden');$('death').classList.add('show')
+};
+function v055Respawn(){
+  const base=v055RespawnPoint||{x:0,z:62,rot:0,label:'INICIO'},p=v055NearestSafeRespawn(base);dead=false;paused=false;player.pos.set(p.x,1.68,p.z);player.hp=100;player.hunger=Math.max(player.hunger,72);player.thirst=Math.max(player.thirst,72);player.stamina=100;player.bleeding=0;vy=0;grounded=true;pitch=0;yaw=Number(base.rot||0);noise=0;
+  for(const z of zombies){if(z.alive&&Math.hypot(z.group.position.x-p.x,z.group.position.z-p.z)<12){const q=randomSpawn(16,25);z.group.position.set(q.x,0,q.z);z.state='wander';z.lastSeen=null}}
+  $('death').classList.add('hidden');$('death').classList.remove('show');$('hud').classList.remove('hidden');yawNode.position.set(player.pos.x,player.pos.y,player.pos.z);clock.getDelta();AudioFX.resume();v052UpdateStreaming(true);updateUI(true);saveGame();toast(v055RespawnPoint?'REAPARECISTE EN TU SACO':'REAPARECISTE EN EL PUNTO INICIAL','good')
+}
+
+const v055ResourceHudBase=updateResourceHUD;
+updateResourceHUD=function(){v055ResourceHudBase();const e=$('res-scrap');if(e)e.textContent=player.inventory.scrap||0};
+
+function v055SetupSystems(){
+  const dayLabel=$('day-label');if(dayLabel)dayLabel.style.display='none';const dayBox=$('day-value')?.parentElement;if(dayBox){const s=dayBox.querySelector('span');if(s)s.textContent='MUERTES';$('day-value').textContent=String(v055Deaths)}
+  const deathDay=$('death-day');if(deathDay?.parentElement){const s=deathDay.parentElement.querySelector('span');if(s)s.textContent='RESPAWN'}
+  const retry=$('retry-btn');if(retry){const b=retry.cloneNode(true);retry.replaceWith(b);b.id='retry-btn';b.textContent=v055RespawnPoint?'REAPARECER EN SACO':'REAPARECER';b.addEventListener('click',v055Respawn)}
+  const strip=$('status-strip');if(strip&&!$('fire-safe-status')){const e=document.createElement('span');e.id='fire-safe-status';e.textContent='FOGATA · ZONA SEGURA';strip.appendChild(e)}
+  const rh=$('resource-hud');if(rh&&!$('res-scrap')){const e=document.createElement('span');e.innerHTML='SCRAP <b id="res-scrap">0</b>';rh.appendChild(e)}
+  if(v055RespawnPoint)v055PutMarker('respawn','RESPAWN · SACO',v055RespawnPoint.x,v055RespawnPoint.z,'respawn');if(v055DeathPoint)v055PutMarker('death','ÚLTIMA MUERTE',v055DeathPoint.x,v055DeathPoint.z,'death');
+  const st=document.createElement('style');st.textContent=`#fire-safe-status{display:none!important;color:#ffc26b!important}#fire-safe-status.active{display:inline-flex!important;text-shadow:0 0 9px rgba(255,145,49,.7)}.vast-v05 #day-label{display:none!important}.death-grid>div:last-child b{font-size:14px!important}.build-card b{max-width:78%;}`;document.head.appendChild(st);updateResourceHUD()
+}
+
+const v055SetupV05Base=setupV05;
+setupV05=function(){v055SetupV05Base();setTimeout(v055SetupSystems,0)};
