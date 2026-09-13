@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="./mobile-controls.css" />
   <link rel="stylesheet" href="./v03.css?v=301" />
   <link rel="stylesheet" href="./v04.css?v=401" />
-  <link rel="stylesheet" href="./v05.css?v=505" />
+  <link rel="stylesheet" href="./v05.css?v=506" />
 </head>
 <body>
   <div id="game-root"></div>
@@ -20,13 +20,13 @@
   <section id="boot" class="screen show">
     <div class="boot-bg"></div>
     <div class="boot-card">
-      <div class="eyebrow">VIERAGUTI PRESENTA · v0.5.3</div>
+      <div class="eyebrow">VIERAGUTI PRESENTA · v0.5.5</div>
       <h1>VAST<span>:</span><small> DEAD ZONE</small></h1>
-      <p class="tagline">Explora. Apunta. Construye. Pilota. Sobrevive.</p>
+      <p class="tagline">Explora. Construye. Reaparece. Pilota. Sobrevive.</p>
       <div class="boot-stats">
-        <div><strong>MAPA PRO</strong><span>Zoom, arrastre, centrar y localizar heli</span></div>
-        <div><strong>ADS LIMPIO</strong><span>La mira ya no queda tapada por el arma</span></div>
-        <div><strong>HELI</strong><span>Localizador del helicóptero pilotable</span></div>
+        <div><strong>RESPAWN</strong><span>Saco de dormir + punto de muerte</span></div>
+        <div><strong>FOGATA</strong><span>Luz real + radio que repele infectados</span></div>
+        <div><strong>HELI V2</strong><span>Flota pilotable con combustible y daños</span></div>
       </div>
       <button id="play-btn" class="primary">ENTRAR EN LA ZONA</button>
       <p class="hint">Mejor experiencia en horizontal · Auriculares recomendados</p>
@@ -44,7 +44,7 @@
     </div>
 
     <div class="top-center glass">
-      <span id="day-label">DÍA 1</span>
+      <span id="day-label">ZONA</span>
       <strong id="clock-label">08:00</strong>
       <span id="threat-label">AMENAZA BAJA</span>
     </div>
@@ -65,7 +65,7 @@
 
     <div class="bottom-left-stats glass">
       <div><span>BAJAS</span><b id="kills-value">0</b></div>
-      <div><span>DÍA</span><b id="day-value">1</b></div>
+      <div><span>MUERTES</span><b id="day-value">0</b></div>
       <div><span>RUIDO</span><b id="noise-value">0%</b></div>
     </div>
 
@@ -115,14 +115,14 @@
     <div class="death-card">
       <div class="eyebrow">EXPEDICIÓN TERMINADA</div>
       <h2>HAS MUERTO</h2>
-      <div class="death-grid"><div><b id="death-kills">0</b><span>BAJAS</span></div><div><b id="death-time">00:00</b><span>TIEMPO</span></div><div><b id="death-day">1</b><span>DÍA</span></div></div>
-      <button id="retry-btn" class="primary">VOLVER A ENTRAR</button>
+      <div class="death-grid"><div><b id="death-kills">0</b><span>BAJAS</span></div><div><b id="death-time">00:00</b><span>TIEMPO</span></div><div><b id="death-day">INICIO</b><span>RESPAWN</span></div></div>
+      <button id="retry-btn" class="primary">REAPARECER</button>
     </div>
   </section>
 
   <div id="rotate-hint"><div>↻</div><b>GIRA EL TELÉFONO</b><span>VAST está diseñado para jugar en horizontal</span></div>
   <div id="loading" class="hidden"><div class="spinner"></div><span>Preparando la zona...</span></div>
 
-  <script type="module" src="./game-v05-loader.js?v=505"></script>
+  <script type="module" src="./game-v05-loader.js?v=506"></script>
 </body>
 </html>
