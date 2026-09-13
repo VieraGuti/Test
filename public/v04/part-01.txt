@@ -1,0 +1,81 @@
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js';
+
+const $ = id => document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rand=(a,b)=>a+Math.random()*(b-a);
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const now=()=>performance.now()/1000;
+const SETTINGS_KEY='vast_dead_zone_settings_v4';
+const SAVE_KEY='vast_dead_zone_save_v4';
+const WORLD=158;
+const safeJSON=(s,f)=>{try{return s?JSON.parse(s):f}catch{return f}};
+
+const settings=Object.assign({sensitivity:1,fov:72,volume:.8,quality:'medium'},safeJSON(localStorage.getItem(SETTINGS_KEY),{}));
+const save=safeJSON(localStorage.getItem(SAVE_KEY),null);
+
+const ITEMS={
+  medkit:{name:'Botiquín',short:'MED',kind:'medical',desc:'+55 vida',stack:2},
+  bandage:{name:'Venda',short:'VND',kind:'medical',desc:'Detiene sangrado',stack:5},
+  food:{name:'Conserva',short:'COM',kind:'food',desc:'+40 hambre',stack:4},
+  water:{name:'Agua',short:'H2O',kind:'drink',desc:'+50 agua',stack:4},
+  ammo9:{name:'9mm',short:'9MM',kind:'ammo',desc:'M9 / MP5',stack:45},
+  ammo556:{name:'5.56',short:'556',kind:'ammo',desc:'M4A1',stack:60},
+  ammo762:{name:'7.62',short:'762',kind:'ammo',desc:'AKM / Mosin',stack:40},
+  shells:{name:'Calibre 12',short:'12G',kind:'ammo',desc:'M870',stack:20},
+  backpack_small:{name:'Mochila de asalto',short:'BAG',kind:'gear',desc:'18 huecos',stack:1},
+  backpack_large:{name:'Mochila militar',short:'MIL',kind:'gear',desc:'30 huecos',stack:1},
+  vest:{name:'Chaleco táctico',short:'VST',kind:'armor',desc:'35% daño corporal',stack:1},
+  helmet:{name:'Casco balístico',short:'HLM',kind:'armor',desc:'25% daño recibido',stack:1},
+  suppressor:{name:'Silenciador',short:'SUP',kind:'attachment',desc:'Reduce ruido del arma',stack:1},
+  reddot:{name:'Mira punto rojo',short:'RDS',kind:'attachment',desc:'Mejor precisión ADS',stack:1},
+  wood:{name:'Madera',short:'WOOD',kind:'resource',desc:'Construcción',stack:100},
+  stone:{name:'Piedra',short:'STONE',kind:'resource',desc:'Construcción',stack:100},
+  metal:{name:'Metal',short:'MET',kind:'resource',desc:'Construcción avanzada',stack:80},
+  scrap:{name:'Chatarra',short:'SCR',kind:'resource',desc:'Componentes',stack:50},
+  mp5:{name:'MP5',short:'MP5',kind:'weapon',desc:'Subfusil 9mm',stack:1,weapon:1},
+  rifle:{name:'M4A1',short:'M4',kind:'weapon',desc:'Rifle 5.56 automático',stack:1,weapon:2},
+  ak:{name:'AKM',short:'AK',kind:'weapon',desc:'Rifle 7.62 automático',stack:1,weapon:3},
+  shotgun:{name:'M870',short:'870',kind:'weapon',desc:'Escopeta',stack:1,weapon:4},
+  mosin:{name:'Mosin',short:'MOS',kind:'weapon',desc:'Rifle 7.62 cerrojo',stack:1,weapon:5}
+};
+const BAG_CAP=[10,18,30];
+
+const player={
+  pos:new THREE.Vector3(save?.pos?.x??0,1.68,save?.pos?.z??62),
+  hp:save?.hp??100,hunger:save?.hunger??100,thirst:save?.thirst??100,stamina:save?.stamina??100,
+  bleeding:save?.bleeding??0,kills:save?.kills??0,bagLevel:save?.bagLevel??0,
+  armor:{vest:save?.armor?.vest??false,helmet:save?.armor?.helmet??false},
+  attachments:{suppressor:save?.attachments?.suppressor??false,reddot:save?.attachments?.reddot??false},
+  inventory:Object.assign({medkit:1,bandage:1,food:1,water:1,ammo9:30,ammo556:0,ammo762:0,shells:0,wood:0,stone:0,metal:0,scrap:0},save?.inventory||{}),
+  weapon:save?.weapon??0
+};
+
+const W=[
+ {id:'m9',label:'M9',mode:'SEMI',ammo:'ammo9',magSize:15,mag:save?.weapons?.[0]?.mag??15,unlocked:true,damage:34,head:2.4,rate:.18,auto:false,spread:.005,noise:.48,reload:1.2,range:85},
+ {id:'mp5',label:'MP5',mode:'AUTO',ammo:'ammo9',magSize:30,mag:save?.weapons?.[1]?.mag??0,unlocked:save?.weapons?.[1]?.unlocked??false,damage:24,head:2.25,rate:.078,auto:true,spread:.009,noise:.54,reload:1.55,range:75},
+ {id:'m4',label:'M4A1',mode:'AUTO',ammo:'ammo556',magSize:30,mag:save?.weapons?.[2]?.mag??0,unlocked:save?.weapons?.[2]?.unlocked??false,damage:30,head:2.55,rate:.095,auto:true,spread:.007,noise:.8,reload:1.65,range:115},
+ {id:'ak',label:'AKM',mode:'AUTO',ammo:'ammo762',magSize:30,mag:save?.weapons?.[3]?.mag??0,unlocked:save?.weapons?.[3]?.unlocked??false,damage:36,head:2.45,rate:.11,auto:true,spread:.011,noise:.92,reload:1.8,range:110},
+ {id:'shotgun',label:'M870',mode:'PUMP',ammo:'shells',magSize:6,mag:save?.weapons?.[4]?.mag??0,unlocked:save?.weapons?.[4]?.unlocked??false,damage:15,head:1.6,rate:.72,auto:false,spread:.042,pellets:8,noise:1,reload:1.9,range:48},
+ {id:'mosin',label:'MOSIN',mode:'CERROJO',ammo:'ammo762',magSize:5,mag:save?.weapons?.[5]?.mag??0,unlocked:save?.weapons?.[5]?.unlocked??false,damage:78,head:2.1,rate:1.05,auto:false,spread:.003,noise:1,reload:2.2,range:150}
+];
+
+let renderer,scene,camera,yawNode,pitchNode,weaponRig,sun,hemi,clock;
+let started=false,paused=false,dead=false,inventoryOpen=false,isTouch=matchMedia('(pointer:coarse)').matches;
+let runTime=save?.runTime??0,uiTick=0,spawnTick=0,saveTick=0,eventTick=0,currentObjective=save?.objective??0;
+let yaw=save?.yaw??0,pitch=save?.pitch??0,vy=0,grounded=true,recoil=0,recoilSide=0,noise=0,shake=0;
+let fireHeld=false,aimHeld=false,runHeld=false,jumpQueued=false,nextShot=0,reloadUntil=0,interactTarget=null,activeContainer=null;
+let currentZone='',zoneCooldown=0,heliEvent=save?.heliEvent||null;
+let buildMode=null,buildPreview=null,buildValid=false,patrolHeli=null,harvestLock=0;
+const obstacles=[],occluders=[],zombies=[],shootables=[],loots=[],containers=[],doors=[],lights=[],beacons=[],resourceNodes=[],structures=[];
+const pickedLoot=new Set(save?.pickedLoot||[]), containerSave=save?.containers||{};
+const keys=new Set(),ray=new THREE.Raycaster(),tmpColor=new THREE.Color();
+
+const AudioFX={
+ ctx:null,master:null,noiseBuffer:null,
+ init(){if(this.ctx)return;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;this.ctx=new AC();this.master=this.ctx.createGain();this.master.gain.value=settings.volume;this.master.connect(this.ctx.destination);const n=this.ctx.sampleRate*.4;this.noiseBuffer=this.ctx.createBuffer(1,n,this.ctx.sampleRate);const d=this.noiseBuffer.getChannelData(0);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,1.5)},
+ resume(){this.init();if(this.ctx?.state==='suspended')this.ctx.resume()},setVolume(v){if(this.master)this.master.gain.value=v},
+ burst(g=.25,d=.1,f=1500,t=110){if(!this.ctx)return;const n=this.ctx.currentTime,s=this.ctx.createBufferSource(),q=this.ctx.createBiquadFilter(),a=this.ctx.createGain();s.buffer=this.noiseBuffer;q.type='bandpass';q.frequency.value=f;q.Q.value=.7;a.gain.setValueAtTime(g,n);a.gain.exponentialRampToValueAtTime(.001,n+d);s.connect(q);q.connect(a);a.connect(this.master);s.start(n);s.stop(n+d);const o=this.ctx.createOscillator(),og=this.ctx.createGain();o.type='triangle';o.frequency.setValueAtTime(t,n);o.frequency.exponentialRampToValueAtTime(Math.max(35,t*.45),n+d);og.gain.setValueAtTime(g*.3,n);og.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(og);og.connect(this.master);o.start(n);o.stop(n+d)},
+ gun(w){this.resume();const sup=player.attachments.suppressor&&['m9','mp5','m4'].includes(w.id);if(sup)this.burst(.18,.08,1900,95);else if(w.id==='shotgun')this.burst(.78,.24,900,90);else if(w.id==='mosin'||w.id==='ak')this.burst(.62,.17,1200,105);else this.burst(.45,.12,2100,130)},
+ click(){this.resume();this.burst(.05,.03,3200,420)},pickup(){this.resume();this.burst(.07,.08,2600,520)},step(run=false){if(!this.ctx)return;this.burst(run?.035:.022,.045,400,80)},groan(v=.5){if(!this.ctx||Math.r
