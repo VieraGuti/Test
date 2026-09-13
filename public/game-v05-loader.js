@@ -39,8 +39,8 @@
   };
   updateHeliNav(); setInterval(updateHeliNav, 700);
 
-  const partPaths = Array.from({ length: 9 }, (_, i) => `./v04/part-${String(i + 1).padStart(2, '0')}.txt?v=504`);
-  const patchPaths = ['./v05/patch-01.txt?v=504','./v05/patch-02.txt?v=504','./v05/patch-03.txt?v=504','./v05/patch-04.txt?v=504','./v05/patch-05.txt?v=504','./v05/patch-06.txt?v=504'];
+  const partPaths = Array.from({ length: 9 }, (_, i) => `./v04/part-${String(i + 1).padStart(2, '0')}.txt?v=505`);
+  const patchPaths = ['./v05/patch-01.txt?v=505','./v05/patch-02.txt?v=505','./v05/patch-03.txt?v=505','./v05/patch-04.txt?v=505','./v05/patch-05.txt?v=505','./v05/patch-06.txt?v=505','./v05/patch-07.txt?v=505'];
   const getText = async (path) => { const r = await fetch(path, { cache: 'no-store' }); if (!r.ok) throw new Error(`No se pudo cargar ${path} (${r.status})`); return r.text(); };
   const replaceRequired = (source, from, to, label) => {
     if (!source.includes(from)) { console.warn(`[VAST v0.5] No se aplicó parche: ${label}`); return source; }
@@ -73,7 +73,7 @@
         'mira toggle');
       source = replaceRequired(source,
         "toast(save?'VAST v0.4 · Partida restaurada':'VAST v0.4 · EQUÍPATE, FARMEA, CONSTRUYE');",
-        "toast(save?'VAST v0.5 · Partida restaurada':'VAST v0.5 · BUILD PRO + HELI PILOTABLE');",
+        "toast(save?'VAST v0.5.3 · Partida restaurada':'VAST v0.5.3 · MAPA PRO + ADS LIMPIO + HELI');",
         'mensaje de versión');
 
       const startup = 'initThree();setupControls();setupMenus();setupProUI();updateAmmoUI();loop();';
@@ -85,11 +85,11 @@
       return import(moduleUrl).finally(() => setTimeout(() => URL.revokeObjectURL(moduleUrl), 1800));
     })
     .catch((error) => {
-      console.error('[VAST v0.5] Error de arranque', error);
+      console.error('[VAST v0.5.3] Error de arranque', error);
       document.getElementById('loading')?.classList.add('hidden');
       const box = document.createElement('div');
       box.style.cssText = 'position:fixed;z-index:9999;inset:18%;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;background:#0b0d0c;border:1px solid #713f2b;color:#eee;font:600 14px system-ui';
-      box.textContent = 'VAST v0.5 no pudo cargar. Recarga la página para reintentar.';
+      box.textContent = 'VAST v0.5.3 no pudo cargar. Recarga la página para reintentar.';
       document.body.appendChild(box);
     });
 })();
