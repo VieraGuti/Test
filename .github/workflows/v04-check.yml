@@ -7,7 +7,8 @@ on:
       - 'public/v04/**'
       - 'public/v05/**'
       - 'public/v04.css'
-      - 'public/game-v04-loader.js'
+      - 'public/v05.css'
+      - 'public/game-v05-loader.js'
       - 'public/index.html'
       - '.github/workflows/v04-check.yml'
   workflow_dispatch:
@@ -20,22 +21,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Rebuild browser modules
+      - name: Rebuild browser module
         run: |
           cat public/v04/part-*.txt > /tmp/game-v04.js
-          cat public/v04/part-*.txt public/v05/patch.txt > /tmp/game-v05.js
+          cat public/v05/patch-*.txt > /tmp/v05-patch.js
+          cat /tmp/game-v04.js /tmp/v05-patch.js > /tmp/game-v05.js
       - name: Check JavaScript syntax
         run: |
           node --check /tmp/game-v04.js
+          node --check /tmp/v05-patch.js
           node --check /tmp/game-v05.js
-          node --check public/game-v04-loader.js
+          node --check public/game-v05-loader.js
       - name: Check required systems
         run: |
           grep -q "function updateZombies" /tmp/game-v05.js
           grep -q "function triggerHeliEvent" /tmp/game-v05.js
-          grep -q "function renderInventory" /tmp/game-v05.js
-          grep -q "function updateBuildPreview" /tmp/game-v05.js
-          grep -q "v05CreateHeli" /tmp/game-v05.js
-          grep -q "v05StructureModel" /tmp/game-v05.js
-          grep -q "v05PolishWeapon" /tmp/game-v05.js
-          grep -q "game-v04-loader.js" public/index.html
+          grep -q "v05CreateFlyHeli" /tmp/game-v05.js
+          grep -q "v05StructureGroup" /tmp/game-v05.js
+          grep -q "v05BuildReason" /tmp/game-v05.js
+          grep -q "v05BuildWeaponBase" /tmp/game-v05.js
+          grep -q "game-v05-loader.js" public/index.html
