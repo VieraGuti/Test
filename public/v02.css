@@ -1,0 +1,46 @@
+/* VAST: Dead Zone v0.2 — mobile-first tactical HUD + inventory */
+#inventory-btn{pointer-events:auto;position:absolute;z-index:10;top:calc(8px + var(--safe-t));right:calc(52px + var(--safe-r));height:30px;min-width:78px;padding:0 9px;border-radius:3px;color:#d9dbd5;display:flex;align-items:center;justify-content:center;gap:6px;font:700 8px 'Barlow Condensed',sans-serif;letter-spacing:.08em}
+#inventory-btn span{color:#9ea19b}#inventory-btn b{font-size:10px;color:#e9e7de}
+#status-strip{position:absolute;z-index:7;left:calc(11px + var(--safe-l));top:calc(113px + var(--safe-t));display:flex;gap:5px;pointer-events:none;font:700 7px 'Barlow Condensed',sans-serif;letter-spacing:.1em}
+#status-strip span{padding:4px 6px;border:1px solid rgba(255,255,255,.08);background:rgba(8,10,9,.6);color:#747873;border-radius:2px}
+#status-strip #bleed-status{display:none;color:#f0a192;border-color:rgba(201,66,49,.45);background:rgba(95,22,17,.48)}#status-strip #bleed-status.active{display:inline-flex}
+#new-game-btn{display:block;margin-top:7px;padding:7px 12px;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:3px;color:#90938d;font:700 9px 'Barlow Condensed',sans-serif;letter-spacing:.1em}
+
+#inventory-overlay{position:absolute;z-index:160;inset:0;display:flex;align-items:center;justify-content:center;padding:max(8px,var(--safe-t)) max(10px,var(--safe-r)) max(8px,var(--safe-b)) max(10px,var(--safe-l));background:radial-gradient(circle at 48% 35%,rgba(35,42,38,.42),rgba(3,5,4,.91) 62%);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);pointer-events:auto;font-family:'Barlow Condensed',sans-serif}
+.inventory-shell{width:min(1110px,96vw);height:min(590px,88vh);display:grid;grid-template-rows:51px minmax(0,1fr) 42px;background:linear-gradient(145deg,rgba(20,23,21,.985),rgba(7,9,8,.985));border:1px solid rgba(255,255,255,.13);border-top:2px solid rgba(208,107,49,.82);box-shadow:0 30px 90px rgba(0,0,0,.62);border-radius:5px;overflow:hidden}
+.inventory-shell>header{display:flex;align-items:center;justify-content:space-between;padding:7px 12px 7px 15px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.018)}
+.inventory-shell header small{display:block;font:700 7px Inter,sans-serif;letter-spacing:.18em;color:#b46137}.inventory-shell h2{margin:1px 0 0;font-size:23px;line-height:1;color:#eceae2;letter-spacing:.04em}.inv-meta{display:flex;align-items:center;gap:9px}.inv-meta span{font-size:9px;color:#9da09a;letter-spacing:.08em}.inv-meta button{width:32px;height:32px;border-radius:3px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#aaa;font-size:16px}
+.inventory-body{min-height:0;display:grid;grid-template-columns:174px minmax(0,1fr) 286px}
+.equipment-panel,.backpack-panel,.vicinity-panel{min-height:0;padding:11px;border-right:1px solid rgba(255,255,255,.075);overflow:auto}.vicinity-panel{border-right:0}.equipment-panel>small{display:block;margin-bottom:8px;color:#777b75;letter-spacing:.14em;font-size:8px}
+.equip-card,.condition-card{padding:8px 9px;margin-bottom:6px;min-height:49px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(135deg,rgba(255,255,255,.035),rgba(255,255,255,.012));border-radius:3px}.equip-card span,.condition-card span{display:block;color:#767a74;font-size:7px;letter-spacing:.12em}.equip-card b,.condition-card b{display:block;margin-top:4px;font-size:11px;color:#d4d5cf}.condition-card b.danger{color:#e77b69}
+.section-title{height:27px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.section-title>span{font-size:11px;font-weight:800;letter-spacing:.1em;color:#d7d7d0}.section-title small{font:500 7px Inter,sans-serif;color:#6f736e;text-align:right}
+.inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;align-content:start}.inv-item{position:relative;min-height:58px;padding:8px 42px 7px 48px;background:rgba(255,255,255,.027);border:1px solid rgba(255,255,255,.08);border-radius:3px;overflow:hidden}.inv-item:before{content:"";position:absolute;inset:0 auto 0 0;width:2px;background:#858980}.inv-item.medical:before{background:#b55f52}.inv-item.food:before{background:#a87b48}.inv-item.drink:before{background:#568e9c}.inv-item.ammo:before{background:#a89862}.item-code{position:absolute;left:8px;top:10px;width:31px;height:31px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.2);font-size:9px;color:#bbb}.item-copy b{display:block;font-size:10px;color:#ddd}.item-copy span{display:block;margin-top:2px;font:500 7px Inter,sans-serif;color:#737770}.inv-item>strong{position:absolute;right:8px;top:8px;font-size:9px;color:#aaa}.inv-item>button{position:absolute;right:6px;bottom:6px;padding:4px 7px;border-radius:2px;background:rgba(183,87,45,.18);border:1px solid rgba(208,107,49,.36);color:#d9a07c;font-size:7px;font-weight:800;letter-spacing:.07em}
+.vicinity-grid{display:flex;flex-direction:column;gap:5px}.vicinity-item{min-height:51px;display:grid;grid-template-columns:minmax(0,1fr) 34px 52px;align-items:center;gap:6px;padding:6px 7px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);border-radius:3px}.vicinity-item b{display:block;font-size:10px;color:#ddd}.vicinity-item span{display:block;margin-top:2px;font:500 7px Inter,sans-serif;color:#747872}.vicinity-item>strong{font-size:9px;color:#aaa;text-align:center}.vicinity-item button{height:27px;border-radius:2px;background:linear-gradient(180deg,#b65d32,#874124);color:#f2e7df;font-size:7px;font-weight:800;letter-spacing:.06em}.empty-vicinity{height:80px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(255,255,255,.09);color:#5f635e;font-size:9px;letter-spacing:.1em}
+.inventory-shell>footer{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 6px 14px;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.016)}.inventory-shell>footer span{font:500 7px Inter,sans-serif;color:#6d716c}.inventory-shell>footer button{height:29px;padding:0 13px;border-radius:3px;background:#9d4b2d;color:#f5eee9;font-size:8px;font-weight:800;letter-spacing:.08em}
+body.inventory-open #look-zone,body.inventory-open .actions,body.inventory-open .joystick,body.inventory-open .hotbar{pointer-events:none!important}
+
+/* Right thumb cluster: deliberately clears ammo card and mission panel. */
+.actions{z-index:9}.action{z-index:2}.action.fire{z-index:4}.ammo{z-index:8}
+@media (max-height:480px) and (min-width:700px){
+  .mission{top:calc(47px + var(--safe-t));right:calc(10px + var(--safe-r));width:176px}
+  #inventory-btn{right:calc(51px + var(--safe-r))}
+  .actions{right:calc(18px + var(--safe-r));bottom:calc(106px + var(--safe-b));width:230px;height:144px;transform:none!important}
+  .action.fire{right:0;bottom:0;width:80px;height:80px}
+  .action#aim-btn{right:3px;top:0;width:40px;height:40px}
+  .action.use{right:88px;top:12px;width:50px;height:50px}
+  .action#reload-btn{right:88px;bottom:0;width:44px;height:44px;font-size:7px}
+  .action#jump-btn{left:43px;bottom:47px;width:42px;height:42px}
+  .action.run{left:0;bottom:0;width:50px;height:50px}
+  .hotbar{bottom:calc(6px + var(--safe-b));left:50%;transform:translateX(-50%)!important}
+  .hotbar .slot.item{display:none}
+  .slot{width:53px;height:42px}.slot b{margin-top:9px}
+  .ammo{right:calc(10px + var(--safe-r));bottom:calc(8px + var(--safe-b));width:104px}
+  .bottom-left-stats{bottom:calc(8px + var(--safe-b))}
+  #status-strip{top:calc(108px + var(--safe-t))}
+  .inventory-shell{width:calc(100vw - 24px);height:calc(100vh - 18px);grid-template-rows:43px minmax(0,1fr) 35px}
+  .inventory-shell>header{padding:5px 9px 5px 12px}.inventory-shell h2{font-size:19px}.inv-meta button{width:29px;height:29px}
+  .inventory-body{grid-template-columns:138px minmax(0,1fr) 218px}.equipment-panel,.backpack-panel,.vicinity-panel{padding:7px}.equip-card,.condition-card{min-height:42px;padding:6px 7px;margin-bottom:4px}.equip-card b,.condition-card b{font-size:9px}
+  .section-title{height:23px}.inventory-grid{gap:4px}.inv-item{min-height:50px;padding:6px 37px 5px 42px}.item-code{left:6px;top:8px;width:28px;height:28px}.item-copy b{font-size:9px}.item-copy span{font-size:6px}.inv-item>button{padding:3px 5px}
+  .vicinity-item{min-height:44px;grid-template-columns:minmax(0,1fr) 28px 47px;padding:5px}.vicinity-item b{font-size:9px}.vicinity-item button{height:24px;font-size:6px}.inventory-shell>footer{padding:4px 8px 4px 11px}.inventory-shell>footer button{height:25px}
+}
+@media (max-width:760px){.inventory-body{grid-template-columns:118px minmax(0,1fr) 180px}.inventory-grid{grid-template-columns:1fr}.equipment-panel{padding:6px}.section-title small{display:none}}
