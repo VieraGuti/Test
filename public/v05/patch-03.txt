@@ -1,0 +1,49 @@
+  const g=new THREE.Group();g.position.set(s.x,s.y,s.z);g.rotation.y=s.heading;
+  const olive=new THREE.MeshStandardMaterial({color:0x405047,roughness:.60,metalness:.28}),dark=new THREE.MeshStandardMaterial({color:0x1b201e,roughness:.55,metalness:.5}),glass=v05Glass();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(.78,2.55,6,12),olive);body.rotation.z=Math.PI/2;body.position.y=.82;body.scale.set(1,1,.88);g.add(body);
+  const cockpit=new THREE.Mesh(new THREE.SphereGeometry(.84,14,10),glass);cockpit.scale.set(1.12,.70,.82);cockpit.position.set(1.55,.90,0);g.add(cockpit);
+  const cabin=v05Box(1.45,1.22,1.55,-.05,.88,0,olive);g.add(cabin);
+  const tail=v05Box(3.65,.26,.28,-2.75,1.04,0,olive);g.add(tail);
+  const fin=v05Box(.18,1.05,.62,-4.45,1.45,0,olive);fin.rotation.z=-.18;g.add(fin);
+  const mast=v05Box(.12,.72,.12,-.15,1.95,0,dark);g.add(mast);
+  const rotor=new THREE.Group();rotor.position.set(-.15,2.32,0);for(let i=0;i<2;i++){const b=v05Box(6.6,.045,.13,0,0,0,dark);b.rotation.y=i*Math.PI/2;rotor.add(b)}g.add(rotor);
+  const tailRotor=new THREE.Group();tailRotor.position.set(-4.48,1.42,.34);for(let i=0;i<2;i++){const b=v05Box(.045,1.45,.10,0,0,0,dark);b.rotation.z=i*Math.PI/2;tailRotor.add(b)}g.add(tailRotor);
+  for(const side of [-1,1]){const skid=v05Box(3.1,.08,.08,-.2,.10,side*.83,dark);g.add(skid);for(const x of [-1.0,.72]){const leg=v05Box(.07,.58,.07,x,.38,side*.72,dark);leg.rotation.x=side*.18;g.add(leg)}}
+  for(const side of [-1,1]){const door=v05Box(1.02,.92,.05,.05,.92,side*.79,dark);door.material=glass;g.add(door)}
+  const noseLight=new THREE.PointLight(0xffe7c0,0,24,2);noseLight.position.set(2.25,.72,0);g.add(noseLight);
+  scene.add(g);flyHeli={type:'flyheli',group:g,rotor,tailRotor,heading:s.heading,fuel:s.fuel??100,noseLight,engine:false};
+}
+function v05EnterHeli(){if(!flyHeli||inFlyHeli)return;inFlyHeli=true;heliEngine=true;flyHeli.engine=true;aimHeld=fireHeld=runHeld=false;weaponRig.visible=false;document.body.classList.add('in-heli');$('heli-controls')?.classList.remove('hidden');toast('HELICÓPTERO · Joystick = avanzar/girar · SUBIR/BAJAR','good')}
+function v05ExitHeli(){if(!inFlyHeli)return;if(flyHeli.group.position.y>1.45){toast('ATERRIZA ANTES DE SALIR','bad');return}inFlyHeli=false;heliEngine=false;flyHeli.engine=false;weaponRig.visible=true;document.body.classList.remove('in-heli');$('heli-controls')?.classList.add('hidden');const side=1.8;player.pos.set(flyHeli.group.position.x+Math.cos(flyHeli.heading)*side,1.68,flyHeli.group.position.z-Math.sin(flyHeli.heading)*side);yaw=flyHeli.heading;v05SaveHeli();saveGame()}
+function v05UpdateFlyHeli(dt){
+  if(!flyHeli)return;const h=flyHeli;
+  h.rotor.rotation.y+=dt*(h.engine?25:1.2);h.tailRotor.rotation.z+=dt*(h.engine?31:1.5);
+  if(!inFlyHeli)return;
+  const f=touchMove.y+(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0),turn=touchMove.x+(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0),vert=(heliUpHeld||keys.has('Space')?1:0)-(heliDownHeld||keys.has('ControlLeft')?1:0);
+  h.heading-=turn*dt*1.32;h.group.rotation.y=h.heading;h.group.position.y=clamp(h.group.position.y+vert*dt*5.2,.78,28);
+  const power=h.fuel>0?1:0,speed=clamp(f,-1,1)*(h.group.position.y>1.7?12.5:5.2)*power,dx=-Math.sin(h.heading)*speed*dt,dz=-Math.cos(h.heading)*speed*dt;
+  if(h.group.position.y>2.1||!collidesAt(h.group.position.x+dx,h.group.position.z+dz,1.05)){h.group.position.x=clamp(h.group.position.x+dx,-WORLD+5,WORLD-5);h.group.position.z=clamp(h.group.position.z+dz,-WORLD+5,WORLD-5)}
+  h.fuel=clamp(h.fuel-dt*(.035+Math.abs(f)*.05+Math.abs(vert)*.04)*power,0,100);if(h.fuel<=0){h.group.position.y=Math.max(.78,h.group.position.y-dt*1.4);heliUpHeld=false;heliDownHeld=false}
+  player.pos.set(h.group.position.x,h.group.position.y+1.05,h.group.position.z);yaw=h.heading;pitch=lerp(pitch,-.08,clamp(dt*3,0,1));yawNode.position.set(player.pos.x,player.pos.y,player.pos.z);yawNode.rotation.y=yaw;pitchNode.rotation.x=pitch;camera.fov=lerp(camera.fov,76,clamp(dt*4,0,1));camera.updateProjectionMatrix();noise=.9;player.stamina=clamp(player.stamina+dt*15,0,100);
+  const alt=$('heli-alt'),fuel=$('heli-fuel');if(alt)alt.textContent=Math.max(0,Math.round(h.group.position.y-.78))+' m';if(fuel)fuel.textContent=Math.round(h.fuel)+'%';
+}
+const v05UpdatePlayerBase=updatePlayer;
+updatePlayer=function(dt){if(inFlyHeli){v05UpdateFlyHeli(dt);return}v05UpdatePlayerBase(dt);document.body.classList.toggle('ads-active',aimHeld);$('aim-btn')?.classList.toggle('pressed',aimHeld)};
+const v05UpdateInteractBase=updateInteract;
+updateInteract=function(dt){v05UpdateInteractBase(dt);if(inFlyHeli)return;if(flyHeli){const d=Math.hypot(player.pos.x-flyHeli.group.position.x,player.pos.z-flyHeli.group.position.z);if(d<2.9){interactTarget=flyHeli;$('interact-prompt').classList.remove('hidden');$('interact-text').textContent='Pilotar helicóptero'}}};
+const v05InteractBase=interact;
+interact=function(){if(inFlyHeli){v05ExitHeli();return}if(interactTarget?.type==='flyheli'){v05EnterHeli();return}v05InteractBase()};
+
+function v05AddWorldDress(){
+  const barrelMat=new THREE.MeshStandardMaterial({color:0x5b4637,roughness:.72,metalness:.3}),signMat=new THREE.MeshStandardMaterial({color:0x6b6d63,roughness:.7,metalness:.2});
+  for(const [x,z] of [[-39,26],[-34,27],[47,37],[-66,-55],[71,-88],[87,-61],[31,-67]]){const b=new THREE.Mesh(new THREE.CylinderGeometry(.32,.32,.88,12),barrelMat);b.position.set(x,.44,z);b.castShadow=true;scene.add(b)}
+  for(const [x,z,r] of [[-18,18,0],[18,-22,Math.PI/2],[54,-12,0],[-62,8,Math.PI/2]]){const g=new THREE.Group(),post=v05Box(.08,1.8,.08,0,.9,0,v05Metal()),plate=v05Box(1.15,.52,.06,0,1.62,0,signMat);g.add(post,plate);g.position.set(x,0,z);g.rotation.y=r;scene.add(g)}
+}
+function v05SetupHeliUI(){const hud=$('hud');const c=document.createElement('div');c.id='heli-controls';c.className='hidden';c.innerHTML='<div class="heli-readout"><b>HELICÓPTERO</b><span>ALT <strong id="heli-alt">0 m</strong></span><span>FUEL <strong id="heli-fuel">100%</strong></span></div><button id="heli-up">SUBIR</button><button id="heli-down">BAJAR</button><button id="heli-exit">SALIR</button>';hud.appendChild(c);const bind=(id,set)=>{const el=$(id);el.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();set(true);el.classList.add('pressed')});const end=e=>{e.stopPropagation();set(false);el.classList.remove('pressed')};el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end)};bind('heli-up',v=>heliUpHeld=v);bind('heli-down',v=>heliDownHeld=v);$('heli-exit').addEventListener('pointerdown',e=>{e.stopPropagation();v05ExitHeli()})}
+function setupV05(){
+  document.body.classList.add('vast-v05');$('aim-btn').textContent='MIRA';
+  spawnLoose('backpack_small',-48,23,'v05-bag-small');spawnLoose('backpack_large',82,-75,'v05-bag-large');
+  v05CreateFlyHeli();v05SetupHeliUI();v05AddWorldDress();
+  window.addEventListener('beforeunload',v05SaveHeli);
+  toast('v0.5 · MIRA TOGGLE · SPRINT ANALÓGICO · BUILD PRO · HELI PILOTABLE','good');
+}
