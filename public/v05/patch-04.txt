@@ -1,0 +1,47 @@
+/* v0.5.1 — proper ADS sight picture for mobile */
+const v051BuildWeaponBase=buildWeapon;
+buildWeapon=function(){
+  v051BuildWeaponBase();
+  if(!weaponRig)return;
+
+  /* Remove the temporary solid sight blocks from the first v0.5 pass. They
+     filled the centre of the screen on iPhone instead of forming a sight notch. */
+  const remove=[];
+  weaponRig.traverse(o=>{
+    if(!o.isMesh||o.geometry?.type!=='BoxGeometry')return;
+    const p=o.geometry.parameters||{},w=Number(p.width||0),h=Number(p.height||0),d=Number(p.depth||0);
+    const rear=Math.abs(w-.08)<.002&&Math.abs(h-.07)<.002&&Math.abs(d-.05)<.002;
+    const front=Math.abs(w-.035)<.002&&Math.abs(h-.065)<.002&&Math.abs(d-.035)<.002;
+    const rail=Math.abs(w-.05)<.002&&Math.abs(h-.025)<.002&&Math.abs(d-.28)<.002;
+    if(rear||front||rail)remove.push(o);
+  });
+  remove.forEach(o=>o.parent?.remove(o));
+
+  const w=W[player.weapon];
+  const dark=new THREE.MeshStandardMaterial({color:0x111614,roughness:.42,metalness:.72});
+  const edge=new THREE.MeshStandardMaterial({color:0x343d39,roughness:.38,metalness:.64});
+  const box=(sx,sy,sz,x,y,z,m=dark)=>{const q=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),m);q.position.set(x,y,z);weaponRig.add(q);return q};
+
+  /* Actual rear notch + front post. Their vertical centre is aligned with the
+     camera when ADS; there is intentionally empty space between the rear posts. */
+  const rearZ=w.id==='m9'?-.04:-.06;
+  const frontZ=w.id==='m9'?-.31:(w.id==='shotgun'?-.69:w.id==='mosin'?-.82:-.52);
+  box(.12,.022,.035,0,.086,rearZ,edge);
+  box(.025,.083,.035,-.052,.126,rearZ,dark);
+  box(.025,.083,.035,.052,.126,rearZ,dark);
+  box(.020,.082,.025,0,.123,frontZ,dark);
+  box(.062,.018,.025,0,.086,frontZ,edge);
+
+  /* Red dot is a real visible optic instead of extra FOV zoom. */
+  if(player.attachments.reddot&&['mp5','m4','ak'].includes(w.id)){
+    const optic=new THREE.Group();optic.position.set(0,.125,-.25);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(.058,.008,8,24),new THREE.MeshStandardMaterial({color:0x171c1a,roughness:.35,metalness:.7}));
+    const glass=new THREE.Mesh(new THREE.CircleGeometry(.052,24),new THREE.MeshBasicMaterial({color:0x6f9494,transparent:true,opacity:.16,depthWrite:false}));
+    glass.position.z=.002;
+    const dot=new THREE.Mesh(new THREE.SphereGeometry(.0065,8,6),new THREE.MeshBasicMaterial({color:0xff3b28,depthTest:false,transparent:true,opacity:.95}));dot.position.z=.006;
+    optic.add(ring,glass,dot);weaponRig.add(optic);
+  }
+};
+
+/* Rebuild once after the patch is installed so a restored game gets the new sights. */
+setTimeout(()=>{if(weaponRig&&!inFlyHeli)buildWeapon()},0);
