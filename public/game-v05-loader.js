@@ -40,8 +40,8 @@
   };
   updateHeliNav(); setInterval(updateHeliNav, 700);
 
-  const partPaths = Array.from({ length: 9 }, (_, i) => `./v04/part-${String(i + 1).padStart(2, '0')}.txt?v=501`);
-  const patchPaths = ['./v05/patch-01.txt?v=501','./v05/patch-02.txt?v=501','./v05/patch-03.txt?v=501'];
+  const partPaths = Array.from({ length: 9 }, (_, i) => `./v04/part-${String(i + 1).padStart(2, '0')}.txt?v=502`);
+  const patchPaths = ['./v05/patch-01.txt?v=502','./v05/patch-02.txt?v=502','./v05/patch-03.txt?v=502','./v05/patch-04.txt?v=502'];
   const getText = async (path) => { const r = await fetch(path, { cache: 'no-store' }); if (!r.ok) throw new Error(`No se pudo cargar ${path} (${r.status})`); return r.text(); };
   const replaceRequired = (source, from, to, label) => {
     if (!source.includes(from)) { console.warn(`[VAST v0.5] No se aplicó parche: ${label}`); return source; }
@@ -66,7 +66,7 @@
         'ADS con menos zoom');
       source = replaceRequired(source,
         "weaponRig.position.y=lerp(weaponRig.position.y,-.19+(moving?Math.sin(runTime*8)*.008:0),clamp(dt*9,0,1));",
-        "const adsX=aimHeld?0:.22,adsY=aimHeld?-.105:-.19+(moving?Math.sin(runTime*8)*.008:0),adsZ=aimHeld?-.34:-.42;weaponRig.position.x=lerp(weaponRig.position.x,adsX,clamp(dt*12,0,1));weaponRig.position.y=lerp(weaponRig.position.y,adsY,clamp(dt*12,0,1));weaponRig.position.z=lerp(weaponRig.position.z,adsZ,clamp(dt*12,0,1));document.body.classList.toggle('ads-active',aimHeld);",
+        "const adsX=aimHeld?0:.22,adsY=aimHeld?-.112:-.19+(moving?Math.sin(runTime*8)*.008:0),adsZ=aimHeld?-.54:-.42;weaponRig.position.x=lerp(weaponRig.position.x,adsX,clamp(dt*12,0,1));weaponRig.position.y=lerp(weaponRig.position.y,adsY,clamp(dt*12,0,1));weaponRig.position.z=lerp(weaponRig.position.z,adsZ,clamp(dt*12,0,1));document.body.classList.toggle('ads-active',aimHeld);",
         'alineación física de miras');
       source = replaceRequired(source,
         "bindHold($('aim-btn'),()=>aimHeld=true,()=>aimHeld=false);",
