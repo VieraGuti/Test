@@ -1,0 +1,73 @@
+  if(Math.abs(x)>WORLD-4||Math.abs(z)>WORLD-4)return 'FUERA DE LA ZONA';
+  if(type==='door'){const frame=v05NearestDoorFrame(x,z);if(!frame)return 'NECESITA PARED CON PUERTA';if(structures.some(s=>s.type==='door'&&Math.hypot(s.x-frame.x,s.z-frame.z)<.7))return 'YA HAY UNA PUERTA EN ESTE MARCO';return ''}
+  if(type==='roof'&&!v05RoofSupport(x,z))return 'EL TECHO NECESITA PAREDES CERCA';
+  if(type==='roof'&&structures.some(s=>s.type==='roof'&&Math.hypot(s.x-x,s.z-z)<1.2))return 'YA HAY UN TECHO AQUÍ';
+  if(type!=='roof'&&v05StaticBlocked(x,z,r.w,r.d,rot))return 'ESPACIO OCUPADO';
+  if(v05StructureTooClose(type,x,z))return 'DEMASIADO CERCA DE OTRA ESTRUCTURA';
+  if(Math.hypot(player.pos.x-x,player.pos.z-z)<1.45)return 'APÁRTATE PARA CONSTRUIR';
+  return '';
+}
+createBuildPreview=function(type){if(buildPreview){scene.remove(buildPreview);buildPreview=null}buildPreview=v05PreviewModel(type);scene.add(buildPreview);v05SetPreviewColor(false)};
+updateBuildPreview=function(){
+  if(!buildMode||!buildPreview||paused)return;
+  const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));dir.y=0;dir.normalize();
+  let x=Math.round((player.pos.x+dir.x*3.7)*2)/2,z=Math.round((player.pos.z+dir.z*3.7)*2)/2,rot=Math.round(yaw/(Math.PI/2))*(Math.PI/2);
+  if(buildMode==='door'){const frame=v05NearestDoorFrame(x,z);if(frame){x=frame.x;z=frame.z;rot=frame.rot}}
+  buildPreview.position.set(x,0,z);buildPreview.rotation.y=rot;
+  const reason=v05BuildReason(buildMode,x,z,rot);buildValid=!reason;v05SetPreviewColor(buildValid);
+  const hint=$('build-hint'),place=$('build-place');if(hint){hint.textContent=buildValid?'AZUL · COLOCACIÓN VÁLIDA':'ROJO · '+reason;hint.classList.toggle('valid',buildValid);hint.classList.toggle('invalid',!buildValid)}if(place)place.classList.toggle('invalid',!buildValid);
+};
+placeBuild=function(){
+  if(!buildMode||!buildPreview)return;const x=buildPreview.position.x,z=buildPreview.position.z,rot=buildPreview.rotation.y,reason=v05BuildReason(buildMode,x,z,rot);if(reason){toast(reason,'bad');v05SetPreviewColor(false);return}
+  const r=BUILD_RECIPES[buildMode],id=`b-${Date.now()}-${Math.floor(Math.random()*9999)}`;payCost(r.cost);scene.remove(buildPreview);buildPreview=null;spawnStructure(buildMode,x,z,rot,id);toast(`${r.label} colocada`,'good');updateResourceHUD();renderInventory();saveGame();cancelBuild();
+};
+renderBuildMenu=function(){const g=$('build-grid');if(!g)return;g.innerHTML='';for(const [type,r] of Object.entries(BUILD_RECIPES)){const ok=canAfford(r.cost),b=document.createElement('button');b.className='build-card'+(ok?'':' no-resources');b.innerHTML=`<b>${r.label}</b><span>${Object.entries(r.cost).map(([k,v])=>`${ITEMS[k].short} ${v}`).join(' · ')}</span><em>${ok?'LISTO':'FALTAN RECURSOS'}</em>`;b.onclick=()=>selectBuild(type);g.appendChild(b)}};
+
+const v05SpawnLooseBase=spawnLoose;
+spawnLoose=function(type,x,z,id,count=null){
+  v05SpawnLooseBase(type,x,z,id,count);
+  if(!['backpack_small','backpack_large'].includes(type))return;
+  const l=loots.find(q=>q.id===id);if(!l)return;
+  const old=[...l.group.children];old.forEach(o=>l.group.remove(o));
+  const big=type==='backpack_large',bodyMat=new THREE.MeshStandardMaterial({color:big?0x3e5144:0x556655,roughness:.9}),strap=new THREE.MeshStandardMaterial({color:0x252b27,roughness:.95});
+  const body=v05Box(big?.48:.42,big?.58:.50,big?.28:.24,0,0,0,bodyMat);body.position.y=.08;l.group.add(body);
+  const flap=v05Box(big?.46:.40,.15,big?.30:.26,0,.28,-.01,bodyMat);l.group.add(flap);
+  for(const sx of [-.16,.16]){const s=v05Box(.045,.48,.045,sx,.05,.15,strap);l.group.add(s)}
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.34,.018,5,18),new THREE.MeshBasicMaterial({color:0x7aa17b,transparent:true,opacity:.55}));ring.rotation.x=Math.PI/2;ring.position.y=-.22;l.group.add(ring);l.ring=ring;
+};
+
+const v05BuildWeaponBase=buildWeapon;
+buildWeapon=function(){
+  v05BuildWeaponBase();if(!weaponRig)return;const w=W[player.weapon];
+  const handMat=new THREE.MeshStandardMaterial({color:0xb98766,roughness:.88}),sleeve=new THREE.MeshStandardMaterial({color:0x3b443e,roughness:.92}),metal=v05Metal();
+  const foreL=new THREE.Mesh(new THREE.CapsuleGeometry(.055,.30,3,7),sleeve);foreL.rotation.x=-.75;foreL.rotation.z=.18;foreL.position.set(-.12,-.17,-.03);weaponRig.add(foreL);
+  const foreR=foreL.clone();foreR.position.x=.12;foreR.rotation.z=-.18;weaponRig.add(foreR);
+  const hand=new THREE.Mesh(new THREE.SphereGeometry(.075,8,6),handMat);hand.scale.set(.8,1,1.25);hand.position.set(.06,-.09,-.18);weaponRig.add(hand);
+  if(!['shotgun','mosin'].includes(w.id)){const rear=v05Box(.08,.07,.05,0,.105,-.03,metal);const front=v05Box(.035,.065,.035,0,.10,-.48,metal);weaponRig.add(rear,front)}
+  const rail=v05Box(.05,.025,.28,0,.105,-.20,metal);weaponRig.add(rail);
+};
+
+const v05OpenInventoryBase=openInventory;
+openInventory=function(container=null){aimHeld=false;$('aim-btn')?.classList.remove('pressed');return v05OpenInventoryBase(container)};
+const v05SwitchWeaponBase=switchWeapon;
+switchWeapon=function(i){aimHeld=false;$('aim-btn')?.classList.remove('pressed');return v05SwitchWeaponBase(i)};
+
+const v05RenderInventoryBase=renderInventory;
+renderInventory=function(){
+  v05RenderInventoryBase();
+  if(!activeContainer?.id?.startsWith('stash-'))return;
+  const entries=Object.entries(player.inventory).filter(([t,n])=>n>0&&ITEMS[t]);const cards=[...document.querySelectorAll('#inventory-grid .inv-item')];
+  entries.forEach(([type],i)=>{const card=cards[i];if(!card)return;const b=document.createElement('button');b.className='store-btn';b.textContent='GUARDAR';b.onclick=e=>{e.stopPropagation();v05StoreInStash(type)};card.appendChild(b)});
+};
+function v05StoreInStash(type){if(!activeContainer?.id?.startsWith('stash-')||!(player.inventory[type]>0))return;const d=ITEMS[type],amount=d.kind==='ammo'?Math.min(d.stack,player.inventory[type]):1;player.inventory[type]-=amount;activeContainer.items[type]=(activeContainer.items[type]||0)+amount;containerSave[activeContainer.id]=Object.assign({},activeContainer.items);AudioFX.pickup();toast(`${d.name} guardado`,'good');renderInventory();saveGame()}
+
+/* Better crash dressing while preserving v0.4 loot/event logic. */
+const v05BuildHeliCrashBase=buildHeliCrash;
+buildHeliCrash=function(x,z){v05BuildHeliCrashBase(x,z);const debrisMat=v05Metal(),burn=new THREE.MeshStandardMaterial({color:0x211d1a,roughness:1});for(let i=0;i<7;i++){const p=v05Box(rand(.25,.75),rand(.08,.20),rand(.18,.55),x+rand(-4,4),rand(.08,.22),z+rand(-4,4),i%2?debrisMat:burn);p.rotation.set(rand(-.7,.7),rand(0,6.2),rand(-.7,.7));scene.add(p)}const rotor=new THREE.Group();rotor.position.set(x+1.1,.3,z-1.2);for(let i=0;i<2;i++){const blade=v05Box(5.2,.045,.12,0,0,0,burn);blade.rotation.y=i*Math.PI/2;rotor.add(blade)}rotor.rotation.z=.18;scene.add(rotor)};
+
+let flyHeli=null,inFlyHeli=false,heliUpHeld=false,heliDownHeld=false,heliEngine=false;
+const HELI_SAVE_KEY='vast_dead_zone_vehicle_heli_v05';
+function v05HeliSaved(){try{return JSON.parse(localStorage.getItem(HELI_SAVE_KEY)||'null')}catch{return null}}
+function v05SaveHeli(){if(!flyHeli)return;localStorage.setItem(HELI_SAVE_KEY,JSON.stringify({x:flyHeli.group.position.x,y:flyHeli.group.position.y,z:flyHeli.group.position.z,heading:flyHeli.heading,fuel:flyHeli.fuel}))}
+function v05CreateFlyHeli(){
+  const s=v05HeliSaved()||{x:101,y:.78,z:-87,heading:Math.PI*.72,fuel:100};
