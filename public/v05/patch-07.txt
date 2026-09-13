@@ -1,0 +1,74 @@
+/* v0.5.3 — clean ADS + pro mobile map + pilot-heli locator */
+const v053MapView={zoom:1,panX:0,panZ:0,follow:true};
+let v053MapPointers=new Map(),v053PinchDist=0,v053PanStart=null;
+
+function v053Wrap(a){while(a>Math.PI)a-=Math.PI*2;while(a<-Math.PI)a+=Math.PI*2;return a}
+function v053PilotHeliNav(){
+  const n=$('pilot-nav-v053');
+  if(!n||!flyHeli||inFlyHeli){n?.classList.remove('show');return}
+  const dx=flyHeli.group.position.x-player.pos.x,dz=flyHeli.group.position.z-player.pos.z,d=Math.hypot(dx,dz);
+  const target=Math.atan2(-dx,-dz),rel=v053Wrap(target-yaw),arrow=n.querySelector('.v053-pilot-arrow'),small=n.querySelector('small');
+  if(arrow)arrow.style.transform=`rotate(${rel*180/Math.PI}deg)`;
+  if(small)small.textContent=d<4?'PULSA USAR PARA PILOTAR':`${Math.round(d)} m · HELI PILOTABLE`;
+  n.classList.add('show');
+}
+
+/* ADS: stop rendering the blocky placeholder weapon while aiming. The sight itself
+   stays visible, so aiming is clean and never hides the target behind a black cube. */
+const v053UpdatePlayerBase=updatePlayer;
+updatePlayer=function(dt){
+  v053UpdatePlayerBase(dt);
+  const ads=aimHeld&&!inFlyHeli;
+  if(weaponRig)weaponRig.visible=!ads;
+  document.body.classList.toggle('v053-clean-ads',ads);
+  v053PilotHeliNav();
+};
+
+function v053MapBounds(){
+  const pts=[...v052Discovered].map(k=>k.split(',').map(Number));
+  const pcx=v052ChunkCoord(player.pos.x),pcz=v052ChunkCoord(player.pos.z);if(!pts.length)pts.push([pcx,pcz]);
+  let minX=Math.min(...pts.map(p=>p[0]),pcx)-1,maxX=Math.max(...pts.map(p=>p[0]),pcx)+1,minZ=Math.min(...pts.map(p=>p[1]),pcz)-1,maxZ=Math.max(...pts.map(p=>p[1]),pcz)+1;
+  if(flyHeli){const hx=v052ChunkCoord(flyHeli.group.position.x),hz=v052ChunkCoord(flyHeli.group.position.z);minX=Math.min(minX,hx-1);maxX=Math.max(maxX,hx+1);minZ=Math.min(minZ,hz-1);maxZ=Math.max(maxZ,hz+1)}
+  if(heliEvent?.active&&!heliEvent.looted){const hx=v052ChunkCoord(heliEvent.x),hz=v052ChunkCoord(heliEvent.z);minX=Math.min(minX,hx-1);maxX=Math.max(maxX,hx+1);minZ=Math.min(minZ,hz-1);maxZ=Math.max(maxZ,hz+1)}
+  return {pts,minX,maxX,minZ,maxZ};
+}
+
+v052DrawMap=function(){
+  if(!v052MapOpen)return;const c=$('v052-map-canvas');if(!c)return;
+  const rect=c.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),w=Math.max(320,Math.round(rect.width*dpr)),h=Math.max(220,Math.round(rect.height*dpr));if(c.width!==w||c.height!==h){c.width=w;c.height=h}
+  const g=c.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);const Wc=rect.width,Hc=rect.height;g.fillStyle='#08100f';g.fillRect(0,0,Wc,Hc);
+  const B=v053MapBounds(),spanX=B.maxX-B.minX+1,spanZ=B.maxZ-B.minZ+1,fit=Math.max(9,Math.min((Wc-54)/spanX,(Hc-54)/spanZ));
+  const cell=fit*v053MapView.zoom,worldCX=(B.minX+B.maxX+1)/2+v053MapView.panX,worldCZ=(B.minZ+B.maxZ+1)/2+v053MapView.panZ;
+  const mapX=x=>Wc/2+((x/V052_CHUNK)-worldCX)*cell,mapZ=z=>Hc/2+((z/V052_CHUNK)-worldCZ)*cell;
+  for(const [cx,cz] of B.pts){const x=Wc/2+(cx-worldCX)*cell,z=Hc/2+(cz-worldCZ)*cell;g.fillStyle='#25302d';g.fillRect(x+.5,z+.5,cell-1,cell-1);g.strokeStyle='rgba(120,180,160,.10)';g.strokeRect(x+.5,z+.5,cell-1,cell-1)}
+  const pois=[...v052FixedPOI];for(const arr of Object.values(v052MapState.pois||{}))if(Array.isArray(arr))pois.push(...arr);const seen=new Set();
+  for(const p of pois){const ck=v052Key(v052ChunkCoord(p.x),v052ChunkCoord(p.z));if(!v052Discovered.has(ck))continue;const id=p.name+'@'+p.x+','+p.z;if(seen.has(id))continue;seen.add(id);const x=mapX(p.x),z=mapZ(p.z);if(x<-30||x>Wc+30||z<-30||z>Hc+30)continue;g.fillStyle=p.type==='military'?'#c96e5b':p.type==='medical'?'#75be94':p.type==='industrial'?'#c09d67':'#deb978';g.beginPath();g.arc(x,z,4,0,Math.PI*2);g.fill();g.font='700 9px system-ui';g.fillStyle='#d9dfdc';g.fillText(p.name,x+7,z+3)}
+  if(heliEvent?.active&&!heliEvent.looted){const x=mapX(heliEvent.x),z=mapZ(heliEvent.z);g.strokeStyle='#ff7043';g.lineWidth=3;g.beginPath();g.arc(x,z,8,0,Math.PI*2);g.stroke();g.fillStyle='#ff7d4d';g.font='800 10px system-ui';g.fillText('HELI CAÍDO · LOOT',x+12,z+4)}
+  if(flyHeli){const x=mapX(flyHeli.group.position.x),z=mapZ(flyHeli.group.position.z);g.save();g.translate(x,z);g.rotate(flyHeli.heading||0);g.fillStyle='#5ed3ff';g.beginPath();g.moveTo(0,-9);g.lineTo(6,6);g.lineTo(0,3);g.lineTo(-6,6);g.closePath();g.fill();g.restore();g.fillStyle='#75d8ff';g.font='800 10px system-ui';g.fillText('HELI PILOTABLE',x+11,z+4)}
+  const px=mapX(player.pos.x),pz=mapZ(player.pos.z),fx=-Math.sin(yaw),fz=-Math.cos(yaw);g.fillStyle='#f5f3e9';g.beginPath();g.arc(px,pz,5,0,Math.PI*2);g.fill();g.strokeStyle='#59caff';g.lineWidth=3;g.beginPath();g.moveTo(px,pz);g.lineTo(px+fx*22,pz+fz*22);g.stroke();
+  g.fillStyle='rgba(6,10,9,.72)';g.fillRect(7,Hc-26,155,19);g.fillStyle='#a8b2ad';g.font='700 9px system-ui';g.fillText(`POS ${Math.round(player.pos.x)}, ${Math.round(player.pos.z)} · ZOOM ${v053MapView.zoom.toFixed(1)}x`,13,Hc-13);
+  v052MapRAF=requestAnimationFrame(v052DrawMap)
+};
+
+function v053CenterPlayer(){v053MapView.panX=0;v053MapView.panZ=0;v053MapView.zoom=1;v053MapView.follow=true}
+function v053FocusHeli(){if(!flyHeli)return;const B=v053MapBounds(),baseCX=(B.minX+B.maxX+1)/2,baseCZ=(B.minZ+B.maxZ+1)/2;v053MapView.panX=flyHeli.group.position.x/V052_CHUNK-baseCX;v053MapView.panZ=flyHeli.group.position.z/V052_CHUNK-baseCZ;v053MapView.zoom=2;v053MapView.follow=false}
+function v053MapPointerDown(e){const c=$('v052-map-canvas');if(!c)return;e.preventDefault();c.setPointerCapture?.(e.pointerId);v053MapPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(v053MapPointers.size===1)v053PanStart={x:e.clientX,y:e.clientY,panX:v053MapView.panX,panZ:v053MapView.panZ};if(v053MapPointers.size===2){const a=[...v053MapPointers.values()];v053PinchDist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}}
+function v053MapPointerMove(e){if(!v053MapPointers.has(e.pointerId))return;e.preventDefault();v053MapPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});const c=$('v052-map-canvas'),rect=c.getBoundingClientRect(),B=v053MapBounds(),fit=Math.max(9,Math.min((rect.width-54)/(B.maxX-B.minX+1),(rect.height-54)/(B.maxZ-B.minZ+1))),cell=fit*v053MapView.zoom;if(v053MapPointers.size===1&&v053PanStart){v053MapView.follow=false;v053MapView.panX=v053PanStart.panX-(e.clientX-v053PanStart.x)/cell;v053MapView.panZ=v053PanStart.panZ-(e.clientY-v053PanStart.y)/cell}else if(v053MapPointers.size===2){const a=[...v053MapPointers.values()],d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);if(v053PinchDist>0){v053MapView.zoom=clamp(v053MapView.zoom*(d/v053PinchDist),.65,5)}v053PinchDist=d}}
+function v053MapPointerUp(e){v053MapPointers.delete(e.pointerId);if(v053MapPointers.size<2)v053PinchDist=0;if(v053MapPointers.size===1){const p=[...v053MapPointers.values()][0];v053PanStart={x:p.x,y:p.y,panX:v053MapView.panX,panZ:v053MapView.panZ}}else if(!v053MapPointers.size)v053PanStart=null}
+
+function v053SetupMapAndADS(){
+  const ov=$('v052-map-overlay');if(!ov)return;
+  let close=$('v053-map-close-fixed');if(!close){close=document.createElement('button');close.id='v053-map-close-fixed';close.textContent='✕';close.setAttribute('aria-label','Cerrar mapa');ov.appendChild(close);close.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();v052CloseMap()})}
+  let tools=$('v053-map-tools');if(!tools){tools=document.createElement('div');tools.id='v053-map-tools';tools.innerHTML='<button data-map="out">−</button><button data-map="in">＋</button><button data-map="me">CENTRAR</button><button data-map="heli">HELI</button>';ov.appendChild(tools);tools.querySelector('[data-map="out"]').onclick=()=>v053MapView.zoom=clamp(v053MapView.zoom/1.28,.65,5);tools.querySelector('[data-map="in"]').onclick=()=>v053MapView.zoom=clamp(v053MapView.zoom*1.28,.65,5);tools.querySelector('[data-map="me"]').onclick=v053CenterPlayer;tools.querySelector('[data-map="heli"]').onclick=v053FocusHeli}
+  const c=$('v052-map-canvas');if(c&&!c.dataset.v053){c.dataset.v053='1';c.style.touchAction='none';c.addEventListener('pointerdown',v053MapPointerDown,{passive:false});c.addEventListener('pointermove',v053MapPointerMove,{passive:false});c.addEventListener('pointerup',v053MapPointerUp,{passive:false});c.addEventListener('pointercancel',v053MapPointerUp,{passive:false});c.addEventListener('wheel',e=>{e.preventDefault();v053MapView.zoom=clamp(v053MapView.zoom*(e.deltaY<0?1.15:.87),.65,5)},{passive:false})}
+  const hud=$('hud');if(!$('pilot-nav-v053')){const n=document.createElement('div');n.id='pilot-nav-v053';n.innerHTML='<span class="v053-pilot-arrow">↑</span><span><b>HELI PILOTABLE</b><small>LOCALIZANDO…</small></span>';document.body.appendChild(n)}
+  const st=document.createElement('style');st.id='v053-style';st.textContent=`
+  body.v053-clean-ads #v052-ads-sight{display:block!important;width:150px;height:150px}body.v053-clean-ads .v052-iron .rear{top:68px;height:35px;width:6px}body.v053-clean-ads .v052-iron .rear.l{left:44px}body.v053-clean-ads .v052-iron .rear.r{right:44px}body.v053-clean-ads .v052-iron .front{left:72px;top:61px;height:35px;width:5px}body.v053-clean-ads .v052-iron .front-base{left:61px;top:93px;width:27px;height:5px}body.v053-clean-ads .v052-rds:before{left:35px;top:35px;width:64px;height:64px;border-width:9px}body.v053-clean-ads .v052-rds i{left:44px;top:44px;width:64px;height:64px;background:rgba(84,170,185,.055)}body.v053-clean-ads .v052-rds b{left:73px;top:73px;width:5px;height:5px}
+  #v053-map-close-fixed{position:fixed;z-index:260;top:calc(10px + env(safe-area-inset-top));right:calc(12px + env(safe-area-inset-right));width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(18,24,22,.94);color:#fff;font:800 19px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45);touch-action:manipulation}#v053-map-tools{position:fixed;z-index:255;left:50%;bottom:calc(11px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:6px;padding:5px;background:rgba(7,11,10,.88);border:1px solid rgba(255,255,255,.1);border-radius:6px}#v053-map-tools button{height:34px;min-width:40px;padding:0 10px;border:1px solid rgba(92,194,231,.25);border-radius:4px;background:#132027;color:#bdeaff;font:800 9px 'Barlow Condensed',system-ui;letter-spacing:.05em;touch-action:manipulation}.v052-map-shell{width:100vw!important;height:100dvh!important;max-width:100vw!important;max-height:100dvh!important;border:0!important}.v052-map-shell header{padding-right:62px!important}.v052-map-shell footer{padding-bottom:calc(45px + env(safe-area-inset-bottom))!important;min-height:70px!important}
+  #pilot-nav-v053{position:fixed;z-index:73;left:50%;top:70px;transform:translateX(-50%);display:none;align-items:center;gap:7px;padding:5px 9px;border:1px solid rgba(73,184,224,.42);border-radius:4px;background:rgba(6,12,14,.84);pointer-events:none;font:800 8px 'Barlow Condensed',system-ui;color:#d9f4ff}#pilot-nav-v053.show{display:flex}.v053-pilot-arrow{display:flex;width:20px;height:20px;align-items:center;justify-content:center;border:1px solid #55c8ef;border-radius:50%;color:#74dfff;font-size:15px}.v053-pilot-arrow+span{display:flex;flex-direction:column}.v053-pilot-arrow+span small{font-size:6px;color:#89aeb9;margin-top:1px}
+  @media (orientation:landscape) and (max-height:520px){#pilot-nav-v053{top:39px;left:34%}#v053-map-close-fixed{top:6px;width:38px;height:38px}#v053-map-tools{bottom:7px}.v052-map-shell footer{padding-bottom:42px!important}}
+  `;document.head.appendChild(st)
+}
+
+const v053SetupV05Base=setupV05;
+setupV05=function(){v053SetupV05Base();setTimeout(v053SetupMapAndADS,0)};
