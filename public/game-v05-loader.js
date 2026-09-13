@@ -39,8 +39,8 @@
   };
   updateHeliNav(); setInterval(updateHeliNav, 700);
 
-  const partPaths = Array.from({ length: 9 }, (_, i) => `./v04/part-${String(i + 1).padStart(2, '0')}.txt?v=503`);
-  const patchPaths = ['./v05/patch-01.txt?v=503','./v05/patch-02.txt?v=503','./v05/patch-03.txt?v=503','./v05/patch-04.txt?v=503','./v05/patch-05.txt?v=503'];
+  const partPaths = Array.from({ length: 9 }, (_, i) => `./v04/part-${String(i + 1).padStart(2, '0')}.txt?v=504`);
+  const patchPaths = ['./v05/patch-01.txt?v=504','./v05/patch-02.txt?v=504','./v05/patch-03.txt?v=504','./v05/patch-04.txt?v=504','./v05/patch-05.txt?v=504','./v05/patch-06.txt?v=504'];
   const getText = async (path) => { const r = await fetch(path, { cache: 'no-store' }); if (!r.ok) throw new Error(`No se pudo cargar ${path} (${r.status})`); return r.text(); };
   const replaceRequired = (source, from, to, label) => {
     if (!source.includes(from)) { console.warn(`[VAST v0.5] No se aplicó parche: ${label}`); return source; }
