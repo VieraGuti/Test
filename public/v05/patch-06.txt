@@ -1,7 +1,25 @@
-/* v0.5.2 hotfix — make discovered POIs persistent on first visit */
+/* v0.5.2 hotfix — discovered POIs + always-visible map close on mobile */
 const v052UpdateStreamingBase=v052UpdateStreaming;
 v052UpdateStreaming=function(force=false){
   const cx=v052ChunkCoord(player.pos.x),cz=v052ChunkCoord(player.pos.z);
   v052GenerateChunk(cx,cz);
   return v052UpdateStreamingBase(force);
+};
+
+const v052SetupUIBase=v052SetupUI;
+v052SetupUI=function(){
+  v052SetupUIBase();
+  const ov=$('v052-map-overlay');
+  if(!ov)return;
+  const close=document.createElement('button');
+  close.id='v052-map-float-close';
+  close.type='button';
+  close.setAttribute('aria-label','Cerrar mapa');
+  close.textContent='✕';
+  close.style.cssText='position:fixed;z-index:9999;top:calc(10px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(13,18,17,.94);color:#fff;font:700 24px/1 system-ui;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 28px rgba(0,0,0,.5);touch-action:manipulation';
+  const closeMap=e=>{e?.stopPropagation?.();e?.preventDefault?.();v052CloseMap()};
+  close.addEventListener('pointerdown',closeMap,{passive:false});
+  ov.appendChild(close);
+  ov.addEventListener('pointerdown',e=>{if(e.target===ov)closeMap(e)},{passive:false});
+  window.addEventListener('keydown',e=>{if(e.code==='Escape'&&v052MapOpen)closeMap(e)});
 };
