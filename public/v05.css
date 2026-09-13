@@ -1,0 +1,40 @@
+/* VAST Dead Zone v0.5 — Build Pro / ADS / analog sprint / helicopter */
+:root{--build-valid:#2aa7ff;--build-invalid:#e2434d}
+
+/* ADS is now a real toggle: the weapon is physically centered by JS, not only FOV zoom. */
+body.ads-active #crosshair{opacity:.18;transform:translate(-50%,-50%) scale(.62)}
+#aim-btn.pressed{background:rgba(36,117,164,.34)!important;border-color:rgba(75,174,231,.8)!important;color:#e9f7ff!important;box-shadow:0 0 0 1px rgba(51,159,220,.18),0 0 20px rgba(30,126,184,.2)}
+
+/* Analog joystick: center = walk, outer ring = sprint. */
+.joy-ring:after{content:"";position:absolute;inset:8px;border-radius:50%;border:1px dashed rgba(65,167,225,.38);pointer-events:none}
+.joy-ring:before{content:"RUN";position:absolute;left:50%;bottom:-14px;transform:translateX(-50%);font:700 6px 'Barlow Condensed',sans-serif;letter-spacing:.14em;color:rgba(82,174,226,.65)}
+@media (pointer:coarse){#run-btn{display:none!important}.action#jump-btn{right:134px!important;left:auto!important;bottom:16px!important}}
+
+/* Build cards stay selectable even when resources are missing; preview tells the truth in-world. */
+.build-card{position:relative;overflow:hidden}.build-card em{position:absolute;right:8px;top:7px;font:800 6px Inter,sans-serif;letter-spacing:.08em;color:#77bff0;font-style:normal}.build-card.no-resources{opacity:.72;border-color:rgba(226,67,77,.32)}.build-card.no-resources em{color:#e46b72}.build-card.no-resources span{color:#a77b7e}
+#build-hint.valid{color:#79c9f6!important}#build-hint.invalid{color:#f08b90!important}
+#build-place:not(.invalid){background:linear-gradient(180deg,#278fd0,#17638f)!important;box-shadow:0 0 18px rgba(42,167,255,.22)}
+#build-place.invalid{background:linear-gradient(180deg,#9b3239,#6d2026)!important;border-color:rgba(239,85,94,.46)!important;color:#f2b4b8!important;opacity:.85!important}
+
+/* Stash can now receive inventory items. */
+.inv-item .store-btn{right:auto!important;left:47px!important;background:rgba(46,105,137,.19)!important;border-color:rgba(66,153,199,.38)!important;color:#8ed1f4!important}
+
+/* Crash event navigator */
+#heli-nav{position:fixed;z-index:74;left:50%;top:46px;transform:translateX(-50%);display:none;align-items:center;gap:7px;padding:5px 9px;border:1px solid rgba(210,105,53,.38);border-radius:3px;background:rgba(7,9,8,.82);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);pointer-events:none;font:800 9px 'Barlow Condensed',system-ui,sans-serif;letter-spacing:.08em;color:#eee;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+#heli-nav.show{display:flex}#heli-nav-arrow{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(208,107,49,.55);color:#e78a53;font-size:17px;line-height:1;transition:transform .18s linear}#heli-nav-copy{display:flex;flex-direction:column;line-height:1.05}#heli-nav-copy b{font-size:9px;color:#f1eee7}#heli-nav-copy small{margin-top:2px;font-size:6px;color:#a3a69f;letter-spacing:.09em}
+
+/* Pilotable helicopter HUD */
+#heli-controls{position:absolute;z-index:48;right:calc(18px + var(--safe-r));bottom:calc(20px + var(--safe-b));display:grid;grid-template-columns:64px 64px 64px;grid-template-rows:auto 52px;gap:7px;pointer-events:auto;font-family:'Barlow Condensed',sans-serif}
+#heli-controls.hidden{display:none!important}.heli-readout{grid-column:1/4;display:flex;align-items:center;justify-content:center;gap:12px;min-height:34px;padding:5px 9px;border:1px solid rgba(81,178,224,.32);border-left:2px solid #3fa6d9;border-radius:3px;background:rgba(8,13,14,.82);box-shadow:0 10px 30px rgba(0,0,0,.28);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}.heli-readout>b{font-size:10px;letter-spacing:.11em;color:#dcecf3}.heli-readout span{font-size:7px;color:#84969e}.heli-readout strong{margin-left:3px;font-size:9px;color:#e7f5fb}
+#heli-controls button{height:52px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:rgba(15,20,20,.76);color:#d7e2e3;font:800 8px 'Barlow Condensed';letter-spacing:.07em;touch-action:none;box-shadow:0 6px 18px rgba(0,0,0,.28)}#heli-controls button.pressed{transform:scale(.94);border-color:rgba(65,168,218,.8);background:rgba(35,114,148,.35)}#heli-exit{border-color:rgba(207,84,66,.48)!important;color:#efaaa0!important}
+body.in-heli .actions{display:none!important}body.in-heli .ammo{display:none!important}body.in-heli .hotbar{opacity:.16!important;pointer-events:none!important}body.in-heli #inventory-btn,body.in-heli #build-btn{opacity:.28!important;pointer-events:none!important}body.in-heli #crosshair{opacity:.12!important}body.in-heli .joystick{bottom:calc(48px + var(--safe-b))!important}.vast-v05.in-heli .joy-ring:before{content:"HELI";color:rgba(91,191,235,.85)}
+
+/* A tiny visual hint on the bag button so capacity changes are obvious. */
+#inventory-btn b{min-width:30px;text-align:center;color:#9ed4ee!important}
+
+@media (orientation:landscape) and (max-height:520px){
+  #heli-nav{top:41px;padding:4px 7px}#heli-nav-arrow{width:19px;height:19px;font-size:15px}#heli-nav-copy b{font-size:8px}#heli-nav-copy small{font-size:5.5px}
+  #heli-controls{right:calc(14px + var(--safe-r));bottom:calc(12px + var(--safe-b));grid-template-columns:56px 56px 56px;grid-template-rows:auto 46px;gap:5px}.heli-readout{min-height:29px;padding:4px 7px;gap:8px}.heli-readout>b{font-size:8px}.heli-readout span{font-size:6px}.heli-readout strong{font-size:8px}#heli-controls button{height:46px;font-size:7px}
+  @media (pointer:coarse){.action#jump-btn{right:137px!important;bottom:8px!important}}
+}
+@media (orientation:landscape) and (max-height:390px){#heli-nav{top:37px}#heli-controls{right:calc(8px + var(--safe-r));grid-template-columns:50px 50px 50px;grid-template-rows:auto 42px}.heli-readout{gap:6px}#heli-controls button{height:42px}.joy-ring:before{display:none}}
