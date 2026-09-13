@@ -1,0 +1,85 @@
+/* v0.5.6 — visible ADS viewmodel + hard helicopter ground/spawn rescue */
+const V056_HELI_GROUND_Y=.84;
+let v056HeliSafetyAt=0;
+
+/* Keep the weapon visible while aiming, but lower it enough that the sight/target stays clear. */
+function v056EnsureViewmodelLight(){
+  if(!camera||camera.userData.v056ViewLight)return;
+  const l=new THREE.PointLight(0xdde8e4,.72,2.8,2);l.position.set(.18,.22,.38);camera.add(l);camera.userData.v056ViewLight=l;
+}
+const v056UpdatePlayerBase=updatePlayer;
+updatePlayer=function(dt){
+  v056UpdatePlayerBase(dt);
+  v056EnsureViewmodelLight();
+  if(!weaponRig)return;
+  if(inFlyHeli){weaponRig.visible=false;return}
+  weaponRig.visible=true;
+  const k=clamp(dt*16,0,1);
+  if(aimHeld){
+    /* Dedicated ADS pose: weapon body stays below the line of sight instead of disappearing. */
+    weaponRig.position.x=lerp(weaponRig.position.x,0,k);
+    weaponRig.position.y=lerp(weaponRig.position.y,-.305,k);
+    weaponRig.position.z=lerp(weaponRig.position.z,-.61,k);
+    weaponRig.scale.setScalar(lerp(weaponRig.scale.x,.94,k));
+  }else{
+    weaponRig.scale.setScalar(lerp(weaponRig.scale.x,1,k));
+  }
+};
+
+/* Find an actually empty X/Z parking spot. Old saves placed the utility heli inside the military compound. */
+function v056HeliSpotFree(x,z,r=2.15){
+  if(!Number.isFinite(x)||!Number.isFinite(z))return false;
+  return !collidesAt(x,z,r)
+}
+function v056FindHeliSpot(x,z){
+  if(v056HeliSpotFree(x,z))return{x,z};
+  const radii=[7,11,16,22,30,40];
+  for(const r of radii){
+    for(let i=0;i<16;i++){
+      const a=i/16*Math.PI*2+.19*r,tx=x+Math.cos(a)*r,tz=z+Math.sin(a)*r;
+      if(v056HeliSpotFree(tx,tz))return{x:tx,z:tz}
+    }
+  }
+  /* Last resort: find open ground around the player instead of leaving the heli underground/in a building. */
+  for(let r=24;r<=72;r+=8)for(let i=0;i<16;i++){
+    const a=i/16*Math.PI*2,tx=player.pos.x+Math.cos(a)*r,tz=player.pos.z+Math.sin(a)*r;
+    if(v056HeliSpotFree(tx,tz))return{x:tx,z:tz}
+  }
+  return{x:player.pos.x+28,z:player.pos.z+12}
+}
+function v056RescueHeli(h,notify=false){
+  if(!h?.group)return false;
+  const p=h.group.position,stuck=!v056HeliSpotFree(p.x,p.z),badY=!Number.isFinite(p.y)||p.y<.55||p.y>45;
+  if(!stuck&&!badY){
+    /* Parked helicopters should always sit on top of the flat terrain when nobody is flying them. */
+    if(!inFlyHeli&&p.y<V056_HELI_GROUND_Y-.02)p.y=V056_HELI_GROUND_Y;
+    return false
+  }
+  const q=v056FindHeliSpot(p.x,p.z);p.set(q.x,V056_HELI_GROUND_Y,q.z);h.speed=0;h.verticalSpeed=0;h.turnSpeed=0;h.engine=false;h.engineState='off';
+  if(notify&&started)toast('HELICÓPTERO RECOLOCADO EN TERRENO SEGURO','good');
+  return true
+}
+
+const v056CreateFlyHeliBase=v05CreateFlyHeli;
+v05CreateFlyHeli=function(){
+  v056CreateFlyHeliBase();let changed=false;
+  for(const h of v054Fleet)changed=v056RescueHeli(h,false)||changed;
+  if(changed)v054SaveFleet();
+};
+
+const v056UpdateFlyHeliBase=v05UpdateFlyHeli;
+v05UpdateFlyHeli=function(dt){
+  /* Re-check parked helis after procedural chunks load; a generated building can otherwise cover one. */
+  if(performance.now()>v056HeliSafetyAt){v056HeliSafetyAt=performance.now()+900;let changed=false;for(const h of v054Fleet){if(!(inFlyHeli&&h===flyHeli))changed=v056RescueHeli(h,false)||changed}if(changed)v054SaveFleet()}
+  v056UpdateFlyHeliBase(dt)
+};
+
+/* Slightly more forgiving landed threshold after the parking-height correction. */
+v054Landed=function(h=flyHeli){return !!h&&h.group.position.y<=1.02&&Math.abs(h.speed)<1.5&&Math.abs(h.verticalSpeed)<1.2};
+
+/* One-time migration for clients that already saved the bad helicopter coordinates. */
+function v056RunMigration(){
+  let changed=false;for(const h of v054Fleet)changed=v056RescueHeli(h,true)||changed;if(changed)v054SaveFleet();
+}
+const v056SetupV05Base=setupV05;
+setupV05=function(){v056SetupV05Base();setTimeout(v056RunMigration,80)};
