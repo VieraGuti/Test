@@ -1,0 +1,7 @@
+/* v0.5.2 hotfix — make discovered POIs persistent on first visit */
+const v052UpdateStreamingBase=v052UpdateStreaming;
+v052UpdateStreaming=function(force=false){
+  const cx=v052ChunkCoord(player.pos.x),cz=v052ChunkCoord(player.pos.z);
+  v052GenerateChunk(cx,cz);
+  return v052UpdateStreamingBase(force);
+};
