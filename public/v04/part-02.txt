@@ -1,0 +1,38 @@
+andom()>.45)return;this.burst(.035*v,.35,240,65)}
+};
+
+function makeTexture(base='#555',fleck='#777',size=128){const c=document.createElement('canvas');c.width=c.height=size;const x=c.getContext('2d');x.fillStyle=base;x.fillRect(0,0,size,size);for(let i=0;i<700;i++){x.globalAlpha=rand(.03,.16);x.fillStyle=Math.random()>.5?fleck:'#222';const s=rand(.4,2);x.fillRect(Math.random()*size,Math.random()*size,s,s)}x.globalAlpha=1;const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;return t}
+function addObstacle(minX,maxX,minZ,maxZ,tag='world'){const o={minX,maxX,minZ,maxZ,active:true,tag};obstacles.push(o);return o}
+function addBlock(x,z,w,d,h,mat,collision=true,y=0){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y+h/2,z);m.castShadow=h>1;m.receiveShadow=true;scene.add(m);if(collision){addObstacle(x-w/2,x+w/2,z-d/2,z+d/2);occluders.push(m)}return m}
+
+function initThree(){
+ scene=new THREE.Scene();scene.background=new THREE.Color(0x8a938f);scene.fog=new THREE.FogExp2(0x828b87,.0068);
+ renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.9;renderer.shadowMap.type=THREE.PCFSoftShadowMap;$('game-root').appendChild(renderer.domElement);
+ camera=new THREE.PerspectiveCamera(settings.fov,innerWidth/innerHeight,.025,290);yawNode=new THREE.Object3D();pitchNode=new THREE.Object3D();yawNode.add(pitchNode);pitchNode.add(camera);scene.add(yawNode);yawNode.position.copy(player.pos);
+ hemi=new THREE.HemisphereLight(0xcbd5d0,0x42382f,1.32);scene.add(hemi);sun=new THREE.DirectionalLight(0xffe4bf,2.15);sun.position.set(-35,58,18);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-80;sun.shadow.camera.right=80;sun.shadow.camera.top=80;sun.shadow.camera.bottom=-80;sun.shadow.camera.near=.1;sun.shadow.camera.far=180;scene.add(sun);
+ buildWorld();restoreStructures();buildWeapon();applyQuality(settings.quality);clock=new THREE.Clock();window.addEventListener('resize',onResize,{passive:true});
+}
+
+function buildWorld(){
+ const dirt=makeTexture('#514b40','#746a58'),asphalt=makeTexture('#353b39','#59605b'),wall=makeTexture('#626761','#858a82');dirt.repeat.set(38,38);asphalt.repeat.set(20,20);wall.repeat.set(3,2);
+ const ground=new THREE.Mesh(new THREE.PlaneGeometry(330,330),new THREE.MeshStandardMaterial({map:dirt,roughness:1,color:0x89816d}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+ const roadMat=new THREE.MeshStandardMaterial({map:asphalt,roughness:.95,color:0x747772});for(const [x,z,w,d] of [[0,0,18,320],[0,0,320,18],[-72,35,14,150],[70,-42,14,160]]){const r=new THREE.Mesh(new THREE.PlaneGeometry(w,d),roadMat);r.rotation.x=-Math.PI/2;r.position.set(x,.012,z);scene.add(r)}
+ const stripe=new THREE.MeshBasicMaterial({color:0xc6b875});for(let z=-150;z<150;z+=10){const s=new THREE.Mesh(new THREE.PlaneGeometry(.16,4.3),stripe);s.rotation.x=-Math.PI/2;s.position.set(0,.02,z);scene.add(s)}
+ const concrete=new THREE.MeshStandardMaterial({map:wall,color:0xa6a79d,roughness:.9}),tan=new THREE.MeshStandardMaterial({color:0x777063,roughness:.92}),dark=new THREE.MeshStandardMaterial({color:0x303735,roughness:.82}),mil=new THREE.MeshStandardMaterial({color:0x586358,roughness:.9}),red=new THREE.MeshStandardMaterial({color:0x82372e,roughness:.84}),rusty=new THREE.MeshStandardMaterial({color:0x714b37,roughness:.92});
+ buildRoom({x:-48,z:20,w:20,d:15,h:4.8,mat:tan,door:'south',id:'gas',doorId:'door-gas'});addBlock(-32,20,16,10,.42,red,false,4.9);addShelf(-52,22,6,1);addShelf(-44,25,5,1);spawnLoose('water',-52,22,'gas-water');spawnLoose('food',-45,25,'gas-food');spawnLoose('ammo9',-42,19,'gas-ammo');spawnContainer('gas-cache','Caja de suministros',-52,15,{bandage:2,food:2,water:2,ammo9:36,backpack_small:1});
+ buildRoom({x:50,z:48,w:28,d:20,h:6,mat:concrete,door:'west',id:'clinic',doorId:'door-clinic'});addShelf(56,53,7,1);addShelf(56,44,7,1);spawnContainer('clinic-locker','Armario médico',55,48,{medkit:2,bandage:4,water:2});spawnLoose('helmet',44,52,'clinic-helmet');
+ buildRoom({x:-72,z:-48,w:25,d:18,h:5.5,mat:concrete,door:'east',id:'police',doorId:'door-police'});addShelf(-77,-46,6,1);spawnContainer('police-armory','Armero policial',-77,-52,{mp5:1,ammo9:45,vest:1,reddot:1});
+ buildRoom({x:28,z:-72,w:24,d:16,h:5,mat:tan,door:'north',id:'farm',doorId:'door-farm'});addShelf(33,-72,6,1);spawnContainer('farm-cache','Caja de granja',24,-74,{food:3,water:2,shells:12,shotgun:1});
+ buildPerimeter(78,-72,62,48,mil);buildRoom({x:69,z:-72,w:19,d:14,h:4.8,mat:mil,door:'west',id:'mil-a',doorId:'door-mil-a'});buildRoom({x:91,z:-72,w:19,d:14,h:4.8,mat:mil,door:'east',id:'mil-b',doorId:'door-mil-b'});spawnContainer('mil-armory','Caja militar',91,-72,{rifle:1,ak:1,ammo556:60,ammo762:50,suppressor:1,backpack_large:1,helmet:1,vest:1});spawnContainer('mil-sniper','Caja larga',69,-72,{mosin:1,ammo762:30,reddot:1});
+ for(const [x,z,r] of [[9,30,.2],[-8,-28,-.5],[12,-92,1.1],[-13,83,-1.2],[-93,-6,.7],[105,54,-.6],[36,5,.4],[-38,5,-.2]])addCar(x,z,r);
+ const contCols=[0x51665f,0x82523d,0x4a5868,0x6e694d];[[25,8,0],[38,6,1.57],[105,-15,0],[-107,28,1.57],[110,28,0]].forEach((p,i)=>{const c=addBlock(p[0],p[1],6.2,2.6,2.55,new THREE.MeshStandardMaterial({color:contCols[i%4],roughness:.75,metalness:.2}),true);c.rotation.y=p[2]});
+ for(let i=0;i<64;i++){let x=rand(-150,150),z=rand(-150,150);if(Math.abs(x)<16||Math.abs(z)<15)continue;if((x>45&&z<-45)||(x>-90&&x<-52&&z>-62&&z<-34))continue;addResourceTree(x,z,rand(.75,1.35),`tree-${i}`)}
+ for(let i=0;i<34;i++){let x=rand(-145,145),z=rand(-145,145);if(Math.abs(x)<17||Math.abs(z)<16)continue;addResourceRock(x,z,rand(.75,1.3),i%5===0?'metal':'stone',`rock-${i}`)}
+ for(let z=-130;z<=130;z+=24){addLamp(-10,z);addLamp(10,z)}
+ for(const [x,z,t] of [[-48,20,0],[50,48,1],[-72,-48,2],[78,-72,3]])createBeacon(x,z,t);
+ spawnLoose('bandage',16,-14,'road-bandage');spawnLoose('water',18,83,'road-water');spawnLoose('food',-20,-92,'road-food');
+ for(let i=0;i<12;i++)spawnZombie(randomSpawn(28,82),i<2?'runner':'walker');
+ if(heliEvent?.active)restoreHeliEvent();
+}
+function buildRoom({x,z,w,d,h,mat,door,id,doorId}){const floor=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({color:0x4b4d48,roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.set(x,.02,z);scene.add(floor);const roof=new THREE.Mesh(new THREE.BoxGeometry(w+.3,.22,d+.3),mat);roof.position.set(x,h+.11,z);scene.add(roof);const t=.28,gap=1.8;const hwall=(zz,side)=>{if(door===side){const seg=(w-gap)/2;addBlock(x-(gap/2+seg/2),zz,seg,t,h,mat);addBlock(x+(gap/2+seg/2),zz,seg,t,h,mat);addDoor(doorId,x,zz,1.7,2.45,'x',side==='north'?-1:1)}else addBlock(x,zz,w,t,h,mat)};const vwall=(xx,side)=>{if(door===side){const seg=(d-gap)/2;addBlock(xx,z-(gap/2+seg/2),t,seg,h,mat);addBlock(xx,z+(gap/2+seg/2),t,seg,h,mat);addDoor(doorId,xx,z,1.7,2.45,'z',side==='west'?-1:1)}else addBlock(xx,z,t,d,h,mat)};hwall(z-d/2,'south');hwall(z+d/2,'north');vwall(x-w/2,'west');vwall(x+w/2,'east');const l=new THREE.PointLight(0xffd6a5,.24,12,2);l.position.set(x,h-1,z);scene.add(l)}
+function buildPerimeter(x,z,w,d,mat){const t=.22,h=2.5,gap=5,seg=(w-gap)/2;addBlock(x-(gap/2+seg/2),z-d/2,seg,t,h,mat);addBlock(x+(gap/2+seg/2),z-d/2,seg,t,h,mat);addBlock(x,z+d/2,w,t,h,mat);addBlock(x-w/2,z,t,d,h,mat);addBlock(x+w/2,z,t,
