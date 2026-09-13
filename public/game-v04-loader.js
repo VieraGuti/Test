@@ -1,101 +1,17 @@
 (() => {
-  // iPhone/Safari guard: keep the game locked to the visual viewport and
-  // prevent Safari gesture/double-tap zoom from wrecking the HUD scale.
-  const style = document.createElement('style');
-  style.textContent = `
-    html,body{width:100%;height:100%;min-width:100%;min-height:100%;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none!important;-webkit-text-size-adjust:100%!important;text-size-adjust:100%!important}
-    body{position:fixed!important;inset:0!important;width:100vw!important;height:var(--vast-vvh,100dvh)!important;max-width:100vw!important;max-height:var(--vast-vvh,100dvh)!important}
-    #game-root,#hud,.screen,.modal{max-width:100vw!important;max-height:var(--vast-vvh,100dvh)!important}
-    #game-root,canvas{touch-action:none!important}
-    #heli-nav{position:fixed;z-index:74;left:50%;top:46px;transform:translateX(-50%);display:none;align-items:center;gap:7px;padding:5px 9px;border:1px solid rgba(210,105,53,.38);border-radius:3px;background:rgba(7,9,8,.82);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);pointer-events:none;font:800 9px 'Barlow Condensed',system-ui,sans-serif;letter-spacing:.08em;color:#eee;box-shadow:0 8px 24px rgba(0,0,0,.28)}
-    #heli-nav.show{display:flex}
-    #heli-nav-arrow{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(208,107,49,.55);color:#e78a53;font-size:17px;line-height:1;transition:transform .18s linear}
-    #heli-nav-copy{display:flex;flex-direction:column;line-height:1.05}
-    #heli-nav-copy b{font-size:9px;color:#f1eee7}
-    #heli-nav-copy small{margin-top:2px;font-size:6px;color:#a3a69f;letter-spacing:.09em}
-    @media (orientation:landscape) and (max-height:520px){#heli-nav{top:43px;padding:4px 7px}#heli-nav-arrow{width:19px;height:19px;font-size:15px}#heli-nav-copy b{font-size:8px}#heli-nav-copy small{font-size:5.5px}}
-    @media (orientation:landscape) and (max-height:390px){#heli-nav{top:39px}}
-  `;
+  const CACHE='501';
+  const style=document.createElement('style');
+  style.textContent=`html,body{width:100%;height:100%;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none!important;-webkit-text-size-adjust:100%!important;text-size-adjust:100%!important}body{position:fixed!important;inset:0!important;width:100vw!important;height:var(--vast-vvh,100dvh)!important}.action.run{display:none!important}#aim-btn.aim-toggle-on{border-color:rgba(62,151,255,.78)!important;background:rgba(36,105,190,.28)!important;color:#eaf5ff!important}#build-placement.valid{border-color:rgba(45,140,255,.55)!important;box-shadow:0 0 22px rgba(45,140,255,.13)}#build-placement.invalid{border-color:rgba(217,69,60,.5)!important}#build-hint{min-width:118px;text-align:center}#heli-flight-ui{position:absolute;z-index:55;inset:0;pointer-events:none;display:none;font-family:'Barlow Condensed',system-ui,sans-serif}body.heli-piloting #heli-flight-ui{display:block}body.heli-piloting .actions,body.heli-piloting .ammo,body.heli-piloting .hotbar,body.heli-piloting #inventory-btn,body.heli-piloting #build-btn{display:none!important}#heli-flight-data{position:absolute;left:50%;top:calc(47px + var(--safe-t));transform:translateX(-50%);display:flex;gap:12px;padding:6px 11px;border:1px solid rgba(255,255,255,.12);border-top:2px solid #3d91e8;border-radius:3px;background:rgba(7,10,11,.78);font:800 9px 'Barlow Condensed';letter-spacing:.09em}#heli-flight-data b{color:#79b8ff;margin-left:4px}#heli-up,#heli-down,#heli-exit{position:absolute;pointer-events:auto;border-radius:50%;touch-action:none;background:rgba(12,17,18,.75);border:1px solid rgba(113,174,230,.38);color:#e2ebef;font:800 8px 'Barlow Condensed'}#heli-up{right:calc(28px + var(--safe-r));bottom:calc(116px + var(--safe-b));width:58px;height:58px}#heli-down{right:calc(95px + var(--safe-r));bottom:calc(70px + var(--safe-b));width:54px;height:54px}#heli-exit{right:calc(26px + var(--safe-r));bottom:calc(40px + var(--safe-b));width:58px;height:58px;border-color:rgba(214,90,70,.42);color:#efb5aa}#heli-nav{position:fixed;z-index:74;left:50%;top:46px;transform:translateX(-50%);display:none;align-items:center;gap:7px;padding:5px 9px;border:1px solid rgba(210,105,53,.38);border-radius:3px;background:rgba(7,9,8,.82);font:800 9px 'Barlow Condensed';letter-spacing:.08em}#heli-nav.show{display:flex}body.heli-piloting #heli-nav{display:none!important}#heli-nav-arrow{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(208,107,49,.55);color:#e78a53;font-size:17px}#heli-nav-copy{display:flex;flex-direction:column}#heli-nav-copy small{font-size:6px;color:#a3a69f}@media (orientation:landscape) and (max-height:520px){#heli-flight-data{top:calc(42px + var(--safe-t));padding:4px 8px;font-size:7px}#heli-up{right:calc(20px + var(--safe-r));bottom:calc(105px + var(--safe-b));width:52px;height:52px}#heli-down{right:calc(80px + var(--safe-r));bottom:calc(59px + var(--safe-b));width:48px;height:48px}#heli-exit{right:calc(17px + var(--safe-r));bottom:calc(35px + var(--safe-b));width:52px;height:52px}#heli-nav{top:43px}}`;
   document.head.appendChild(style);
-
-  const viewport = document.querySelector('meta[name="viewport"]');
-  if (viewport) viewport.setAttribute('content', 'width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content');
-
-  const syncViewport = () => {
-    const h = window.visualViewport?.height || window.innerHeight;
-    document.documentElement.style.setProperty('--vast-vvh', `${Math.round(h)}px`);
-    window.scrollTo(0, 0);
-  };
-  syncViewport();
-  window.addEventListener('resize', syncViewport, { passive: true });
-  window.addEventListener('orientationchange', () => setTimeout(syncViewport, 80), { passive: true });
-  window.visualViewport?.addEventListener('resize', syncViewport, { passive: true });
-  window.visualViewport?.addEventListener('scroll', () => window.scrollTo(0, 0), { passive: true });
-
-  // iOS Safari exposes pinch as gesture events. Blocking these does not block
-  // the Pointer Events used by the joystick/fire/aim multi-touch controls.
-  ['gesturestart', 'gesturechange', 'gestureend'].forEach((name) => {
-    document.addEventListener(name, (e) => e.preventDefault(), { passive: false, capture: true });
-  });
-  document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false, capture: true });
-
-  // Helicopter crash navigator. The game persists the random crash position,
-  // so the HUD can always guide mobile players instead of making them wander.
-  const heli = document.createElement('div');
-  heli.id = 'heli-nav';
-  heli.innerHTML = '<span id="heli-nav-arrow">↑</span><span id="heli-nav-copy"><b>HELICÓPTERO</b><small id="heli-nav-distance">BUSCANDO HUMO…</small></span>';
-  document.body.appendChild(heli);
-
-  const wrapAngle = (a) => {
-    while (a > Math.PI) a -= Math.PI * 2;
-    while (a < -Math.PI) a += Math.PI * 2;
-    return a;
-  };
-  const updateHeliNav = () => {
-    try {
-      const save = JSON.parse(localStorage.getItem('vast_dead_zone_save_v4') || 'null');
-      const event = save?.heliEvent;
-      if (!event?.active || !Number.isFinite(event.x) || !Number.isFinite(event.z) || !save?.pos) {
-        heli.classList.remove('show');
-        return;
-      }
-      const dx = event.x - Number(save.pos.x || 0);
-      const dz = event.z - Number(save.pos.z || 0);
-      const distance = Math.round(Math.hypot(dx, dz));
-      const targetAngle = Math.atan2(-dx, -dz);
-      const relative = wrapAngle(targetAngle - Number(save.yaw || 0));
-      const deg = relative * 180 / Math.PI;
-      const arrow = document.getElementById('heli-nav-arrow');
-      const label = document.getElementById('heli-nav-distance');
-      if (arrow) arrow.style.transform = `rotate(${deg}deg)`;
-      if (label) label.textContent = distance < 12 ? 'CARGAMENTO MUY CERCA' : `${distance} m · SIGUE EL HUMO`;
-      heli.classList.add('show');
-    } catch {
-      heli.classList.remove('show');
-    }
-  };
-  updateHeliNav();
-  setInterval(updateHeliNav, 700);
-
-  const paths = Array.from({ length: 9 }, (_, i) => `./v04/part-${String(i + 1).padStart(2, '0')}.txt?v=402`);
-
-  Promise.all(paths.map(async (path) => {
-    const response = await fetch(path, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`No se pudo cargar ${path} (${response.status})`);
-    return response.text();
-  }))
-    .then((parts) => {
-      const source = parts.join('');
-      const blob = new Blob([source], { type: 'text/javascript' });
-      const moduleUrl = URL.createObjectURL(blob);
-      return import(moduleUrl).finally(() => setTimeout(() => URL.revokeObjectURL(moduleUrl), 1500));
-    })
-    .catch((error) => {
-      console.error('[VAST v0.4] Error de arranque', error);
-      document.getElementById('loading')?.classList.add('hidden');
-      const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;z-index:9999;inset:20%;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;background:#0b0d0c;border:1px solid #713f2b;color:#eee;font:600 14px system-ui';
-      box.textContent = 'VAST no pudo cargar esta versión. Recarga la página para reintentar.';
-      document.body.appendChild(box);
-    });
+  const vp=document.querySelector('meta[name="viewport"]');if(vp)vp.setAttribute('content','width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content');
+  const sync=()=>{document.documentElement.style.setProperty('--vast-vvh',`${Math.round(window.visualViewport?.height||innerHeight)}px`);scrollTo(0,0)};sync();addEventListener('resize',sync,{passive:true});addEventListener('orientationchange',()=>setTimeout(sync,80),{passive:true});window.visualViewport?.addEventListener('resize',sync,{passive:true});['gesturestart','gesturechange','gestureend'].forEach(n=>document.addEventListener(n,e=>e.preventDefault(),{passive:false,capture:true}));document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false,capture:true});
+  const nav=document.createElement('div');nav.id='heli-nav';nav.innerHTML='<span id="heli-nav-arrow">↑</span><span id="heli-nav-copy"><b>HELICÓPTERO CAÍDO</b><small id="heli-nav-distance">BUSCANDO HUMO…</small></span>';document.body.appendChild(nav);
+  const wrap=a=>{while(a>Math.PI)a-=Math.PI*2;while(a<-Math.PI)a+=Math.PI*2;return a};setInterval(()=>{try{const s=JSON.parse(localStorage.getItem('vast_dead_zone_save_v4')||'null'),ev=s?.heliEvent;if(!ev?.active||!s?.pos){nav.classList.remove('show');return}const dx=ev.x-s.pos.x,dz=ev.z-s.pos.z,d=Math.round(Math.hypot(dx,dz)),a=wrap(Math.atan2(-dx,-dz)-(s.yaw||0));document.getElementById('heli-nav-arrow').style.transform=`rotate(${a*180/Math.PI}deg)`;document.getElementById('heli-nav-distance').textContent=d<12?'CARGAMENTO MUY CERCA':`${d} m · SIGUE EL HUMO`;nav.classList.add('show')}catch{nav.classList.remove('show')}},700);
+  const base=Array.from({length:9},(_,i)=>`./v04/part-${String(i+1).padStart(2,'0')}.txt?v=${CACHE}`);
+  Promise.all([...base,`./v05/patch.txt?v=${CACHE}`].map(async p=>{const r=await fetch(p,{cache:'no-store'});if(!r.ok)throw new Error(`${p} ${r.status}`);return r.text()})).then(parts=>{
+    const patch=parts.pop();let source=parts.join('');
+    source=source.replace("backpack_small:{name:'Mochila de asalto',short:'BAG',kind:'gear',desc:'18 huecos',stack:1},","backpack_small:{name:'Mochila de asalto',short:'BAG',kind:'gear',desc:'24 huecos',stack:1},").replace("backpack_large:{name:'Mochila militar',short:'MIL',kind:'gear',desc:'30 huecos',stack:1},","backpack_large:{name:'Mochila militar',short:'MIL',kind:'gear',desc:'42 huecos',stack:1},").replace('const BAG_CAP=[10,18,30];','const BAG_CAP=[10,24,42];').replace("bindHold($('aim-btn'),()=>aimHeld=true,()=>aimHeld=false);","$('aim-btn').addEventListener('pointerdown',e=>{e.stopPropagation();aimHeld=!aimHeld;$('aim-btn').classList.toggle('aim-toggle-on',aimHeld);AudioFX.resume()});").replace("const sprint=(runHeld||keys.has('ShiftLeft'))&&f>.2&&player.stamina>1,speed=sprint?7.1:4.55;if(sprint)player.stamina=clamp(player.stamina-dt*18,0,100);else player.stamina=clamp(player.stamina+dt*11,0,100);","const joyMag=Math.hypot(joy.x,joy.y),sprint=((isTouch?joyMag>.86:(runHeld||keys.has('ShiftLeft')))&&f>.2&&player.stamina>1),speed=sprint?7.2:4.55;if(sprint)player.stamina=clamp(player.stamina-dt*9.5,0,100);else player.stamina=clamp(player.stamina+dt*14.5,0,100);").replace('const fov=aimHeld?settings.fov-13:settings.fov;','const fov=aimHeld?settings.fov-19:settings.fov;').replace("weaponRig.position.y=lerp(weaponRig.position.y,-.19+(moving?Math.sin(runTime*8)*.008:0),clamp(dt*9,0,1));","const adsT=clamp(dt*12,0,1);weaponRig.position.x=lerp(weaponRig.position.x,aimHeld?0:.22,adsT);weaponRig.position.y=lerp(weaponRig.position.y,aimHeld?-.115:-.19+(moving?Math.sin(runTime*8)*.008:0),adsT);weaponRig.position.z=lerp(weaponRig.position.z,aimHeld?-.30:-.42,adsT);$('crosshair').style.opacity=aimHeld?'0':'1';").replace("toast(save?'VAST v0.4 · Partida restaurada':'VAST v0.4 · EQUÍPATE, FARMEA, CONSTRUYE')","toast(save?'VAST v0.5 · Partida restaurada':'VAST v0.5 · CONSTRUYE, PILOTA, SOBREVIVE')");
+    source=source.replace(`const BUILD_RECIPES={\n barricade:{label:'BARRICADA',cost:{wood:25},w:2.8,d:.35,h:1.25},\n wall:{label:'MURO',cost:{wood:45,stone:10},w:3,d:.35,h:2.25},\n campfire:{label:'FOGATA',cost:{wood:20,stone:12},w:1.1,d:1.1,h:.45},\n stash:{label:'CAJA',cost:{wood:35,metal:5},w:1.2,d:.8,h:.72}\n};`,`const BUILD_RECIPES={\n foundation:{label:'SUELO / FUNDACIÓN',cost:{wood:35,stone:10},w:3,d:3,h:.18},\n wall:{label:'PARED',cost:{wood:45,stone:10},w:3,d:.28,h:2.35},\n wall_window:{label:'PARED CON VENTANA',cost:{wood:40,stone:8},w:3,d:.28,h:2.35},\n doorway:{label:'MARCO DE PUERTA',cost:{wood:40,stone:8},w:3,d:.28,h:2.35},\n door_build:{label:'PUERTA',cost:{wood:25,metal:4},w:1.15,d:.18,h:2.15},\n roof:{label:'TECHO',cost:{wood:35,stone:5},w:3,d:3,h:.16},\n barricade:{label:'BARRICADA',cost:{wood:25},w:2.8,d:.35,h:1.25},\n campfire:{label:'FOGATA',cost:{wood:20,stone:12},w:1.1,d:1.1,h:.45},\n stash:{label:'COFRE',cost:{wood:35,metal:5},w:1.2,d:.8,h:.72}\n};`);
+    source+='\n'+patch;const u=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));return import(u).finally(()=>setTimeout(()=>URL.revokeObjectURL(u),2000));
+  }).catch(e=>{console.error('[VAST v0.5]',e);const b=document.createElement('div');b.style.cssText='position:fixed;z-index:9999;inset:18%;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;background:#0b0d0c;border:1px solid #713f2b;color:#eee;font:600 14px system-ui';b.textContent='VAST v0.5 no pudo cargar. Recarga para reintentar.';document.body.appendChild(b)});
 })();
