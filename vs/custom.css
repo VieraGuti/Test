@@ -1,14 +1,84 @@
 :root{--vs-hud-opacity:.92;--vs-btn-scale:1}
 #hud{opacity:var(--vs-hud-opacity)}
 #touch-action-buttons .touch-btn,#touch-weapon-slots,.hud-stat-card,.hud-weapon-card,.hud-icon-btn{scale:var(--vs-btn-scale)}
-#vs-credit{position:fixed;left:50%;bottom:max(4px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9999;color:rgba(255,255,255,.38);font:600 9px/1.2 Inter,sans-serif;pointer-events:none;white-space:nowrap}
+#game-container canvas{filter:saturate(.92) contrast(1.035)}
+#vs-credit{position:static;display:block;margin:10px auto 0;text-align:center;color:rgba(255,255,255,.36);font:600 9px/1.25 Inter,sans-serif;pointer-events:none;white-space:normal;max-width:92%}
 .vs-extra-settings{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12)}
 .vs-settings-row{display:grid;grid-template-columns:1fr minmax(150px,45%);align-items:center;gap:14px;margin:10px 0}
 .vs-settings-row label{font-weight:700}.vs-settings-row input[type=range]{width:100%}
 .vs-settings-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.vs-settings-actions button{min-height:40px}
-#vs-hud-toolbar{position:fixed;z-index:12000;left:50%;top:max(10px,env(safe-area-inset-top));transform:translateX(-50%);display:none;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:rgba(5,9,15,.94);border:1px solid rgba(255,255,255,.2);box-shadow:0 10px 35px rgba(0,0,0,.45);font:700 11px Inter,sans-serif}
+#vs-hud-toolbar{position:fixed;z-index:12000;left:50%;top:max(8px,env(safe-area-inset-top));transform:translateX(-50%);display:none;align-items:center;gap:7px;padding:7px 9px;border-radius:11px;background:rgba(5,9,15,.95);border:1px solid rgba(255,255,255,.2);box-shadow:0 10px 35px rgba(0,0,0,.45);font:700 10px Inter,sans-serif}
 body.vs-hud-editing #vs-hud-toolbar{display:flex}
 body.vs-hud-editing [data-vs-editable]{outline:2px dashed rgba(0,255,170,.8)!important;outline-offset:3px;pointer-events:auto!important;touch-action:none!important}
 body.vs-hud-editing [data-vs-selected]{outline-color:#ffd54a!important;filter:drop-shadow(0 0 6px rgba(255,213,74,.55))}
-#vs-hud-toolbar button{border:1px solid rgba(255,255,255,.18);background:#17202b;color:white;border-radius:8px;padding:7px 9px;font-weight:800}#vs-hud-toolbar button.primary{background:#1e6f52}
-@media(max-width:700px){.vs-settings-row{grid-template-columns:1fr}.vs-settings-row label{font-size:12px}#vs-credit{font-size:8px}}
+#vs-hud-toolbar button{border:1px solid rgba(255,255,255,.18);background:#17202b;color:white;border-radius:8px;padding:6px 8px;font-weight:800}#vs-hud-toolbar button.primary{background:#1e6f52}
+.settings-card{max-height:92vh!important;overflow:auto!important;-webkit-overflow-scrolling:touch}
+
+@media (pointer:coarse) and (orientation:landscape){
+  #top-bar{top:8px;padding:4px 11px;gap:8px;border-radius:9px;box-shadow:0 5px 18px rgba(0,0,0,.38)}
+  #top-bar .team-label{font-size:.82rem;letter-spacing:.5px}
+  #top-bar .score-num{font-size:1.15rem;padding:1px 7px}
+  #timer-box{min-width:72px}
+  #round-state-text{font-size:.55rem;letter-spacing:1px}
+  #round-timer{font-size:1.08rem}
+  #bomb-indicator{font-size:.8rem}
+
+  #hud-top-left{top:9px;left:9px;gap:7px}
+  #radar-container{width:86px;height:86px;border-width:1px;box-shadow:0 3px 12px rgba(0,0,0,.45)}
+  #radar-player-dot{width:6px;height:6px}
+  .quick-btns{gap:5px}
+  .hud-icon-btn{width:31px;height:31px;border-radius:7px;font-size:.88rem}
+
+  #hud-bottom-left{top:104px;bottom:auto;left:10px;gap:5px;align-items:center}
+  .hud-stat-card{min-width:0!important;width:auto;padding:5px 7px;gap:5px;border-radius:8px;box-shadow:0 4px 13px rgba(0,0,0,.38);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+  .hud-stat-card .stat-label{display:none}
+  .hud-stat-card .stat-icon{font-size:.9rem}
+  .hud-stat-card .stat-val{font-size:1.05rem;min-width:24px;text-align:center}
+  .hud-stat-card .stat-bar-wrap{height:2px}
+  .money-card{padding-inline:8px}
+
+  #touch-move-zone{width:37vw;height:62vh}
+  #joystick-base{left:36px;bottom:38px;width:102px;height:102px;border-width:1px;background:radial-gradient(circle,rgba(255,255,255,.025),rgba(255,255,255,.085));box-shadow:0 5px 18px rgba(0,0,0,.28)}
+  #joystick-stick{width:42px;height:42px;border-width:1px;box-shadow:0 0 10px rgba(56,189,248,.5)}
+
+  #touch-action-buttons{right:14px;bottom:96px;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,52px);gap:8px}
+  .touch-btn{font-size:.57rem;border-width:1px;box-shadow:0 4px 12px rgba(0,0,0,.38);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+  .touch-btn i{font-size:1.05rem}
+  .touch-btn-fire{width:64px;height:64px;border-width:1px;box-shadow:0 0 14px rgba(239,68,68,.38)}
+  .touch-btn-fire i{font-size:1.38rem}
+
+  #hud-bottom-right{right:10px;bottom:9px;gap:4px}
+  .hud-weapon-card{min-width:104px;padding:5px 9px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.38);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+  .weapon-name-display{font-size:.72rem;letter-spacing:.5px}
+  .ammo-active{font-size:1.45rem}
+  .ammo-slash{font-size:.8rem}
+  .ammo-reserve{font-size:.82rem}
+  #interact-box{padding:5px 8px}
+  #interact-label{font-size:.7rem;margin-bottom:3px}
+  .interact-progress-bg{width:110px;height:5px}
+
+  #touch-weapon-slots{bottom:6px;gap:3px;padding:3px 5px;border-radius:9px;background:rgba(15,23,42,.58);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .wep-slot-btn{padding:3px 7px;min-width:44px;border-radius:6px;gap:0}
+  .wep-slot-key{font-size:.48rem}
+  .wep-slot-label{font-size:.62rem}
+  .wep-slot-btn.active{transform:translateY(-1px);box-shadow:0 0 6px rgba(255,208,0,.22)}
+
+  #killfeed{top:54px;right:9px;gap:4px;max-width:300px}
+  .kf-row{padding:4px 8px;font-size:.72rem;border-radius:5px;gap:5px}
+  .kf-wep,.kf-hs{font-size:.66rem}
+
+  #crosshair{width:26px;height:26px}
+  .ch-top{height:6px;left:12px}.ch-bottom{height:6px;left:12px}.ch-left{width:6px;top:12px}.ch-right{width:6px;top:12px}.ch-center{top:12px;left:12px}
+
+  #match-announcement{padding:9px 20px;border-width:1px}
+  #announcement-title{font-size:1.4rem;letter-spacing:2px}
+  #announcement-sub{font-size:.78rem}
+
+  #vs-credit{font-size:7px;margin-top:7px}
+  .vs-settings-row{grid-template-columns:1fr minmax(135px,42%);gap:8px;margin:7px 0}
+  .vs-settings-row label{font-size:11px}
+  #vs-hud-toolbar{max-width:96vw;gap:5px;font-size:9px;padding:5px 7px}
+  #vs-hud-toolbar button{padding:5px 6px;font-size:9px}
+}
+
+@media(max-width:700px){.vs-settings-row{grid-template-columns:1fr}.vs-settings-row label{font-size:12px}}
