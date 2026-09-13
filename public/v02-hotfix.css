@@ -1,0 +1,106 @@
+/* VAST: Dead Zone v0.2.1 — iPhone/Safari production hotfixes */
+
+/* Inventory item class "ammo" collided with the HUD .ammo card. Scope it back
+   into the inventory so ammunition behaves like every other backpack tile. */
+#inventory-overlay .inventory-grid .inv-item.ammo{
+  position:relative!important;
+  right:auto!important;
+  left:auto!important;
+  top:auto!important;
+  bottom:auto!important;
+  width:auto!important;
+  height:auto!important;
+  min-height:58px!important;
+  padding:8px 42px 7px 48px!important;
+  border-radius:3px!important;
+  text-align:left!important;
+  z-index:auto!important;
+  transform:none!important;
+}
+#inventory-overlay .inventory-grid .inv-item.ammo>strong{
+  position:absolute!important;
+  right:8px!important;
+  top:8px!important;
+  font-size:9px!important;
+  line-height:normal!important;
+  color:#aaa!important;
+}
+
+/* Safari's dynamic browser chrome can make vh misleading. */
+#inventory-overlay{height:100dvh;min-height:100dvh;padding:6px max(8px,var(--safe-r)) 6px max(8px,var(--safe-l))}
+.inventory-shell{height:calc(100dvh - 12px);max-height:calc(100dvh - 12px)}
+.inventory-body{overflow:hidden}
+.equipment-panel,.backpack-panel,.vicinity-panel{-webkit-overflow-scrolling:touch}
+
+/* Final right-thumb layout. This intentionally applies to touch devices in
+   landscape regardless of Safari toolbar height. */
+@media (orientation:landscape) and (pointer:coarse){
+  .actions{
+    right:calc(16px + var(--safe-r))!important;
+    bottom:calc(76px + var(--safe-b))!important;
+    width:252px!important;
+    height:148px!important;
+    transform:none!important;
+    z-index:12!important;
+    pointer-events:none!important;
+  }
+  .actions .action{pointer-events:auto!important;touch-action:none!important;margin:0!important}
+  .action.fire{
+    right:0!important;left:auto!important;top:auto!important;bottom:0!important;
+    width:74px!important;height:74px!important;z-index:5!important
+  }
+  .action#aim-btn{
+    right:82px!important;left:auto!important;top:auto!important;bottom:70px!important;
+    width:46px!important;height:46px!important
+  }
+  .action#reload-btn{
+    right:84px!important;left:auto!important;top:auto!important;bottom:8px!important;
+    width:45px!important;height:45px!important;font-size:7px!important
+  }
+  .action.use{
+    right:140px!important;left:auto!important;top:auto!important;bottom:76px!important;
+    width:48px!important;height:48px!important
+  }
+  .action#jump-btn{
+    right:142px!important;left:auto!important;top:auto!important;bottom:20px!important;
+    width:43px!important;height:43px!important;font-size:7px!important
+  }
+  .action.run{
+    right:198px!important;left:auto!important;top:auto!important;bottom:20px!important;
+    width:47px!important;height:47px!important;font-size:7px!important
+  }
+  .ammo{
+    right:calc(12px + var(--safe-r))!important;
+    bottom:calc(8px + var(--safe-b))!important;
+    width:96px!important;height:48px!important;
+    transform:none!important;z-index:8!important
+  }
+  #inventory-btn{right:calc(54px + var(--safe-r))!important;z-index:13!important}
+  #look-zone{right:0!important;z-index:1!important}
+
+  .inventory-shell{width:calc(100vw - 16px)!important;height:calc(100dvh - 10px)!important;max-height:calc(100dvh - 10px)!important;grid-template-rows:44px minmax(0,1fr) 36px!important}
+  .inventory-body{grid-template-columns:150px minmax(0,1fr) 250px!important}
+  .equipment-panel,.backpack-panel,.vicinity-panel{padding:8px!important}
+  .inventory-grid{gap:5px!important}
+  .inv-item{min-height:52px!important}
+  #inventory-overlay .inventory-grid .inv-item.ammo{min-height:52px!important;padding:7px 40px 6px 44px!important}
+  .inventory-shell>footer button{min-width:126px}
+}
+
+@media (orientation:landscape) and (pointer:coarse) and (max-width:900px){
+  .inventory-body{grid-template-columns:128px minmax(0,1fr) 210px!important}
+  .equipment-panel,.backpack-panel,.vicinity-panel{padding:6px!important}
+  .equip-card,.condition-card{min-height:40px!important;padding:6px!important;margin-bottom:4px!important}
+  .inventory-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .section-title small{display:none!important}
+}
+
+@media (orientation:landscape) and (pointer:coarse) and (max-height:390px){
+  .actions{bottom:calc(66px + var(--safe-b))!important;width:234px!important;height:132px!important}
+  .action.fire{width:68px!important;height:68px!important}
+  .action#aim-btn{right:74px!important;bottom:62px!important;width:42px!important;height:42px!important}
+  .action#reload-btn{right:76px!important;bottom:6px!important;width:41px!important;height:41px!important}
+  .action.use{right:126px!important;bottom:67px!important;width:44px!important;height:44px!important}
+  .action#jump-btn{right:127px!important;bottom:15px!important;width:40px!important;height:40px!important}
+  .action.run{right:177px!important;bottom:15px!important;width:43px!important;height:43px!important}
+}
