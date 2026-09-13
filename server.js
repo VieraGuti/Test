@@ -9,6 +9,7 @@ const SFX_COMMIT = '29a6bdfd01ad175c389cbd0bac80c30f926ff96b';
 const SFX_BASE = `https://raw.githubusercontent.com/euuuuuuan/fatal-funnel-public/${SFX_COMMIT}/apps/game/public/sfx`;
 
 const localFiles = {
+  '/vs/pre.js': ['vs/pre.js', 'application/javascript; charset=utf-8'],
   '/vs/custom.js': ['vs/custom.js', 'application/javascript; charset=utf-8'],
   '/vs/custom.css': ['vs/custom.css', 'text/css; charset=utf-8'],
 };
@@ -45,7 +46,7 @@ function customizeHtml(html) {
     .replace(/CS-BR-DUST2/g, 'VS-DUST2')
     .replace(/CS-BR-TDM/g, 'VS-TDM')
     .replace('</head>', '  <link rel="stylesheet" href="/vs/custom.css">\n</head>')
-    .replace('</body>', '  <script src="/vs/custom.js"></script>\n</body>');
+    .replace('</body>', '  <script src="/vs/pre.js"></script>\n  <script src="/vs/custom.js"></script>\n</body>');
 }
 
 const server = http.createServer(async (req, res) => {
