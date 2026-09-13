@@ -1,0 +1,8 @@
+.icon-btn,.hotbar,.ammo,.top-center,.top-left-panel,.mission,.bottom-left-stats{z-index:6}
+#crosshair,#hitmarker,#interact-prompt,#toast-stack,#damage-vignette{z-index:7}
+#damage-vignette{pointer-events:none}
+@media (max-height:420px) and (min-width:760px){
+  .hotbar{transform:translateX(-50%) scale(.9);transform-origin:center bottom}
+  .top-left-panel{transform:scale(.94);transform-origin:left top}
+  .ammo{transform:scale(.92);transform-origin:right bottom}
+}
