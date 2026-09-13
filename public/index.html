@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./fixes.css" />
   <link rel="stylesheet" href="./mobile-controls.css" />
   <link rel="stylesheet" href="./v03.css?v=301" />
+  <link rel="stylesheet" href="./v04.css?v=401" />
 </head>
 <body>
   <div id="game-root"></div>
@@ -18,12 +19,12 @@
   <section id="boot" class="screen show">
     <div class="boot-bg"></div>
     <div class="boot-card">
-      <div class="eyebrow">VIERAGUTI PRESENTA · v0.3</div>
+      <div class="eyebrow">VIERAGUTI PRESENTA · v0.4</div>
       <h1>VAST<span>:</span><small> DEAD ZONE</small></h1>
-      <p class="tagline">Farmea. Construye. Sobrevive.</p>
+      <p class="tagline">Equípate. Saquea. Construye. Sobrevive.</p>
       <div class="boot-stats">
-        <div><strong>RUST LOOP</strong><span>Recursos + construcción</span></div>
-        <div><strong>HELI</strong><span>Patrulla hostil derribable</span></div>
+        <div><strong>DAYZ LOOP</strong><span>Loot por zonas + equipo</span></div>
+        <div><strong>EVENTOS</strong><span>Helicóptero + infectados</span></div>
         <div><strong>MÓVIL</strong><span>Hecho para táctil</span></div>
       </div>
       <button id="play-btn" class="primary">ENTRAR EN LA ZONA</button>
@@ -51,8 +52,8 @@
 
     <div id="mission" class="mission glass">
       <small>OBJETIVO</small>
-      <strong id="objective-text">Farmea madera y piedra</strong>
-      <span id="objective-sub">Equipa hacha o pico y empieza tu base</span>
+      <strong id="objective-text">Registra la gasolinera</strong>
+      <span id="objective-sub">Busca comida, agua y una mochila</span>
     </div>
 
     <div id="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -68,17 +69,17 @@
     </div>
 
     <div id="hotbar" class="hotbar">
-      <button data-slot="0" class="slot active"><span>1</span><b>PISTOLA</b><small id="pistol-stock">15/45</small></button>
-      <button data-slot="1" class="slot locked"><span>2</span><b>RIFLE</b><small id="rifle-stock">BLOQ.</small></button>
-      <button data-slot="2" class="slot locked"><span>3</span><b>ESCOPETA</b><small id="shotgun-stock">BLOQ.</small></button>
+      <button data-slot="0" class="slot active"><span>1</span><b>M9</b><small id="pistol-stock">15/30</small></button>
+      <button data-slot="1" class="slot locked"><span>2</span><b>MP5</b><small id="rifle-stock">BLOQ.</small></button>
+      <button data-slot="2" class="slot locked"><span>3</span><b>M4A1</b><small id="shotgun-stock">BLOQ.</small></button>
       <button data-item="medkit" class="slot item"><span>+</span><b>BOTIQUÍN</b><small id="medkit-count">x1</small></button>
-      <button data-item="food" class="slot item"><span>●</span><b>COMIDA</b><small id="food-count">x2</small></button>
-      <button data-item="water" class="slot item"><span>◈</span><b>AGUA</b><small id="water-count">x2</small></button>
+      <button data-item="food" class="slot item"><span>●</span><b>COMIDA</b><small id="food-count">x1</small></button>
+      <button data-item="water" class="slot item"><span>◈</span><b>AGUA</b><small id="water-count">x1</small></button>
     </div>
 
     <div class="ammo glass">
       <div class="weapon-name" id="weapon-name">M9</div>
-      <strong id="ammo-mag">15</strong><span>/</span><b id="ammo-reserve">45</b>
+      <strong id="ammo-mag">15</strong><span>/</span><b id="ammo-reserve">30</b>
       <small id="fire-mode">SEMI</small>
     </div>
 
@@ -121,6 +122,6 @@
   <div id="rotate-hint"><div>↻</div><b>GIRA EL TELÉFONO</b><span>VAST está diseñado para jugar en horizontal</span></div>
   <div id="loading" class="hidden"><div class="spinner"></div><span>Preparando la zona...</span></div>
 
-  <script type="module" src="./game-v03.js?v=301"></script>
+  <script type="module" src="./game-v04-loader.js?v=401"></script>
 </body>
 </html>
