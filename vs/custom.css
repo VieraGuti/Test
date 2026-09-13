@@ -1,0 +1,14 @@
+:root{--vs-hud-opacity:.92;--vs-btn-scale:1}
+#hud{opacity:var(--vs-hud-opacity)}
+#touch-action-buttons .touch-btn,#touch-weapon-slots,.hud-stat-card,.hud-weapon-card,.hud-icon-btn{scale:var(--vs-btn-scale)}
+#vs-credit{position:fixed;left:50%;bottom:max(4px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9999;color:rgba(255,255,255,.38);font:600 9px/1.2 Inter,sans-serif;pointer-events:none;white-space:nowrap}
+.vs-extra-settings{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.12)}
+.vs-settings-row{display:grid;grid-template-columns:1fr minmax(150px,45%);align-items:center;gap:14px;margin:10px 0}
+.vs-settings-row label{font-weight:700}.vs-settings-row input[type=range]{width:100%}
+.vs-settings-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.vs-settings-actions button{min-height:40px}
+#vs-hud-toolbar{position:fixed;z-index:12000;left:50%;top:max(10px,env(safe-area-inset-top));transform:translateX(-50%);display:none;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:rgba(5,9,15,.94);border:1px solid rgba(255,255,255,.2);box-shadow:0 10px 35px rgba(0,0,0,.45);font:700 11px Inter,sans-serif}
+body.vs-hud-editing #vs-hud-toolbar{display:flex}
+body.vs-hud-editing [data-vs-editable]{outline:2px dashed rgba(0,255,170,.8)!important;outline-offset:3px;pointer-events:auto!important;touch-action:none!important}
+body.vs-hud-editing [data-vs-selected]{outline-color:#ffd54a!important;filter:drop-shadow(0 0 6px rgba(255,213,74,.55))}
+#vs-hud-toolbar button{border:1px solid rgba(255,255,255,.18);background:#17202b;color:white;border-radius:8px;padding:7px 9px;font-weight:800}#vs-hud-toolbar button.primary{background:#1e6f52}
+@media(max-width:700px){.vs-settings-row{grid-template-columns:1fr}.vs-settings-row label{font-size:12px}#vs-credit{font-size:8px}}
