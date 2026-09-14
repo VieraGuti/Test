@@ -1,0 +1,50 @@
+/* v0.5.10 — free user quickbar: smart defaults, icons and long-press assignment */
+const V0510_QB_KEY='vast_dead_zone_quickbar_v0510';
+const v0510QBDefault=['w:0',null,'i:medkit','i:bandage','i:food','i:water'];
+let v0510QB=(()=>{try{const a=JSON.parse(localStorage.getItem(V0510_QB_KEY)||'null');return Array.isArray(a)&&a.length===6?a:v0510QBDefault.slice()}catch{return v0510QBDefault.slice()}})();
+let v0510QBEditor=null;
+function v0510SaveQB(){try{localStorage.setItem(V0510_QB_KEY,JSON.stringify(v0510QB))}catch{}}
+function v0510ItemIcon(type){return type==='medkit'?'med':type==='bandage'?'bandage':type==='food'?'food':type==='water'?'water':'item'}
+function v0510QBLabel(key){if(!key)return'';if(key.startsWith('w:'))return W[+key.slice(2)]?.label||'ARMA';const t=key.slice(2);return ITEMS[t]?.name?.toUpperCase?.()||t.toUpperCase()}
+function v0510QBAvailable(){
+  const out=[];for(let i=0;i<W.length;i++)if(W[i].unlocked)out.push(`w:${i}`);for(const t of ['medkit','bandage','food','water'])if((player.inventory[t]||0)>0||v0510QB.includes(`i:${t}`))out.push(`i:${t}`);return out
+}
+function v0510QBAutoAssign(type){
+  let key=null,preferred=[];const def=ITEMS[type];if(def?.kind==='weapon'){key=`w:${def.weapon}`;preferred=[0,1]}else if(['medkit','bandage'].includes(type)){key=`i:${type}`;preferred=[2,3]}else if(['food','water'].includes(type)){key=`i:${type}`;preferred=[4,5]}if(!key||v0510QB.includes(key))return;
+  let slot=preferred.find(i=>!v0510QB[i]);if(slot==null)slot=v0510QB.findIndex(x=>!x);if(slot<0)return;v0510QB[slot]=key;v0510SaveQB();v0510RenderQB()
+}
+function v0510QBUse(key){if(!key)return;if(key.startsWith('w:'))switchWeapon(+key.slice(2));else{const t=key.slice(2);if(['medkit','bandage','food','water'].includes(t))useItem(t)}v0510RenderQB()}
+function v0510QBIconHTML(key){if(!key)return'<i class="qb-icon empty">+</i>';if(key.startsWith('w:'))return'<i class="qb-icon gun"><u></u></i>';return `<i class="qb-icon ${v0510ItemIcon(key.slice(2))}"></i>`}
+function v0510QBCount(key){if(!key)return'VACÍO';if(key.startsWith('w:')){const w=W[+key.slice(2)];return w?`${w.mag}/${player.inventory[w.ammo]||0}`:''}const t=key.slice(2);return `x${player.inventory[t]||0}`}
+function v0510RenderQB(){
+  const hot=$('hotbar');if(!hot)return;hot.innerHTML='';for(let i=0;i<6;i++){const key=v0510QB[i],b=document.createElement('button');b.className='slot qb-slot'+(key?.startsWith('w:')&&+key.slice(2)===player.weapon?' active':'')+(!key?' qb-empty':'');b.dataset.qb=String(i);b.innerHTML=`<span>${i+1}</span>${v0510QBIconHTML(key)}<b>${v0510QBLabel(key)||'ASIGNAR'}</b><small>${v0510QBCount(key)}</small>`;let hold=null,long=false;
+    b.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();long=false;hold=setTimeout(()=>{long=true;v0510OpenQBEditor(i)},520)});const end=e=>{e.stopPropagation();if(hold)clearTimeout(hold);hold=null;if(!long){if(key)v0510QBUse(key);else v0510OpenQBEditor(i)}};b.addEventListener('pointerup',end);b.addEventListener('pointercancel',()=>{if(hold)clearTimeout(hold);hold=null});hot.appendChild(b)}
+  /* Legacy UI updater expects these ids to exist. */
+  for(const id of ['medkit-count','food-count','water-count']){const h=document.createElement('span');h.id=id;h.style.display='none';hot.appendChild(h)}
+}
+function v0510OpenQBEditor(slot){
+  if(!v0510QBEditor)return;const list=v0510QBEditor.querySelector('.qb-edit-list');v0510QBEditor.dataset.slot=String(slot);list.innerHTML='';
+  const empty=document.createElement('button');empty.className='qb-edit-item clear';empty.innerHTML='<i>×</i><span><b>VACÍO</b><small>Quitar acceso de este hueco</small></span>';empty.onclick=()=>v0510AssignQB(slot,null);list.appendChild(empty);
+  for(const key of v0510QBAvailable()){const b=document.createElement('button');b.className='qb-edit-item';const count=v0510QBCount(key);b.innerHTML=`${v0510QBIconHTML(key)}<span><b>${v0510QBLabel(key)}</b><small>${count}</small></span>`;b.onclick=()=>v0510AssignQB(slot,key);list.appendChild(b)}
+  v0510QBEditor.classList.remove('hidden');paused=true;fireHeld=false
+}
+function v0510AssignQB(slot,key){v0510QB[slot]=key;v0510SaveQB();v0510RenderQB();v0510QBEditor?.classList.add('hidden');paused=inventoryOpen;clock.getDelta();AudioFX.click()}
+function v0510SetupQB(){
+  /* If a previous save already owns an automatic weapon, put the first one in slot 2. */
+  if(!v0510QB[1]){const wi=W.findIndex((w,i)=>i>0&&w.unlocked);if(wi>0)v0510QB[1]=`w:${wi}`}
+  v0510SaveQB();v0510RenderQB();
+  v0510QBEditor=document.createElement('section');v0510QBEditor.id='qb-editor';v0510QBEditor.className='hidden';v0510QBEditor.innerHTML='<div class="qb-edit-shell"><header><div><small>ACCESOS RÁPIDOS</small><h2>ASIGNAR HUECO</h2></div><button class="qb-edit-close">✕</button></header><div class="qb-edit-list"></div><footer>Mantén pulsado cualquier hueco de la barra para cambiarlo.</footer></div>';document.body.appendChild(v0510QBEditor);v0510QBEditor.querySelector('.qb-edit-close').onclick=()=>{v0510QBEditor.classList.add('hidden');paused=inventoryOpen;clock.getDelta()};
+  const st=document.createElement('style');st.id='v0510-qb-style';st.textContent=`
+  .hotbar .qb-slot{position:relative;min-width:64px!important;width:72px!important;height:58px!important;padding:4px 5px 3px!important;overflow:hidden}.hotbar .qb-slot>span{position:absolute!important;right:5px!important;top:3px!important;font-size:7px!important;color:#737a76!important}.hotbar .qb-slot>b{display:block!important;margin-top:1px!important;font-size:7px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}.hotbar .qb-slot>small{font-size:6px!important;color:#8b948f!important}.qb-icon{position:relative;display:block;width:23px;height:18px;margin:0 auto 1px;border:0!important}.qb-icon.gun:before{content:'';position:absolute;left:2px;top:5px;width:17px;height:5px;background:#aeb8b3;border-radius:1px;transform:skewX(-12deg)}.qb-icon.gun:after{content:'';position:absolute;left:10px;top:9px;width:5px;height:7px;background:#89948e;transform:skewX(13deg)}.qb-icon.med:before{content:'';position:absolute;left:4px;top:2px;width:15px;height:14px;border-radius:3px;background:#9aa7a0}.qb-icon.med:after{content:'+';position:absolute;inset:0;text-align:center;line-height:18px;color:#26312c;font:bold 15px system-ui}.qb-icon.bandage:before{content:'';position:absolute;left:3px;top:5px;width:18px;height:8px;border-radius:5px;background:#aa9b84;transform:rotate(-14deg)}.qb-icon.bandage:after{content:'';position:absolute;left:9px;top:7px;width:6px;height:4px;background:#d0c1a7;transform:rotate(-14deg)}.qb-icon.food:before{content:'';position:absolute;left:5px;top:2px;width:14px;height:15px;border:2px solid #b18c5f;border-radius:3px}.qb-icon.food:after{content:'';position:absolute;left:5px;top:5px;width:14px;height:2px;background:#b18c5f}.qb-icon.water:before{content:'◆';position:absolute;inset:0;text-align:center;color:#75bad1;font-size:17px;line-height:18px}.qb-icon.empty:before{content:'+';position:absolute;inset:0;text-align:center;line-height:17px;border:1px dashed #4c5550;color:#66706b;border-radius:3px}.hotbar .qb-empty{opacity:.55}
+  #qb-editor{position:fixed;z-index:260;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(3,5,5,.82);backdrop-filter:blur(7px)}#qb-editor.hidden{display:none!important}.qb-edit-shell{width:min(560px,86vw);max-height:82dvh;background:#0c1110;border:1px solid rgba(255,255,255,.12);border-top:2px solid #d26f3f;box-shadow:0 24px 70px #000;display:grid;grid-template-rows:auto minmax(0,1fr) auto}.qb-edit-shell header{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid rgba(255,255,255,.08)}.qb-edit-shell header small{font:700 7px Inter;color:#c97a51;letter-spacing:.15em}.qb-edit-shell h2{margin:2px 0 0;font:800 20px 'Barlow Condensed',sans-serif}.qb-edit-close{width:31px;height:31px;background:#171d1b;color:#bbb}.qb-edit-list{padding:9px;overflow:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.qb-edit-item{min-height:52px;display:flex;align-items:center;gap:10px;padding:8px 10px;background:#141a18;border:1px solid rgba(255,255,255,.08);color:#dfe5e2;text-align:left}.qb-edit-item .qb-icon{margin:0;flex:none}.qb-edit-item span{display:flex;flex-direction:column}.qb-edit-item b{font:800 10px 'Barlow Condensed',sans-serif}.qb-edit-item small{font:600 7px Inter;color:#7f8a84}.qb-edit-item.clear{border-color:rgba(196,83,65,.25)}.qb-edit-item.clear>i{width:23px;text-align:center;color:#d07161;font-style:normal;font-size:18px}.qb-edit-shell footer{padding:8px 12px;border-top:1px solid rgba(255,255,255,.07);font:600 7px Inter;color:#727d77}
+  @media (orientation:landscape) and (max-height:520px){.hotbar .qb-slot{width:62px!important;min-width:58px!important;height:52px!important}.qb-icon{transform:scale(.84);margin-top:-1px}.hotbar .qb-slot>b{font-size:6.5px!important}.qb-edit-shell{max-height:88dvh}.qb-edit-list{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  `;document.head.appendChild(st)
+}
+const v0510AddItemBase=addItem;
+addItem=function(type,count=1){const ok=v0510AddItemBase(type,count);if(ok){v0510QBAutoAssign(type);setTimeout(v0510RenderQB,0)}return ok};
+const v0510UseItemBase=useItem;
+useItem=function(type){v0510UseItemBase(type);setTimeout(v0510RenderQB,0)};
+const v0510SwitchWeaponBase=switchWeapon;
+switchWeapon=function(i){v0510SwitchWeaponBase(i);setTimeout(v0510RenderQB,0)};
+const v0510SetupQBBase=setupV05;
+setupV05=function(){v0510SetupQBBase();setTimeout(v0510SetupQB,180)};
