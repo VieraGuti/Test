@@ -9,7 +9,7 @@
   syncViewport();window.addEventListener('resize',syncViewport,{passive:true});window.addEventListener('orientationchange',()=>setTimeout(syncViewport,80),{passive:true});window.visualViewport?.addEventListener('resize',syncViewport,{passive:true});window.visualViewport?.addEventListener('scroll',()=>window.scrollTo(0,0),{passive:true});['gesturestart','gesturechange','gestureend'].forEach(n=>document.addEventListener(n,e=>e.preventDefault(),{passive:false,capture:true}));document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false,capture:true});
 
   const partPaths=Array.from({length:9},(_,i)=>`./v04/part-${String(i+1).padStart(2,'0')}.txt?v=514`);
-  const patchPaths=Array.from({length:19},(_,i)=>`./v05/patch-${String(i+1).padStart(2,'0')}.txt?v=514`);
+  const patchPaths=Array.from({length:20},(_,i)=>`./v05/patch-${String(i+1).padStart(2,'0')}.txt?v=514`);
   const getText=async path=>{const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw new Error(`No se pudo cargar ${path} (${r.status})`);return r.text()};
   const replaceRequired=(source,from,to,label)=>{if(!source.includes(from)){console.warn(`[VAST v0.5] No se aplicó parche: ${label}`);return source}return source.replace(from,to)};
 
