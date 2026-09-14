@@ -1,0 +1,92 @@
+/* v0.5.11 — REAL CC0 WORLD ASSETS: Kenney + Quaternius GLB art pass */
+const V0511_ASSET_ROOTS={
+  kenneyNature:'https://cdn.jsdelivr.net/gh/rajsinghtech/spurfire@main/game/assets/kenney/nature-kit/',
+  kenneySurvival:'https://cdn.jsdelivr.net/gh/rajsinghtech/spurfire@main/game/assets/kenney/survival-kit/',
+  quaterniusCity:'https://cdn.jsdelivr.net/gh/anshaneja5/skyline-run@main/public/assets/models/'
+};
+const V0511_ASSETS={
+  treeA:V0511_ASSET_ROOTS.kenneyNature+'tree_default.glb',
+  treeB:V0511_ASSET_ROOTS.kenneyNature+'tree_oak.glb',
+  rockA:V0511_ASSET_ROOTS.kenneyNature+'rock_largeA.glb',
+  rockB:V0511_ASSET_ROOTS.kenneyNature+'rock_smallA.glb',
+  fence:V0511_ASSET_ROOTS.kenneyNature+'fence_simple.glb',
+  gate:V0511_ASSET_ROOTS.kenneyNature+'fence_gate.glb',
+  sign:V0511_ASSET_ROOTS.kenneyNature+'sign.glb',
+  barrel:V0511_ASSET_ROOTS.kenneySurvival+'barrel.glb',
+  signpost:V0511_ASSET_ROOTS.kenneySurvival+'signpost.glb',
+  buildingSmall:V0511_ASSET_ROOTS.quaterniusCity+'b_small.glb',
+  buildingMedium:V0511_ASSET_ROOTS.quaterniusCity+'b_medium.glb',
+  ac:V0511_ASSET_ROOTS.quaterniusCity+'prop_ac.glb'
+};
+const v0511Templates=new Map(),v0511Loading=new Map();
+let v0511LoaderPromise=null,v0511AssetsReady=false;
+
+function v0511GetLoader(){
+  if(v0511LoaderPromise)return v0511LoaderPromise;
+  v0511LoaderPromise=import('https://esm.sh/three@0.168.0/examples/jsm/loaders/GLTFLoader.js?bundle').then(m=>new m.GLTFLoader());
+  return v0511LoaderPromise
+}
+async function v0511LoadAsset(key){
+  if(v0511Templates.has(key))return v0511Templates.get(key);
+  if(v0511Loading.has(key))return v0511Loading.get(key);
+  const url=V0511_ASSETS[key];if(!url)return null;
+  const p=v0511GetLoader().then(loader=>loader.loadAsync(url)).then(g=>{
+    const root=(g.scene||g.scenes?.[0]);if(!root)throw new Error('GLB sin escena: '+key);
+    root.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material=o.material.clone();o.material.roughness=Math.max(.55,o.material.roughness??.75);o.material.metalness=Math.min(.5,o.material.metalness??0)}}});
+    v0511Templates.set(key,root);return root
+  }).catch(e=>{console.warn('[VAST v0.5.11] asset',key,e);return null}).finally(()=>v0511Loading.delete(key));
+  v0511Loading.set(key,p);return p
+}
+function v0511CloneAsset(key){const t=v0511Templates.get(key);return t?t.clone(true):null}
+function v0511FitObject(obj,w,h,d){
+  if(!obj)return obj;obj.updateMatrixWorld(true);let b=new THREE.Box3().setFromObject(obj),s=b.getSize(new THREE.Vector3());
+  if(!(s.x>0&&s.y>0&&s.z>0))return obj;const k=Math.min(w/s.x,h/s.y,d/s.z);obj.scale.multiplyScalar(k);obj.updateMatrixWorld(true);b=new THREE.Box3().setFromObject(obj);const c=b.getCenter(new THREE.Vector3());obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y-=b.min.y;return obj
+}
+function v0511FitLongAxis(obj,length,height=.42){
+  if(!obj)return obj;obj.updateMatrixWorld(true);let b=new THREE.Box3().setFromObject(obj),s=b.getSize(new THREE.Vector3());
+  if(s.x>=s.y&&s.x>=s.z)obj.rotation.y=Math.PI/2;else if(s.y>s.z)obj.rotation.x=Math.PI/2;
+  obj.updateMatrixWorld(true);b=new THREE.Box3().setFromObject(obj);s=b.getSize(new THREE.Vector3());const k=Math.min(length/Math.max(s.z,.001),height/Math.max(s.y,.001));obj.scale.multiplyScalar(k);obj.updateMatrixWorld(true);b=new THREE.Box3().setFromObject(obj);const c=b.getCenter(new THREE.Vector3());obj.position.sub(c);return obj
+}
+
+async function v0511UpgradeResource(n){
+  if(!n?.group||n.group.userData?.v0511Model)return;
+  const isTree=n.resource==='wood',seed=v052Hash(Math.round(n.x||0),Math.round(n.z||0),511),key=isTree?(seed%2?'treeA':'treeB'):(seed%3?'rockA':'rockB');
+  const tpl=await v0511LoadAsset(key);if(!tpl||!n.group?.parent||n.group.userData?.v0511Model)return;
+  const old=n.group,parent=old.parent,pos=old.position.clone(),rot=old.rotation.y,oldScale=Math.max(.72,old.scale?.x||1),g=new THREE.Group();
+  g.position.copy(pos);g.rotation.y=rot+(seed%628)/100;g.userData.v0511Model=true;const model=tpl.clone(true);
+  if(isTree)v0511FitObject(model,2.7*oldScale,5.7*oldScale,2.7*oldScale);else v0511FitObject(model,1.5*oldScale,1.15*oldScale,1.5*oldScale);
+  g.add(model);parent.add(g);parent.remove(old);n.group=g
+}
+function v0511NearestBuildingMeshes(chunk,o){
+  const x=(o.minX+o.maxX)/2,z=(o.minZ+o.maxZ)/2,out=[];
+  for(const q of chunk.group.children){if(!q?.isMesh||q.geometry?.type!=='BoxGeometry'||q.userData?.v0511Keep)continue;const d=Math.hypot(q.position.x-x,q.position.z-z);if(d<2.2)out.push(q)}return out
+}
+async function v0511UpgradeBuilding(chunk,o,index){
+  if(o._v0511Model)return;o._v0511Model=true;const type=chunk.poi?.[0]?.type||'',w=o.maxX-o.minX,d=o.maxZ-o.minZ,x=(o.minX+o.maxX)/2,z=(o.minZ+o.maxZ)/2;
+  const key=(type==='industrial'||Math.max(w,d)>20)?'buildingMedium':'buildingSmall',tpl=await v0511LoadAsset(key);if(!tpl)return;
+  const old=v0511NearestBuildingMeshes(chunk,o);const targetH=type==='industrial'?6.2:type==='military'?4.8:4.5,holder=new THREE.Group();holder.position.set(x,0,z);holder.rotation.y=(v052Hash(chunk.cx,chunk.cz,511+index)%2)*Math.PI;holder.userData.v0511Building=true;
+  const model=tpl.clone(true);v0511FitObject(model,w*.96,targetH,d*.96);holder.add(model);chunk.group.add(holder);old.forEach(m=>m.visible=false);
+  if(type==='industrial'&&v0511Templates.has('ac')){const ac=v0511CloneAsset('ac');if(ac){v0511FitObject(ac,1.25,.85,1.25);ac.position.set(w*.22,targetH+.04,-d*.12);holder.add(ac)}}
+}
+function v0511AddDecorModel(chunk,key,x,z,scale=1,rot=0){
+  const tpl=v0511Templates.get(key);if(!tpl)return null;const g=new THREE.Group(),m=tpl.clone(true);g.position.set(x,0,z);g.rotation.y=rot;g.scale.setScalar(scale);g.userData.v0511Decor=true;g.add(m);chunk.group.add(g);return g
+}
+function v0511DressChunkWithAssets(chunk){
+  if(!chunk||chunk._v0511Assets)return;chunk._v0511Assets=true;
+  for(const n of chunk._v058Resources||[])v0511UpgradeResource(n);
+  let bi=0;for(const o of chunk.colliders||[])if(o.tag==='proc-building')v0511UpgradeBuilding(chunk,o,bi++);
+  const type=chunk.poi?.[0]?.type||'',rnd=v052Rng(chunk.cx,chunk.cz,511),minX=chunk.cx*V052_CHUNK,minZ=chunk.cz*V052_CHUNK;
+  const decor=type==='industrial'?['barrel','barrel','signpost','fence']:type==='military'?['barrel','fence','gate','signpost']:type==='village'?['fence','sign','barrel']:type==='forest'?['treeB','rockA']:['rockB','sign'];
+  const count=type==='forest'?5:3;for(let i=0;i<count;i++){const key=decor[i%decor.length],x=minX+12+rnd()*(V052_CHUNK-24),z=minZ+12+rnd()*(V052_CHUNK-24);v0511AddDecorModel(chunk,key,x,z,key.startsWith('tree')?1.2:key.startsWith('rock')?1.25:1,rnd()*Math.PI*2)}
+}
+const v0511GenChunkBase=v052GenerateChunk;
+v052GenerateChunk=function(cx,cz){const c=v0511GenChunkBase(cx,cz);if(v0511AssetsReady)setTimeout(()=>v0511DressChunkWithAssets(c),0);return c};
+
+async function v0511PrimeAssets(){
+  const essentials=['treeA','treeB','rockA','rockB','fence','gate','sign','barrel','signpost','buildingSmall','ac'];if(settings.quality!=='low')essentials.push('buildingMedium');
+  await Promise.allSettled(essentials.map(v0511LoadAsset));v0511AssetsReady=true;
+  for(const n of [...resourceNodes])v0511UpgradeResource(n);for(const c of v052Chunks.values()){c._v0511Assets=false;v0511DressChunkWithAssets(c)}
+  toast('v0.5.11 · MODELOS CC0 CARGADOS · KENNEY + QUATERNIUS','good')
+}
+const v0511SetupBase=setupV05;
+setupV05=function(){v0511SetupBase();setTimeout(()=>v0511PrimeAssets().catch(e=>console.warn('[VAST v0.5.11]',e)),250)};
