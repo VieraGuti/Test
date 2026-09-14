@@ -1,0 +1,67 @@
+/* v0.5.8 — procedural farming + compact ADS sight picture */
+function v058MatchChunkVisual(chunk,o){
+  const x=(o.minX+o.maxX)/2,z=(o.minZ+o.maxZ)/2;let best=null,bestD=1e9;
+  for(const child of chunk.group.children){
+    if(!child||!child.position)continue;
+    const d=Math.hypot(child.position.x-x,child.position.z-z);
+    if(d<bestD){bestD=d;best=child}
+  }
+  return bestD<1.6?best:null
+}
+function v058AttachChunkResources(chunk){
+  if(!chunk||chunk._v058Farming)return chunk;chunk._v058Farming=true;chunk._v058Resources=[];
+  let ti=0,ri=0;
+  for(const o of chunk.colliders||[]){
+    if(o.tag!=='proc-tree'&&o.tag!=='proc-rock')continue;
+    const isTree=o.tag==='proc-tree',idx=isTree?ti++:ri++,x=(o.minX+o.maxX)/2,z=(o.minZ+o.maxZ)/2;
+    const id=`proc-${chunk.key}-${isTree?'tree':'rock'}-${idx}`,done=pickedLoot.has(`res-${id}`),visual=v058MatchChunkVisual(chunk,o);
+    if(done){o.active=false;if(visual?.parent)visual.parent.remove(visual);continue}
+    if(!visual)continue;
+    const metal=!isTree&&(v052Hash(chunk.cx,chunk.cz,730+idx)%5===0),resource=isTree?'wood':metal?'metal':'stone';
+    const n={type:'resource',resource,id,x,z,group:visual,hp:isTree?4:metal?6:5,maxHp:isTree?4:metal?6:5,yield:isTree?9:metal?5:7,obs:o,_v058Proc:true,_v058Chunk:chunk.key};
+    resourceNodes.push(n);chunk._v058Resources.push(n)
+  }
+  return chunk
+}
+const v058GenerateChunkBase=v052GenerateChunk;
+v052GenerateChunk=function(cx,cz){return v058AttachChunkResources(v058GenerateChunkBase(cx,cz))};
+const v058UnloadChunkBase=v052UnloadChunk;
+v052UnloadChunk=function(key){
+  const c=v052Chunks.get(key);if(c?._v058Resources)for(const n of c._v058Resources){const i=resourceNodes.indexOf(n);if(i>=0)resourceNodes.splice(i,1);if(n.obs)n.obs.active=false}
+  v058UnloadChunkBase(key)
+};
+const v058HarvestBase=harvestResource;
+harvestResource=function(n){
+  if(!n?._v058Proc){v058HarvestBase(n);return}
+  if(harvestLock>now())return;harvestLock=now()+.42;const amount=n.yield;if(!addItem(n.resource,amount))return;n.hp--;noise=clamp(noise+.1,0,1);AudioFX.burst?.(.12,.08,n.resource==='wood'?650:1100,110);toast(`${ITEMS[n.resource].name} +${amount}`,'good');
+  const base=n.group.scale.x;n.group.scale.set(base*.93,base*1.03,base*.93);setTimeout(()=>{if(n.group?.parent)n.group.scale.set(base,base,base)},110);
+  if(n.hp<=0){if(n.group?.parent)n.group.parent.remove(n.group);if(n.obs)n.obs.active=false;pickedLoot.add(`res-${n.id}`);const i=resourceNodes.indexOf(n);if(i>=0)resourceNodes.splice(i,1);const c=v052Chunks.get(n._v058Chunk);if(c?._v058Resources)c._v058Resources=c._v058Resources.filter(x=>x!==n);toast(n.resource==='wood'?'ÁRBOL TALADO':n.resource==='metal'?'VETA DE METAL AGOTADA':'ROCA AGOTADA','good')}
+  updateResourceHUD();renderInventory();saveGame()
+};
+
+function v058StripOversizedWeaponSights(){
+  if(!weaponRig)return;const remove=[];
+  weaponRig.traverse(o=>{if(!o.isMesh||o.geometry?.type!=='BoxGeometry')return;const p=o.geometry.parameters||{},w=Number(p.width||0),h=Number(p.height||0),d=Number(p.depth||0),near=(a,b)=>Math.abs(a-b)<.003;
+    if((near(w,.12)&&near(h,.022)&&near(d,.035))||(near(w,.025)&&near(h,.083)&&near(d,.035))||(near(w,.020)&&near(h,.082)&&near(d,.025))||(near(w,.062)&&near(h,.018)&&near(d,.025)))remove.push(o)
+  });remove.forEach(o=>o.parent?.remove(o))
+}
+const v058BuildWeaponBase=buildWeapon;
+buildWeapon=function(){v058BuildWeaponBase();v058StripOversizedWeaponSights()};
+const v058UpdatePlayerBase=updatePlayer;
+updatePlayer=function(dt){
+  v058UpdatePlayerBase(dt);if(!weaponRig||inFlyHeli)return;weaponRig.visible=true;
+  if(aimHeld){const k=clamp(dt*15,0,1);weaponRig.position.x=lerp(weaponRig.position.x,0,k);weaponRig.position.y=lerp(weaponRig.position.y,-.255,k);weaponRig.position.z=lerp(weaponRig.position.z,-.57,k);weaponRig.scale.setScalar(lerp(weaponRig.scale.x,.92,k))}
+};
+function v058SetupADSAndFarming(){
+  for(const c of v052Chunks.values())v058AttachChunkResources(c);if(weaponRig)v058StripOversizedWeaponSights();
+  const st=document.createElement('style');st.id='v058-style';st.textContent=`
+  body.ads-active #v052-ads-sight{width:88px!important;height:88px!important;opacity:.84!important;transform:translate(-50%,-50%)!important}
+  body.ads-active .v052-iron .rear{top:45px!important;width:2px!important;height:12px!important;border:0!important;background:rgba(24,30,28,.86)!important;box-shadow:0 0 1px rgba(255,255,255,.22)!important}
+  body.ads-active .v052-iron .rear.l{left:29px!important;transform:rotate(4deg)!important}body.ads-active .v052-iron .rear.r{right:29px!important;transform:rotate(-4deg)!important}
+  body.ads-active .v052-iron .front{left:43px!important;top:38px!important;width:2px!important;height:16px!important;border:0!important;background:rgba(18,23,21,.94)!important;box-shadow:0 0 1px rgba(255,255,255,.25)!important}
+  body.ads-active .v052-iron .front-base{left:37px!important;top:52px!important;width:14px!important;height:2px!important;background:rgba(20,25,23,.92)!important}
+  body.ads-rds #v052-ads-sight{width:92px!important;height:92px!important}.v052-rds:before{left:24px!important;top:24px!important;width:42px!important;height:42px!important;border-width:6px!important}.v052-rds i{left:30px!important;top:30px!important;width:42px!important;height:42px!important}.v052-rds b{left:44px!important;top:44px!important;width:4px!important;height:4px!important}
+  `;document.head.appendChild(st);toast('FARMING PROCEDURAL ACTIVO · ÁRBOLES Y ROCAS YA SON RECURSOS','good')
+}
+const v058SetupV05Base=setupV05;
+setupV05=function(){v058SetupV05Base();setTimeout(v058SetupADSAndFarming,80)};
