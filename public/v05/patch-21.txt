@@ -1,0 +1,90 @@
+/* v0.5.15 — clean weapon viewmodel + true readable ADS for mobile */
+let v0515AdsRig=null;
+
+function v0515DisposeObject(o){
+  if(!o)return;
+  o.traverse?.(n=>{
+    n.geometry?.dispose?.();
+    if(Array.isArray(n.material))n.material.forEach(m=>m?.dispose?.());else n.material?.dispose?.();
+  });
+}
+function v0515ClearAdsRig(){
+  if(!v0515AdsRig)return;
+  camera?.remove?.(v0515AdsRig);
+  v0515DisposeObject(v0515AdsRig);
+  v0515AdsRig=null;
+}
+function v0515Mat(color=0x141918){return new THREE.MeshBasicMaterial({color,depthTest:false,depthWrite:false})}
+function v0515Box(w,h,d,x,y,z,mat){const q=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);q.position.set(x,y,z);q.renderOrder=999;return q}
+
+function v0515BuildAdsRig(){
+  if(!camera)return;
+  v0515ClearAdsRig();
+  const rig=new THREE.Group();rig.name='VAST_ADS_RIG_515';rig.renderOrder=999;camera.add(rig);v0515AdsRig=rig;
+  const w=W[player.weapon],hasRds=!!player.attachments.reddot&&['mp5','m4','ak'].includes(w.id);
+  const dark=v0515Mat(0x111514),edge=v0515Mat(0x39413e);
+
+  if(hasRds){
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(.050,.0045,8,28),dark);ring.position.set(0,0,-.48);ring.renderOrder=1000;rig.add(ring);
+    const outer=new THREE.Mesh(new THREE.TorusGeometry(.057,.002,8,28),edge);outer.position.set(0,0,-.482);outer.renderOrder=1000;rig.add(outer);
+    const glass=new THREE.Mesh(new THREE.CircleGeometry(.046,24),new THREE.MeshBasicMaterial({color:0x79a9b5,transparent:true,opacity:.055,side:THREE.DoubleSide,depthTest:false,depthWrite:false}));glass.position.set(0,0,-.486);glass.renderOrder=999;rig.add(glass);
+    const dot=new THREE.Mesh(new THREE.SphereGeometry(.0038,8,6),new THREE.MeshBasicMaterial({color:0xff2d21,depthTest:false,depthWrite:false}));dot.position.set(0,0,-.466);dot.renderOrder=1002;rig.add(dot);
+    const mount=v0515Box(.070,.012,.030,0,-.062,-.50,dark);rig.add(mount);
+    const legL=v0515Box(.008,.047,.012,-.037,-.038,-.50,dark),legR=v0515Box(.008,.047,.012,.037,-.038,-.50,dark);rig.add(legL,legR);
+  }else{
+    const rearZ=-.43,frontZ=w.id==='m9'?-.61:-.67;
+    const spread=w.id==='m9'?.030:.036,postH=w.id==='m9'?.034:.040;
+    const rearL=v0515Box(.006,postH,.008,-spread,-.012,rearZ,dark),rearR=v0515Box(.006,postH,.008,spread,-.012,rearZ,dark);
+    const rearBase=v0515Box(spread*2+.008,.006,.009,0,-.031,rearZ,dark);
+    const front=v0515Box(.006,w.id==='m9'?.028:.034,.007,0,-.014,frontZ,edge);
+    const frontBase=v0515Box(w.id==='m9'?.030:.038,.006,.010,0,-.032,frontZ,dark);
+    rig.add(rearL,rearR,rearBase,front,frontBase);
+    if(w.id==='mosin'){
+      const hood=new THREE.Mesh(new THREE.TorusGeometry(.040,.0035,8,24),dark);hood.position.set(0,-.003,-.53);hood.renderOrder=1000;rig.add(hood)
+    }
+  }
+  rig.visible=false;
+}
+
+const v0515BuildWeaponBase=buildWeapon;
+buildWeapon=function(){
+  v0515BuildWeaponBase();
+  if(weaponRig){
+    const w=W[player.weapon],p=w.id==='m9'?{x:.30,y:-.275,z:-.60,s:.90}:{x:.37,y:-.325,z:-.72,s:.82};
+    weaponRig.position.set(p.x,p.y,p.z);weaponRig.scale.setScalar(p.s);
+    weaponRig.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.castShadow=false}})
+  }
+  v0515BuildAdsRig();
+};
+
+const v0515UpdatePlayerBase=updatePlayer;
+updatePlayer=function(dt){
+  v0515UpdatePlayerBase(dt);
+  if(!camera)return;
+  const ads=!!aimHeld&&!inFlyHeli;
+  document.body.classList.toggle('v0515-ads',ads);
+  if(weaponRig){
+    if(inFlyHeli){weaponRig.visible=false}
+    else if(ads){weaponRig.visible=false}
+    else{
+      weaponRig.visible=true;
+      const w=W[player.weapon],moving=Math.hypot(touchMove?.x||0,touchMove?.y||0)>.13||keys.has('KeyW')||keys.has('KeyA')||keys.has('KeyS')||keys.has('KeyD');
+      const k=clamp(dt*14,0,1),bob=moving?Math.sin(runTime*8)*.006:0;
+      const p=w.id==='m9'?{x:.30,y:-.275+bob,z:-.60,s:.90}:{x:.37,y:-.325+bob,z:-.72,s:.82};
+      weaponRig.position.x=lerp(weaponRig.position.x,p.x,k);weaponRig.position.y=lerp(weaponRig.position.y,p.y,k);weaponRig.position.z=lerp(weaponRig.position.z,p.z,k);weaponRig.scale.setScalar(lerp(weaponRig.scale.x,p.s,k));
+    }
+  }
+  if(v0515AdsRig){
+    v0515AdsRig.visible=ads;
+    const kick=clamp(Math.abs(recoil||0)*.75,0,.055);v0515AdsRig.position.y=lerp(v0515AdsRig.position.y,kick,clamp(dt*18,0,1));v0515AdsRig.rotation.z=lerp(v0515AdsRig.rotation.z,recoilSide*.35,clamp(dt*18,0,1));
+  }
+  const targetFov=ads?settings.fov-(player.attachments.reddot?4:2):settings.fov;
+  camera.fov=lerp(camera.fov,targetFov,clamp(dt*12,0,1));camera.updateProjectionMatrix();
+};
+
+function v0515SetupAdsFix(){
+  if(camera&&!v0515AdsRig)v0515BuildAdsRig();
+  let st=$('v0515-ads-style');if(!st){st=document.createElement('style');st.id='v0515-ads-style';st.textContent=`#v052-ads-sight{display:none!important}body.v0515-ads #crosshair{display:none!important}body.v0515-ads #aim-btn{border-color:#4fc7ff!important;box-shadow:0 0 0 1px rgba(79,199,255,.25),0 0 18px rgba(79,199,255,.16)!important}.actions #aim-btn.pressed{border-color:#4fc7ff!important}`;document.head.appendChild(st)}
+}
+const v0515SetupV05Base=setupV05;
+setupV05=function(){v0515SetupV05Base();setTimeout(v0515SetupAdsFix,0)};
