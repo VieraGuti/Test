@@ -1,0 +1,15 @@
+/* v0.5.14 hotfix — connected walls may share foundation corners without blocking each other. */
+const v0514ReasonBeforeCornerFix=v0514Reason;
+v0514Reason=function(type,x,z,rot){
+  if(V0514_WALL_TYPES.includes(type)){
+    const r=BUILD_RECIPES[type];if(!r)return 'PIEZA INVÁLIDA';if(!canAfford(r.cost))return 'FALTAN RECURSOS';
+    if(!v0514SupportedWallAt(x,z))return 'NECESITAS FUNDACIÓN / SUELO';
+    if(structures.some(s=>V0514_WALL_TYPES.includes(s.type)&&Math.hypot(s.x-x,s.z-z)<.32))return 'YA HAY UNA PARED AQUÍ';
+    /* Other build walls are ignored here because structural sockets are authoritative;
+       this lets perpendicular walls meet cleanly at the same foundation corner. */
+    if(v0514FootprintBlocked(x,z,r.w,r.d,rot,{ignoreBuild:true}))return 'ESPACIO OCUPADO';
+    if(Math.hypot(player.pos.x-x,player.pos.z-z)<1.35)return 'APÁRTATE PARA CONSTRUIR';return ''
+  }
+  return v0514ReasonBeforeCornerFix(type,x,z,rot)
+};
+v05BuildReason=v0514Reason;
