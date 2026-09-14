@@ -1,0 +1,84 @@
+/* v0.5.7 — flight HUD/nav rework + longer daylight, shorter readable night */
+const V057_CYCLE_SECONDS=480;
+const v057NightSky=new THREE.Color(0x101820),v057DaySky=new THREE.Color(0x9ba6a1),v057DawnSky=new THREE.Color(0x716d64),v057SkyTmp=new THREE.Color();
+let v057FlightReticle=null,v057ObjectiveNav=null;
+
+function v057Smooth(t){t=clamp(t,0,1);return t*t*(3-2*t)}
+function v057ClockFromRuntime(){
+  const t=((runTime%V057_CYCLE_SECONDS)+V057_CYCLE_SECONDS)%V057_CYCLE_SECONDS;
+  if(t<45)return 5.5+(t/45)*1.5;                 // 05:30 -> 07:00 dawn
+  if(t<315)return 7+((t-45)/270)*11.5;          // 07:00 -> 18:30 long day
+  if(t<360)return 18.5+((t-315)/45)*1.5;        // 18:30 -> 20:00 dusk
+  const h=20+((t-360)/120)*9.5;                 // 20:00 -> 05:30 short night
+  return h>=24?h-24:h
+}
+function v057LightForHour(h){
+  if(h>=7&&h<18.5)return 1;
+  if(h>=5.5&&h<7)return .10+.90*v057Smooth((h-5.5)/1.5);
+  if(h>=18.5&&h<20)return .10+.90*(1-v057Smooth((h-18.5)/1.5));
+  return .10
+}
+
+/* Full replacement: keep the clock, but make daytime the dominant part of the cycle.
+   Night remains atmospheric without becoming pitch black on a phone display. */
+updateWorldTime=function(){
+  const hour=v057ClockFromRuntime(),light=v057LightForHour(hour),dawn=(hour>=5.5&&hour<7)||(hour>=18.5&&hour<20);
+  sun.intensity=.10+light*2.05;hemi.intensity=.32+light*.98;renderer.toneMappingExposure=.70+light*.34;
+  const skyBase=dawn?v057DawnSky:v057DaySky;v057SkyTmp.copy(v057NightSky).lerp(skyBase,Math.pow(light,.72));scene.background.copy(v057SkyTmp);scene.fog.color.copy(v057SkyTmp);scene.fog.density=lerp(.0105,.0062,light);
+  lights.forEach(l=>l.intensity=light<.38?(1-light)*1.65:0);
+  const hh=Math.floor(hour),mm=Math.floor((hour-hh)*60);$('clock-label').textContent=`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  const dl=$('day-label');if(dl)dl.style.display='none';
+};
+
+function v057Wrap(a){while(a>Math.PI)a-=Math.PI*2;while(a<-Math.PI)a+=Math.PI*2;return a}
+function v057ObjectivePosition(){
+  if(heliEvent?.active&&!heliEvent.looted&&Number.isFinite(heliEvent.x)&&Number.isFinite(heliEvent.z))return{x:heliEvent.x,z:heliEvent.z,label:'HELICÓPTERO CAÍDO'};
+  return null
+}
+function v057UpdateObjectiveNav(){
+  const n=v057ObjectiveNav||$('v057-objective-nav');if(!n)return;
+  const target=v057ObjectivePosition();if(!target){n.classList.remove('show');return}
+  const src=inFlyHeli&&flyHeli?flyHeli.group.position:player.pos,heading=inFlyHeli&&flyHeli?flyHeli.heading:yaw;
+  const dx=target.x-src.x,dz=target.z-src.z,d=Math.hypot(dx,dz),targetHeading=Math.atan2(-dx,-dz),rel=v057Wrap(targetHeading-heading);
+  const arrow=n.querySelector('.v057-nav-arrow'),copy=n.querySelector('small');if(arrow)arrow.style.transform=`rotate(${rel}rad)`;
+  if(copy){const side=Math.abs(rel)<.22?'RECTO':rel>0?'DERECHA':'IZQUIERDA';copy.textContent=d<14?'ZONA DE IMPACTO':`${Math.round(d)} m · ${side}`}
+  n.classList.add('show');
+}
+
+function v057UpdateFlightChrome(){
+  v057UpdateObjectiveNav();
+  const active=!!(inFlyHeli&&flyHeli);document.body.classList.toggle('v057-flight',active);
+  if(!active)return;
+  const landed=v054Landed(flyHeli),maintenance=landed&&flyHeli.engineState==='off';document.body.classList.toggle('v057-maintenance',maintenance);document.body.classList.toggle('v057-heli-danger',(flyHeli.health/flyHeli.maxHealth)<.35||flyHeli.fuel<15);
+  const state=$('heli-engine-state');if(state)state.textContent=flyHeli.engineState==='starting'?'START':flyHeli.engineState==='on'?'ON':'OFF';
+}
+
+const v057UpdatePlayerBase=updatePlayer;
+updatePlayer=function(dt){v057UpdatePlayerBase(dt);if(!inFlyHeli)v057UpdateObjectiveNav()};
+const v057UpdateFlyHeliBase=v05UpdateFlyHeli;
+v05UpdateFlyHeli=function(dt){v057UpdateFlyHeliBase(dt);v057UpdateFlightChrome()};
+const v057EnterHeliBase=v05EnterHeli;
+v05EnterHeli=function(){v057EnterHeliBase();setTimeout(v057UpdateFlightChrome,0)};
+const v057ExitHeliBase=v05ExitHeli;
+v05ExitHeli=function(){v057ExitHeliBase();setTimeout(()=>{document.body.classList.remove('v057-flight','v057-maintenance','v057-heli-danger');v057UpdateObjectiveNav()},0)};
+
+function v057SetupFlightUI(){
+  /* Retire both stale navigation widgets. They were based on delayed localStorage positions. */
+  ['heli-nav','heli-nav-v052'].forEach(id=>{const e=$(id);if(e)e.style.display='none'});
+  if(!v057ObjectiveNav){v057ObjectiveNav=document.createElement('div');v057ObjectiveNav.id='v057-objective-nav';v057ObjectiveNav.innerHTML='<span class="v057-nav-arrow">↑</span><span><b>HELICÓPTERO CAÍDO</b><small>CALCULANDO RUMBO…</small></span>';document.body.appendChild(v057ObjectiveNav)}
+  if(!v057FlightReticle){v057FlightReticle=document.createElement('div');v057FlightReticle.id='v057-flight-reticle';v057FlightReticle.innerHTML='<i></i><i></i><b></b>';document.body.appendChild(v057FlightReticle)}
+  const read=$('heli-controls')?.querySelector('.heli-readout');if(read)read.classList.add('v057-readout');
+  const css=document.createElement('style');css.id='v057-flight-style';css.textContent=`
+  #heli-nav,#heli-nav-v052{display:none!important}
+  #v057-objective-nav{position:fixed;z-index:84;left:50%;top:66px;transform:translateX(-50%);display:none;align-items:center;gap:8px;min-width:158px;padding:7px 11px;border:1px solid rgba(239,112,65,.48);border-radius:7px;background:rgba(9,14,13,.88);box-shadow:0 8px 28px rgba(0,0,0,.28);pointer-events:none;color:#f6eee8;font-family:'Barlow Condensed',system-ui}#v057-objective-nav.show{display:flex}.v057-nav-arrow{display:flex;width:28px;height:28px;align-items:center;justify-content:center;border:1px solid #ef7041;border-radius:50%;color:#ff895e;font-size:20px;transition:transform .08s linear}.v057-nav-arrow+span{display:flex;flex-direction:column;line-height:1.05}.v057-nav-arrow+span b{font-size:10px;letter-spacing:.04em}.v057-nav-arrow+span small{margin-top:3px;font-size:7px;color:#b7bdb9;letter-spacing:.05em}
+  #v057-flight-reticle{position:fixed;z-index:62;left:50%;top:50%;width:70px;height:42px;transform:translate(-50%,-50%);display:none;pointer-events:none;opacity:.78}body.v057-flight #v057-flight-reticle{display:block}#v057-flight-reticle i{position:absolute;top:21px;width:24px;height:1px;background:rgba(214,235,230,.72)}#v057-flight-reticle i:first-child{left:0}#v057-flight-reticle i:nth-child(2){right:0}#v057-flight-reticle b{position:absolute;left:34px;top:14px;width:2px;height:15px;background:rgba(103,211,244,.82);box-shadow:0 0 8px rgba(90,205,242,.45)}
+  body.v057-flight .hotbar,body.v057-flight .ammo,body.v057-flight .actions,body.v057-flight #inventory-btn,body.v057-flight #build-btn,body.v057-flight #resource-hud,body.v057-flight #status-strip,body.v057-flight .bottom-left-stats{opacity:0!important;pointer-events:none!important;visibility:hidden!important}body.v057-flight #map-btn{opacity:1!important;pointer-events:auto!important}body.v057-flight .top-left-panel{opacity:.72!important;transform:scale(.84);transform-origin:top left}body.v057-flight #mission{opacity:.82!important}
+  body.v057-flight #heli-controls{position:fixed!important;z-index:82!important;right:calc(14px + env(safe-area-inset-right))!important;bottom:calc(12px + env(safe-area-inset-bottom))!important;display:grid!important;grid-template-columns:repeat(3,64px)!important;grid-auto-rows:48px!important;gap:6px!important;width:auto!important;padding:8px!important;border:1px solid rgba(255,255,255,.09)!important;border-radius:10px!important;background:rgba(8,13,12,.78)!important;backdrop-filter:blur(9px);box-shadow:0 12px 34px rgba(0,0,0,.34)}body.v057-flight #heli-controls.hidden{display:none!important}
+  body.v057-flight .heli-readout{position:fixed!important;z-index:81!important;left:50%!important;right:auto!important;bottom:calc(13px + env(safe-area-inset-bottom))!important;transform:translateX(-50%)!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:12px!important;flex-wrap:nowrap!important;width:min(470px,46vw)!important;max-width:none!important;min-height:50px!important;padding:8px 12px!important;border:1px solid rgba(88,198,236,.28)!important;border-radius:8px!important;background:rgba(8,14,15,.86)!important;box-shadow:0 10px 30px rgba(0,0,0,.34)!important}.heli-readout>b{width:auto!important;min-width:95px!important;text-align:left!important;color:#d8f3fb!important;font-size:9px!important;letter-spacing:.06em!important}.heli-readout span{display:flex!important;flex-direction:column!important;gap:2px!important;color:#728783!important;font-size:6px!important;white-space:nowrap!important}.heli-readout strong{color:#e9f3ef!important;font-size:10px!important;letter-spacing:.02em!important}
+  body.v057-flight #heli-controls button{height:48px!important;min-width:0!important;margin:0!important;border-radius:7px!important;border:1px solid rgba(255,255,255,.12)!important;background:rgba(22,29,27,.94)!important;color:#d7dfdb!important;font:800 7px 'Barlow Condensed',system-ui!important;letter-spacing:.06em!important;box-shadow:none!important}body.v057-flight #heli-up{grid-column:1;grid-row:1;border-color:rgba(88,198,236,.42)!important;color:#9de3fb!important}body.v057-flight #heli-down{grid-column:1;grid-row:2;border-color:rgba(88,198,236,.28)!important;color:#9de3fb!important}body.v057-flight #heli-engine{grid-column:2;grid-row:1;border-color:rgba(88,198,236,.32)!important;color:#a8e6fb!important}body.v057-flight #heli-cam{grid-column:2;grid-row:2}body.v057-flight #heli-exit{grid-column:3;grid-row:1;border-color:rgba(218,86,64,.42)!important;color:#f0a08f!important}body.v057-flight #heli-refuel{grid-column:3;grid-row:2;display:none!important;border-color:rgba(213,147,69,.45)!important;color:#e7bd82!important}body.v057-flight #heli-repair{position:absolute!important;right:0!important;bottom:112px!important;width:64px!important;display:none!important;border-color:rgba(107,190,139,.42)!important;color:#9bd5ae!important}body.v057-flight.v057-maintenance #heli-refuel,body.v057-flight.v057-maintenance #heli-repair{display:block!important}body.v057-heli-danger .heli-readout{border-color:rgba(225,87,63,.48)!important}
+  @media (orientation:landscape) and (max-height:520px){#v057-objective-nav{top:42px;padding:5px 8px}.v057-nav-arrow{width:24px;height:24px;font-size:17px}body.v057-flight #heli-controls{right:calc(7px + env(safe-area-inset-right))!important;bottom:calc(7px + env(safe-area-inset-bottom))!important;grid-template-columns:repeat(3,55px)!important;grid-auto-rows:42px!important;padding:6px!important;gap:5px!important}body.v057-flight #heli-controls button{height:42px!important;font-size:6.5px!important}body.v057-flight .heli-readout{bottom:calc(7px + env(safe-area-inset-bottom))!important;width:min(405px,43vw)!important;min-height:42px!important;padding:5px 9px!important;gap:9px!important}.heli-readout>b{min-width:78px!important;font-size:8px!important}.heli-readout strong{font-size:9px!important}body.v057-flight #heli-repair{bottom:98px!important;width:55px!important}.top-left-panel{max-height:145px!important}}
+  `;document.head.appendChild(css);v057UpdateObjectiveNav();
+}
+
+const v057SetupV05Base=setupV05;
+setupV05=function(){v057SetupV05Base();setTimeout(v057SetupFlightUI,0)};
