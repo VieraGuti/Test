@@ -1,0 +1,93 @@
+/* v0.5.12 — WEAPON + VEHICLE ART PASS: real CC0 gun GLBs, better hands, crates and helicopter detail */
+Object.assign(V0511_ASSETS,{
+  gunPistol:'https://cdn.jsdelivr.net/gh/turingfp/surfskinew@be9b9f8e057b133740834b7553b991211edeed66/assets/models/pistol.glb',
+  gunRifle:'https://cdn.jsdelivr.net/gh/turingfp/surfskinew@be9b9f8e057b133740834b7553b991211edeed66/assets/models/rifle.glb',
+  gunShotgun:'https://cdn.jsdelivr.net/gh/turingfp/surfskinew@be9b9f8e057b133740834b7553b991211edeed66/assets/models/shotgun.glb',
+  gunBullpup:'https://cdn.jsdelivr.net/gh/ndorony/test@806e3719296a2f6de32ddfbe5910ac3fe6e83847/assets/models/shooter/bullpup.glb',
+  gunSniper:'https://cdn.jsdelivr.net/gh/ndorony/test@806e3719296a2f6de32ddfbe5910ac3fe6e83847/assets/models/shooter/sniper-rifle.glb',
+  supplyCrate:'https://cdn.jsdelivr.net/gh/ndorony/test@806e3719296a2f6de32ddfbe5910ac3fe6e83847/assets/models/shooter/crate.glb'
+});
+let v0512WeaponBuildToken=0;
+
+function v0512WeaponAsset(w){
+  if(!w)return null;
+  if(w.id==='m9')return 'gunPistol';
+  if(w.id==='mp5')return 'gunBullpup';
+  if(w.id==='shotgun')return 'gunShotgun';
+  if(w.id==='mosin')return 'gunSniper';
+  return 'gunRifle'
+}
+function v0512CloneMaterials(root){
+  root.traverse(o=>{if(!o.isMesh)return;o.castShadow=false;o.receiveShadow=false;o.frustumCulled=false;if(Array.isArray(o.material))o.material=o.material.map(m=>m?.clone?.()||m);else if(o.material?.clone)o.material=o.material.clone()});return root
+}
+function v0512HideLegacyGunMeshes(){
+  if(!weaponRig)return;weaponRig.traverse(o=>{if(o.isMesh&&!o.userData?.v0512RealGun&&!o.userData?.v0512Hands)o.visible=false})
+}
+function v0512MakeHands(w){
+  const g=new THREE.Group();g.name='v0512-hands';g.userData.v0512Hands=true;
+  const skin=new THREE.MeshStandardMaterial({color:0xb88464,roughness:.86}),sleeve=new THREE.MeshStandardMaterial({color:0x28332d,roughness:.94});
+  const long=w.id!=='m9',positions=long?[[-.17,-.12,.05,-.18],[.24,-.13,-.42,.16]]:[[-.13,-.13,.12,-.13],[.18,-.12,.02,.14]];
+  for(const [x,y,z,rz] of positions){
+    const arm=new THREE.Mesh(new THREE.CapsuleGeometry(.065,.29,4,7),sleeve);arm.position.set(x,y-.13,z+.18);arm.rotation.x=Math.PI/2.25;arm.rotation.z=rz;arm.userData.v0512Hands=true;g.add(arm);
+    const hand=new THREE.Mesh(new THREE.CapsuleGeometry(.052,.13,4,7),skin);hand.position.set(x,y,z);hand.rotation.x=Math.PI/2.15;hand.rotation.z=rz;hand.userData.v0512Hands=true;g.add(hand)
+  }
+  return g
+}
+function v0512AddAttachmentVisuals(holder,w){
+  const dark=new THREE.MeshStandardMaterial({color:0x141918,roughness:.48,metalness:.62});
+  if(player.attachments?.reddot&&['m9','mp5','m4','ak'].includes(w.id)){
+    const base=new THREE.Mesh(new THREE.BoxGeometry(.115,.035,.16),dark);base.position.set(0,.17,-.18);base.userData.v0512RealGun=true;holder.add(base);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(.062,.014,7,14),dark);ring.position.set(0,.24,-.22);ring.rotation.y=Math.PI/2;ring.userData.v0512RealGun=true;holder.add(ring);
+    const glass=new THREE.Mesh(new THREE.CircleGeometry(.048,16),new THREE.MeshBasicMaterial({color:0x3f8290,transparent:true,opacity:.24,depthWrite:false}));glass.position.set(0,.24,-.225);glass.rotation.y=Math.PI/2;glass.userData.v0512RealGun=true;holder.add(glass)
+  }
+  if(player.attachments?.suppressor&&['m9','mp5','m4'].includes(w.id)){
+    const sup=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,w.id==='m9'?.28:.38,10),dark);sup.rotation.x=Math.PI/2;sup.position.set(0,.015,w.id==='m9'?-.52:-.76);sup.userData.v0512RealGun=true;holder.add(sup)
+  }
+}
+async function v0512ApplyWeaponModel(token,wIndex){
+  const w=W[wIndex],key=v0512WeaponAsset(w),tpl=await v0511LoadAsset(key);if(!tpl||token!==v0512WeaponBuildToken||player.weapon!==wIndex||!weaponRig)return;
+  const holder=new THREE.Group();holder.name='v0512-real-weapon';holder.userData.v0512RealGun=true;
+  const model=v0512CloneMaterials(tpl.clone(true));const len=w.id==='m9'?.72:w.id==='shotgun'?1.42:w.id==='mosin'?1.52:w.id==='mp5'?1.05:1.30;
+  v0511FitLongAxis(model,len,w.id==='m9'?.30:.38);model.userData.v0512RealGun=true;model.traverse(o=>{if(o.isMesh)o.userData.v0512RealGun=true});
+  if(w.id==='ak')model.traverse(o=>{if(o.isMesh&&o.material?.color)o.material.color.multiplyScalar(.88)});
+  holder.position.set(0,.01,-.10);holder.add(model);holder.add(v0512MakeHands(w));v0512AddAttachmentVisuals(holder,w);weaponRig.add(holder);v0512HideLegacyGunMeshes();
+  const muzzle=weaponRig.children.find(o=>o.isPointLight);if(muzzle){muzzle.position.set(0,.03,w.id==='m9'?-.52:w.id==='shotgun'?-.82:-.73);muzzle.intensity=0}
+}
+const v0512BuildWeaponBase=buildWeapon;
+buildWeapon=function(){
+  v0512BuildWeaponBase();const token=++v0512WeaponBuildToken,wIndex=player.weapon,key=v0512WeaponAsset(W[wIndex]);
+  if(v0511Templates.has(key))v0512ApplyWeaponModel(token,wIndex);else v0511LoadAsset(key).then(()=>v0512ApplyWeaponModel(token,wIndex))
+};
+
+/* Real crate shells are render-only; the existing interaction and inventory logic remain authoritative. */
+async function v0512DressContainer(c){
+  if(!c?.group||c.group.userData?.v0512Crate)return;const tpl=await v0511LoadAsset('supplyCrate');if(!tpl||!c.group?.parent||c.group.userData?.v0512Crate)return;
+  const oldMeshes=[];c.group.traverse(o=>{if(o.isMesh)oldMeshes.push(o)});const model=v0512CloneMaterials(tpl.clone(true));v0511FitObject(model,1.05,.72,.72);model.position.y=-.34;c.group.add(model);c.group.userData.v0512Crate=true;oldMeshes.forEach(o=>o.visible=false)
+}
+function v0512DressAllContainers(){for(const c of containers||[])v0512DressContainer(c)}
+
+function v0512UpgradeHeliVisual(h){
+  if(!h?.visual||h.visual.userData?.v0512Detail)return;h.visual.userData.v0512Detail=true;
+  const body=new THREE.MeshStandardMaterial({color:h.def.color,roughness:.48,metalness:.32}),dark=new THREE.MeshStandardMaterial({color:0x111715,roughness:.38,metalness:.66}),glass=new THREE.MeshPhysicalMaterial({color:0x31545d,roughness:.08,metalness:.05,transparent:true,opacity:.38,transmission:.18});
+  const nose=new THREE.Mesh(new THREE.SphereGeometry(.74,16,11),glass);nose.scale.set(.92,.58,.72);nose.position.set(1.86,1.05,0);h.visual.add(nose);
+  const belly=new THREE.Mesh(new THREE.BoxGeometry(1.7,.22,1.18),dark);belly.position.set(.12,.32,0);h.visual.add(belly);
+  const tailCone=new THREE.Mesh(new THREE.ConeGeometry(.25,2.2,8),body);tailCone.rotation.z=Math.PI/2;tailCone.position.set(-3.95,1.12,0);h.visual.add(tailCone);
+  const stab=new THREE.Mesh(new THREE.BoxGeometry(.62,.05,1.45),body);stab.position.set(-3.95,1.24,0);h.visual.add(stab);
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,.20,12),dark);hub.position.set(-.18,2.44,0);h.visual.add(hub);
+  const blurMat=new THREE.MeshBasicMaterial({color:0x202624,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});const blur=new THREE.Mesh(new THREE.CircleGeometry(3.35,34),blurMat);blur.rotation.x=-Math.PI/2;blur.position.set(-.18,2.43,0);blur.userData.v0512RotorBlur=true;h.visual.add(blur);h.v0512RotorBlur=blur;
+  const red=new THREE.PointLight(0xff2d21,0,12,2),green=new THREE.PointLight(0x55ff96,0,12,2);red.position.set(.15,1.20,-.95);green.position.set(.15,1.20,.95);h.visual.add(red,green);h.v0512Nav=[red,green];
+  for(const side of [-1,1]){const p=new THREE.Mesh(new THREE.BoxGeometry(.62,.12,.46),dark);p.position.set(.1,.54,side*1.0);p.rotation.x=side*.05;h.visual.add(p)}
+}
+const v0512CreateHeliBase=v05CreateFlyHeli;
+v05CreateFlyHeli=function(){v0512CreateHeliBase();for(const h of v054Fleet)v0512UpgradeHeliVisual(h)};
+const v0512UpdateHeliBase=v05UpdateFlyHeli;
+v05UpdateFlyHeli=function(dt){
+  v0512UpdateHeliBase(dt);for(const h of v054Fleet){v0512UpgradeHeliVisual(h);const on=h.engineState==='on',a=on?clamp(.12+Math.abs(h.speed)/Math.max(1,h.def.maxSpeed)*.17,.12,.30):0;if(h.v0512RotorBlur)h.v0512RotorBlur.material.opacity=lerp(h.v0512RotorBlur.material.opacity,a,clamp(dt*7,0,1));if(h.rotor)h.rotor.visible=!on||a<.18;if(h.v0512Nav)for(const l of h.v0512Nav)l.intensity=on?.32:0}
+};
+
+async function v0512PrimeArt(){
+  const keys=['gunPistol','gunRifle','gunShotgun','gunBullpup','gunSniper','supplyCrate'];await Promise.allSettled(keys.map(v0511LoadAsset));
+  buildWeapon();v0512DressAllContainers();for(const h of v054Fleet)v0512UpgradeHeliVisual(h);toast('v0.5.12 · ARMAS 3D CC0 + HELI ART PASS','good')
+}
+const v0512SetupBase=setupV05;
+setupV05=function(){v0512SetupBase();setTimeout(()=>v0512PrimeArt().catch(e=>console.warn('[VAST v0.5.12]',e)),500)};
