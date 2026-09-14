@@ -1,0 +1,105 @@
+/* v0.5.10 — heli stability + visual clarity + stronger world art pass */
+const V0510_GROUND_Y=.84;
+let v0510ParkTick=0;
+
+/* ---------------- HELICOPTER SAFETY ---------------- */
+function v0510CanExitHeli(h=flyHeli){
+  return !!h&&h.group.position.y<=1.08&&Math.abs(h.speed)<.75&&Math.abs(h.verticalSpeed)<.55&&h.engineState==='off'
+}
+function v0510SafeParkHeli(h,notify=false){
+  if(!h?.group)return false;
+  const q=typeof v056FindHeliSpot==='function'?v056FindHeliSpot(h.group.position.x,h.group.position.z):{x:h.group.position.x,z:h.group.position.z};
+  h.group.position.set(q.x,V0510_GROUND_Y,q.z);h.speed=0;h.turnSpeed=0;h.verticalSpeed=0;h.engine=false;h.engineState='off';h.engineStartAt=0;
+  if(notify&&started)toast('HELICÓPTERO RECUPERADO EN TIERRA','good');return true
+}
+const v0510ExitHeliBase=v05ExitHeli;
+v05ExitHeli=function(){
+  const h=flyHeli;if(!inFlyHeli||!h)return;
+  if(!v0510CanExitHeli(h)){toast(h.engineState!=='off'?'APAGA EL MOTOR PARA SALIR':'ATERRIZA Y DETÉN EL HELICÓPTERO','bad');return}
+  v0510ExitHeliBase()
+};
+const v0510UpdateHeliBase=v05UpdateFlyHeli;
+v05UpdateFlyHeli=function(dt){
+  v0510UpdateHeliBase(dt);
+  /* A helicopter without a pilot must never remain frozen in the sky. */
+  if(!inFlyHeli){
+    for(const h of v054Fleet){
+      if(h.group.position.y>V0510_GROUND_Y+.02){h.engine=false;h.engineState='off';h.speed=lerp(h.speed,0,clamp(dt*2.5,0,1));h.verticalSpeed=Math.max(-4.2,(h.verticalSpeed||0)-dt*3.1);h.group.position.y=Math.max(V0510_GROUND_Y,h.group.position.y+h.verticalSpeed*dt);if(h.group.position.y<=V0510_GROUND_Y+.01){h.group.position.y=V0510_GROUND_Y;h.verticalSpeed=0}}
+    }
+    if(performance.now()>v0510ParkTick){v0510ParkTick=performance.now()+1200;v054SaveFleet()}
+  }
+};
+/* If Safari kills/suspends the page while flying, restore the vehicle on valid ground on next load. */
+window.addEventListener('pagehide',()=>{if(inFlyHeli&&flyHeli&&!v0510CanExitHeli(flyHeli))v0510SafeParkHeli(flyHeli,false);v054SaveFleet()},{passive:true});
+
+/* Old mid-air saves are migrated to ground instead of loading frozen in the sky. */
+function v0510NormalizeFleet(){let changed=false;for(const h of v054Fleet){if(!h?.group)continue;if(h.group.position.y>1.15||h.group.position.y<.55||!Number.isFinite(h.group.position.y)){v0510SafeParkHeli(h,false);changed=true}}if(changed)v054SaveFleet()}
+
+/* ---------------- RENDER SHARPNESS ---------------- */
+applyQuality=function(q){
+  if(!renderer)return;const d=devicePixelRatio||1,coarse=matchMedia('(pointer:coarse)').matches;
+  const ratio=q==='low'?1:q==='high'?Math.min(d,coarse?1.85:2.15):Math.min(d,coarse?1.52:1.7);
+  renderer.setPixelRatio(ratio);renderer.shadowMap.enabled=q!=='low';renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.domElement.style.imageRendering='auto';renderer.domElement.style.filter='none'
+};
+
+/* ---------------- DAY / NIGHT + ATMOSPHERE ---------------- */
+const v0510Night=new THREE.Color(0x18232a),v0510Day=new THREE.Color(0xa6b2aa),v0510Dawn=new THREE.Color(0xa98569),v0510Sky=new THREE.Color();
+updateWorldTime=function(){
+  const hour=v057ClockFromRuntime(),base=v057LightForHour(hour),light=Math.max(.18,base),twilight=(hour>=5.5&&hour<7)||(hour>=18.5&&hour<20),night=base<.35;
+  const a=((hour-6)/24)*Math.PI*2;sun.position.set(Math.cos(a)*48,Math.max(10,Math.sin(a)*66),Math.sin(a)*42);sun.intensity=.22+base*2.2;hemi.intensity=.52+base*.98;hemi.color.set(night?0x78909a:0xd1ddd5);hemi.groundColor.set(night?0x3c4039:0x625847);
+  renderer.toneMappingExposure=.84+base*.32;
+  v0510Sky.copy(v0510Night).lerp(twilight?v0510Dawn:v0510Day,Math.pow(light,.64));scene.background.copy(v0510Sky);scene.fog.color.copy(v0510Sky);scene.fog.density=lerp(.0026,.00105,base);
+  lights.forEach(l=>l.intensity=base<.48?(1-base)*2.05:0);
+  const hh=Math.floor(hour),mm=Math.floor((hour-hh)*60);$('clock-label').textContent=`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;const dl=$('day-label');if(dl)dl.style.display='none'
+};
+
+/* ---------------- TERRAIN / WORLD ART PASS ---------------- */
+function v0510VertexTintGround(chunk,g){
+  if(!g?.geometry||g.userData.v0510Ground)return;g.userData.v0510Ground=true;
+  const geo=new THREE.PlaneGeometry(V052_CHUNK,V052_CHUNK,10,10),pos=geo.attributes.position,colors=[];
+  for(let i=0;i<pos.count;i++){
+    const vx=pos.getX(i),vy=pos.getY(i),seed=v052Hash(chunk.cx*31+Math.round(vx),chunk.cz*37+Math.round(vy),1010+i),n=(seed%1000)/1000;
+    /* tiny visual undulation — collision remains flat */
+    const edge=Math.max(Math.abs(vx),Math.abs(vy))/(V052_CHUNK/2);pos.setZ(i,edge>.91?0:(n-.5)*.11);
+    const c=.78+n*.18;colors.push(c*.93,c*.98,c*.88)
+  }
+  geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.computeVertexNormals();g.geometry.dispose();g.geometry=geo;
+  const old=g.material;g.material=new THREE.MeshStandardMaterial({map:v059GetTerrainTexture(),color:v059TerrainColor(chunk),vertexColors:true,roughness:.96,metalness:0,emissive:0x10120e,emissiveIntensity:.055});old?.dispose?.();g.receiveShadow=true
+}
+function v0510WorldDressing(chunk){
+  if(!chunk||chunk._v0510Dress)return;chunk._v0510Dress=true;const g=v059GroundMesh(chunk);v0510VertexTintGround(chunk,g);
+  const rnd=v052Rng(chunk.cx,chunk.cz,510),type=chunk.poi?.[0]?.type||'';
+  /* Irregular low-poly ground clutter breaks the board-game look from the air without heavy textures. */
+  const clutterMat=new THREE.MeshStandardMaterial({color:type==='industrial'?0x4f5049:0x5f5b4b,roughness:1,transparent:true,opacity:.62,depthWrite:false});
+  for(let i=0;i<9;i++){
+    const pts=[],r=2.2+rnd()*5;for(let k=0;k<6;k++){const aa=k/6*Math.PI*2,rr=r*(.55+rnd()*.55);pts.push(new THREE.Vector2(Math.cos(aa)*rr,Math.sin(aa)*rr))}
+    const shape=new THREE.Shape(pts),m=new THREE.Mesh(new THREE.ShapeGeometry(shape),clutterMat);m.rotation.x=-Math.PI/2;m.rotation.z=rnd()*Math.PI;m.position.set(chunk.cx*V052_CHUNK+8+rnd()*(V052_CHUNK-16),.012,chunk.cz*V052_CHUNK+8+rnd()*(V052_CHUNK-16));chunk.group.add(m)
+  }
+  /* Natural variation for procedural resource silhouettes. */
+  for(const n of chunk._v058Resources||[]){if(!n?.group)continue;const h=v052Hash(chunk.cx,chunk.cz,(n.id?.length||0)+510);n.group.rotation.y=(h%628)/100;n.group.scale.multiplyScalar(.88+(h%29)/100)}
+  if(type==='industrial'||type==='military'){
+    const metal=new THREE.MeshStandardMaterial({color:0x404743,roughness:.82,metalness:.25});for(let i=0;i<5;i++){const x=chunk.cx*V052_CHUNK+18+rnd()*(V052_CHUNK-36),z=chunk.cz*V052_CHUNK+18+rnd()*(V052_CHUNK-36),barrel=new THREE.Mesh(new THREE.CylinderGeometry(.28,.28,.75,10),metal);barrel.position.set(x,.375,z);barrel.rotation.y=rnd()*6.2;barrel.castShadow=true;chunk.group.add(barrel)}
+  }
+}
+const v0510GenChunkBase=v052GenerateChunk;
+v052GenerateChunk=function(cx,cz){const c=v0510GenChunkBase(cx,cz);v0510WorldDressing(c);return c};
+
+/* ---------------- HELICOPTER MODEL PASS ---------------- */
+function v0510DetailHeli(h){
+  if(!h?.visual||h.visual.userData.v0510Detailed)return;h.visual.userData.v0510Detailed=true;const v=h.visual;
+  const body=new THREE.MeshStandardMaterial({color:h.def.color,roughness:.48,metalness:.34}),dark=new THREE.MeshStandardMaterial({color:0x171d1b,roughness:.48,metalness:.58}),glass=new THREE.MeshStandardMaterial({color:0x375d65,roughness:.08,metalness:.14,transparent:true,opacity:.48});
+  const nose=new THREE.Mesh(new THREE.SphereGeometry(.72,14,9),glass);nose.scale.set(1.25,.72,.82);nose.position.set(1.92,1.02,0);v.add(nose);
+  const boom=new THREE.Mesh(new THREE.CylinderGeometry(.12,.34,3.5,8),body);boom.rotation.z=Math.PI/2;boom.position.set(-3.15,1.08,0);v.add(boom);
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(.23,.27,.17,10),dark);hub.position.set(-.18,2.43,0);v.add(hub);
+  const stabilizer=new THREE.Mesh(new THREE.BoxGeometry(.15,.08,1.55),dark);stabilizer.position.set(-4.32,1.18,0);v.add(stabilizer);
+  const panel=new THREE.Mesh(new THREE.BoxGeometry(1.1,.035,1.28),dark);panel.position.set(-.12,.31,0);v.add(panel);
+  for(const [z,col] of [[-.88,0xe34b3d],[.88,0x59d27c]]){const lamp=new THREE.Mesh(new THREE.SphereGeometry(.055,8,6),new THREE.MeshBasicMaterial({color:col}));lamp.position.set(.25,1.02,z);v.add(lamp)}
+}
+
+function v0510SetupPolish(){
+  applyQuality(settings.quality);camera.far=560;camera.updateProjectionMatrix();for(const c of v052Chunks.values())v0510WorldDressing(c);for(const h of v054Fleet)v0510DetailHeli(h);v0510NormalizeFleet();
+  const st=document.createElement('style');st.id='v0510-style';st.textContent=`canvas{filter:none!important;-webkit-filter:none!important}body.v057-flight .heli-readout{backdrop-filter:blur(3px)!important;-webkit-backdrop-filter:blur(3px)!important}body.v057-flight #heli-controls{backdrop-filter:blur(4px)!important;-webkit-backdrop-filter:blur(4px)!important}`;document.head.appendChild(st);
+  toast('v0.5.10 · HELI STABILITY + VISUAL CLARITY','good')
+}
+const v0510SetupBase=setupV05;
+setupV05=function(){v0510SetupBase();setTimeout(v0510SetupPolish,150)};
