@@ -8,8 +8,8 @@
   const syncViewport=()=>{const h=window.visualViewport?.height||window.innerHeight;document.documentElement.style.setProperty('--vast-vvh',`${Math.round(h)}px`);window.scrollTo(0,0)};
   syncViewport();window.addEventListener('resize',syncViewport,{passive:true});window.addEventListener('orientationchange',()=>setTimeout(syncViewport,80),{passive:true});window.visualViewport?.addEventListener('resize',syncViewport,{passive:true});window.visualViewport?.addEventListener('scroll',()=>window.scrollTo(0,0),{passive:true});['gesturestart','gesturechange','gestureend'].forEach(n=>document.addEventListener(n,e=>e.preventDefault(),{passive:false,capture:true}));document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false,capture:true});
 
-  const partPaths=Array.from({length:9},(_,i)=>`./v04/part-${String(i+1).padStart(2,'0')}.txt?v=510`);
-  const patchPaths=Array.from({length:15},(_,i)=>`./v05/patch-${String(i+1).padStart(2,'0')}.txt?v=510`);
+  const partPaths=Array.from({length:9},(_,i)=>`./v04/part-${String(i+1).padStart(2,'0')}.txt?v=513`);
+  const patchPaths=Array.from({length:18},(_,i)=>`./v05/patch-${String(i+1).padStart(2,'0')}.txt?v=513`);
   const getText=async path=>{const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw new Error(`No se pudo cargar ${path} (${r.status})`);return r.text()};
   const replaceRequired=(source,from,to,label)=>{if(!source.includes(from)){console.warn(`[VAST v0.5] No se aplicó parche: ${label}`);return source}return source.replace(from,to)};
 
@@ -21,12 +21,12 @@
       source=replaceRequired(source,"const fov=aimHeld?settings.fov-13:settings.fov;","const fov=aimHeld?settings.fov-(player.attachments.reddot?7:5):settings.fov;",'ADS con menos zoom');
       source=replaceRequired(source,"weaponRig.position.y=lerp(weaponRig.position.y,-.19+(moving?Math.sin(runTime*8)*.008:0),clamp(dt*9,0,1));","const adsX=aimHeld?0:.22,adsY=aimHeld?-.112:-.19+(moving?Math.sin(runTime*8)*.008:0),adsZ=aimHeld?-.54:-.42;weaponRig.position.x=lerp(weaponRig.position.x,adsX,clamp(dt*12,0,1));weaponRig.position.y=lerp(weaponRig.position.y,adsY,clamp(dt*12,0,1));weaponRig.position.z=lerp(weaponRig.position.z,adsZ,clamp(dt*12,0,1));document.body.classList.toggle('ads-active',aimHeld);",'alineación física de miras');
       source=replaceRequired(source,"bindHold($('aim-btn'),()=>aimHeld=true,()=>aimHeld=false);","$('aim-btn').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();AudioFX.resume();aimHeld=!aimHeld;$('aim-btn').classList.toggle('pressed',aimHeld)});",'mira toggle');
-      source=replaceRequired(source,"toast(save?'VAST v0.4 · Partida restaurada':'VAST v0.4 · EQUÍPATE, FARMEA, CONSTRUYE');","toast(save?'VAST v0.5.10 · Partida restaurada':'VAST v0.5.10 · STABILITY + VISUAL CLARITY');",'mensaje de versión');
+      source=replaceRequired(source,"toast(save?'VAST v0.4 · Partida restaurada':'VAST v0.4 · EQUÍPATE, FARMEA, CONSTRUYE');","toast(save?'VAST v0.5.13 · Partida restaurada':'VAST v0.5.13 · GRAPHICS + 3D MODELS');",'mensaje de versión');
 
       const startup='initThree();setupControls();setupMenus();setupProUI();updateAmmoUI();loop();';
       if(!source.includes(startup))throw new Error('No se encontró el punto de arranque de v0.4');
       source=source.replace(startup,`${patch}\ninitThree();setupControls();setupMenus();setupProUI();setupV05();updateAmmoUI();loop();`);
       const blob=new Blob([source],{type:'text/javascript'}),moduleUrl=URL.createObjectURL(blob);return import(moduleUrl).finally(()=>setTimeout(()=>URL.revokeObjectURL(moduleUrl),1800));
     })
-    .catch(error=>{console.error('[VAST v0.5.10] Error de arranque',error);document.getElementById('loading')?.classList.add('hidden');const box=document.createElement('div');box.style.cssText='position:fixed;z-index:9999;inset:18%;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;background:#0b0d0c;border:1px solid #713f2b;color:#eee;font:600 14px system-ui';box.textContent='VAST v0.5.10 no pudo cargar. Recarga la página para reintentar.';document.body.appendChild(box)});
+    .catch(error=>{console.error('[VAST v0.5.13] Error de arranque',error);document.getElementById('loading')?.classList.add('hidden');const box=document.createElement('div');box.style.cssText='position:fixed;z-index:9999;inset:18%;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;background:#0b0d0c;border:1px solid #713f2b;color:#eee;font:600 14px system-ui';box.textContent='VAST v0.5.13 no pudo cargar. Recarga la página para reintentar.';document.body.appendChild(box)});
 })();
