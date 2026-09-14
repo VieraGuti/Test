@@ -1,0 +1,198 @@
+/* v0.5.14 — SCALE + GROUND SNAP + FOUNDATIONS
+   One metre is treated as one Three.js world unit. Imported assets are normalised
+   before use, known world props are bottom-anchored, and player housing now starts
+   from a real walkable foundation/floor with structural snapping. */
+
+const V0514_FOUNDATION_SIZE=3;
+const V0514_FOUNDATION_H=.22;
+const V0514_FOUNDATION_TOP=V0514_FOUNDATION_H;
+const V0514_WALL_TYPES=['wall','windowwall','doorframe'];
+const V0514_SMALL_BUILD_TYPES=['stash','campfire','sleepingbag','barricade'];
+
+if(!V05_BUILD_TYPES.includes('foundation'))V05_BUILD_TYPES.unshift('foundation');
+BUILD_RECIPES.foundation={label:'FUNDACIÓN / SUELO',cost:{wood:32,stone:10},w:V0514_FOUNDATION_SIZE,d:V0514_FOUNDATION_SIZE,h:V0514_FOUNDATION_H};
+
+function v0514Box3(obj){obj?.updateMatrixWorld?.(true);return obj?new THREE.Box3().setFromObject(obj):null}
+function v0514Size(obj){const b=v0514Box3(obj);return b?b.getSize(new THREE.Vector3()):new THREE.Vector3()}
+function v0514BottomAnchor(obj){
+  if(!obj)return obj;obj.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(obj);if(!Number.isFinite(b.min.y))return obj;
+  const c=b.getCenter(new THREE.Vector3());obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y-=b.min.y;obj.updateMatrixWorld(true);return obj
+}
+/* Fill the requested footprint first, then set a sane height. This avoids the old
+   behaviour where a tall source model made the whole building tiny. */
+function v0514FitFootprint(obj,w,d,h,{allowRotate=true}={}){
+  if(!obj)return obj;obj.updateMatrixWorld(true);let b=new THREE.Box3().setFromObject(obj),s=b.getSize(new THREE.Vector3());
+  if(!(s.x>.001&&s.y>.001&&s.z>.001))return obj;
+  if(allowRotate&&w>0&&d>0){
+    const tr=w/d,nr=s.x/s.z,sr=s.z/s.x,en=Math.abs(Math.log(Math.max(.001,nr/tr))),es=Math.abs(Math.log(Math.max(.001,sr/tr)));
+    if(es+.08<en){obj.rotation.y+=Math.PI/2;obj.updateMatrixWorld(true);b=new THREE.Box3().setFromObject(obj);s=b.getSize(new THREE.Vector3())}
+  }
+  const k=Math.min(w/Math.max(.001,s.x),d/Math.max(.001,s.z));obj.scale.multiplyScalar(k);obj.updateMatrixWorld(true);
+  b=new THREE.Box3().setFromObject(obj);s=b.getSize(new THREE.Vector3());if(h>0&&s.y>.001)obj.scale.y*=h/s.y;
+  return v0514BottomAnchor(obj)
+}
+function v0514FitVehicle(obj,length=4.55,height=1.55){
+  if(!obj)return obj;obj.updateMatrixWorld(true);let s=new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+  if(s.z>s.x){obj.rotation.y+=Math.PI/2;obj.updateMatrixWorld(true);s=new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3())}
+  const k=length/Math.max(.001,Math.max(s.x,s.z));obj.scale.multiplyScalar(k);obj.updateMatrixWorld(true);s=new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+  if(s.y>.001)obj.scale.y*=height/s.y;return v0514BottomAnchor(obj)
+}
+function v0514GroundHolder(holder,y=0){
+  if(!holder?.parent)return holder;holder.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(holder);if(Number.isFinite(b.min.y))holder.position.y+=y-b.min.y;holder.updateMatrixWorld(true);return holder
+}
+function v0514GroundYAt(){return 0}
+
+/* ---- Imported world asset normalisation ---- */
+const v0514ResourceUpgradeBase=v0511UpgradeResource;
+v0511UpgradeResource=async function(n){
+  if(!n?.group||n.group.userData?.v0514Model)return;
+  const isTree=n.resource==='wood',seed=v052Hash(Math.round(n.x||0),Math.round(n.z||0),514),key=isTree?(seed%2?'treeA':'treeB'):(seed%3?'rockA':'rockB'),tpl=await v0511LoadAsset(key);if(!tpl||!n.group?.parent||n.group.userData?.v0514Model)return;
+  const old=n.group,parent=old.parent,pos=old.position.clone(),rot=old.rotation.y,g=new THREE.Group();g.position.set(pos.x,v0514GroundYAt(pos.x,pos.z),pos.z);g.rotation.y=rot+(seed%628)/100;g.userData.v0514Model=true;
+  const m=v0512CloneMaterials?v0512CloneMaterials(tpl.clone(true)):tpl.clone(true);if(isTree)v0514FitFootprint(m,2.6,2.6,5.8);else v0514FitFootprint(m,1.65,1.65,n.resource==='metal'?1.25:1.10);
+  g.add(m);parent.add(g);parent.remove(old);n.group=g
+};
+
+/* Cars are no longer toy sized. Core collision is enlarged to match the visual. */
+v0513FitCar=function(model){v0514FitVehicle(model,4.55,1.55);return model};
+const v0514AddCarBase=addCar;
+addCar=function(x,z,r=0){
+  const before=obstacles.length,g=v0514AddCarBase(x,z,r);const L=4.55,W=1.92,c=Math.abs(Math.cos(r)),s=Math.abs(Math.sin(r)),ex=c*L/2+s*W/2,ez=s*L/2+c*W/2;
+  for(let i=before;i<obstacles.length;i++){const o=obstacles[i];if(o.tag==='car'){o.minX=x-ex;o.maxX=x+ex;o.minZ=z-ez;o.maxZ=z+ez}}
+  g.position.y=0;return g
+};
+
+/* Buildings fill their procedural footprint and get a human-scale storey height. */
+v0511UpgradeBuilding=async function(chunk,o,index){
+  if(o._v0514Model)return;o._v0514Model=true;const type=chunk.poi?.[0]?.type||'',w=o.maxX-o.minX,d=o.maxZ-o.minZ,x=(o.minX+o.maxX)/2,z=(o.minZ+o.maxZ)/2;
+  const key=(type==='industrial'||Math.max(w,d)>20)?'buildingMedium':'buildingSmall',tpl=await v0511LoadAsset(key);if(!tpl)return;
+  const old=v0511NearestBuildingMeshes(chunk,o),foot=Math.max(w,d),targetH=type==='industrial'?Math.max(6.6,Math.min(8.6,foot*.27)):type==='military'?5.25:Math.max(4.8,Math.min(6.0,foot*.34));
+  const holder=new THREE.Group();holder.position.set(x,0,z);holder.rotation.y=(v052Hash(chunk.cx,chunk.cz,514+index)%2)*Math.PI;holder.userData.v0511Building=true;holder.userData.v0514Building=true;
+  const model=v0512CloneMaterials?v0512CloneMaterials(tpl.clone(true)):tpl.clone(true);v0514FitFootprint(model,w*.96,d*.96,targetH);holder.add(model);chunk.group.add(holder);old.forEach(m=>m.visible=false);v0514GroundHolder(holder,0);
+  if(type==='industrial'&&v0511Templates.has('ac')){const ac=v0511CloneAsset('ac');if(ac){v0514FitFootprint(ac,1.25,1.0,.72);ac.position.set(w*.22,targetH+.02,-d*.12);holder.add(ac)}}
+};
+
+const V0514_DECOR_DIMS={
+ treeA:[2.5,2.5,5.6],treeB:[2.8,2.8,6.2],rockA:[1.7,1.7,1.25],rockB:[1.1,1.1,.78],
+ fence:[3.6,.42,1.55],gate:[4.5,.48,2.05],sign:[1.25,.55,1.85],barrel:[.72,.72,1.05],signpost:[1.0,.65,2.15]
+};
+v0511AddDecorModel=function(chunk,key,x,z,scale=1,rot=0){
+  const tpl=v0511Templates.get(key);if(!tpl)return null;const g=new THREE.Group(),m=v0512CloneMaterials?v0512CloneMaterials(tpl.clone(true)):tpl.clone(true),dim=V0514_DECOR_DIMS[key]||[1.2,1.2,1.2];
+  v0514FitFootprint(m,dim[0]*scale,dim[1]*scale,dim[2]*scale);g.position.set(x,0,z);g.rotation.y=rot;g.userData.v0511Decor=true;g.userData.v0514Grounded=true;g.add(m);chunk.group.add(g);v0514GroundHolder(g,0);return g
+};
+
+v0513PlaceMainProp=function(key,x,z,w,h,d,rot=0){
+  const tpl=v0511Templates.get(key);if(!tpl)return null;const holder=new THREE.Group(),m=v0512CloneMaterials?v0512CloneMaterials(tpl.clone(true)):tpl.clone(true);v0514FitFootprint(m,w,d,h);holder.position.set(x,0,z);holder.rotation.y=rot;holder.add(m);holder.userData.v0513MainProp=true;holder.userData.v0514Grounded=true;scene.add(holder);v0514GroundHolder(holder,0);return holder
+};
+/* Keep the military entrance visually obvious and do not put a decorative gate on the wrong wall. */
+v0513DressMainWorld=function(){
+  if(scene.userData.v0513MainDressed)return;scene.userData.v0513MainDressed=true;
+  v0513PlaceMainProp('signpost',-39,15,1.0,2.1,.7,.2);v0513PlaceMainProp('barrel',-55,15,.7,1.05,.7,.3);v0513PlaceMainProp('barrel',-54.2,15.4,.7,1.05,.7,-.2);
+  v0513PlaceMainProp('fence',44,39,3.6,1.5,.45,0);v0513PlaceMainProp('barrel',55,38,.7,1.05,.7,.5);v0513PlaceMainProp('signpost',-66,-39,1,2.1,.7,-.4);
+  v0513PlaceMainProp('signpost',78,-100,1.1,2.2,.7,0);v0513PlaceMainProp('barrel',74.4,-97.5,.72,1.05,.72,.3);v0513PlaceMainProp('barrel',81.6,-97.5,.72,1.05,.72,-.2)
+};
+function v0514EnsureMilitaryEntrance(){
+  const lane={minX:75.35,maxX:80.65,minZ:-100.5,maxZ:-92.0};for(const o of obstacles){if(!o.active||o.tag!=='world')continue;if(o.maxX>lane.minX&&o.minX<lane.maxX&&o.maxZ>lane.minZ&&o.minZ<lane.maxZ)o.active=false}
+  if(scene.userData.v0514MilPath)return;scene.userData.v0514MilPath=true;const m=new THREE.Mesh(new THREE.PlaneGeometry(5.1,13),new THREE.MeshStandardMaterial({color:0x55534a,roughness:1}));m.rotation.x=-Math.PI/2;m.position.set(78,.018,-96.5);m.receiveShadow=true;scene.add(m)
+}
+
+/* ---- Real foundation / floor construction ---- */
+const v0514StructureGroupBase=v05StructureGroup;
+v05StructureGroup=function(type,x,z,rot){
+  if(type!=='foundation')return v0514StructureGroupBase(type,x,z,rot);
+  const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=rot;const beam=v05DarkWood(),plank=v05Wood(),stone=new THREE.MeshStandardMaterial({color:0x67655d,roughness:.98});
+  const base=v05Box(3,.16,3,0,.08,0,stone);g.add(base);
+  for(let i=-4;i<=4;i++){const p=v05Box(2.92,.08,.29,0,.18,i*.33,plank);g.add(p)}
+  for(const z0 of [-1.43,1.43])g.add(v05Box(3.04,.20,.10,0,.11,z0,beam));for(const x0 of [-1.43,1.43])g.add(v05Box(.10,.20,2.86,x0,.11,0,beam));
+  return g
+};
+const v0514PreviewBase=v05PreviewModel;
+v05PreviewModel=function(type){
+  if(type!=='foundation')return v0514PreviewBase(type);const g=new THREE.Group(),m=new THREE.MeshBasicMaterial({color:0x279dff,transparent:true,opacity:.38,depthWrite:false});
+  const slab=new THREE.Mesh(new THREE.BoxGeometry(3,.20,3),m);slab.position.y=.10;g.add(slab);for(let i=-3;i<=3;i++){const line=new THREE.Mesh(new THREE.BoxGeometry(2.92,.025,.025),m);line.position.set(0,.215,i*.42);g.add(line)}return g
+};
+const v0514SpawnStructureBase=spawnStructure;
+spawnStructure=function(type,x,z,rot=0,id=`b-${Date.now()}`){
+  if(type==='foundation'){
+    rot=Math.round(rot/(Math.PI/2))*(Math.PI/2);const g=v05StructureGroup(type,x,z,rot);scene.add(g);const st={id,type,x,z,rot,group:g,obs:null,preview:false,v0514Foundation:true};structures.push(st);return st
+  }
+  const st=v0514SpawnStructureBase(type,x,z,rot,id);if(!st)return st;
+  const f=v0514FoundationUnder(x,z);if(f&&st.group&&['wall','windowwall','doorframe','door','roof','stash','campfire','sleepingbag'].includes(type))st.group.position.y=V0514_FOUNDATION_TOP;
+  return st
+};
+
+function v0514Foundations(){return structures.filter(s=>s.type==='foundation'&&s.group?.parent)}
+function v0514FoundationUnder(x,z,pad=.08){
+  let best=null,bd=Infinity;for(const f of v0514Foundations()){const dx=Math.abs(x-f.x),dz=Math.abs(z-f.z);if(dx<=V0514_FOUNDATION_SIZE/2+pad&&dz<=V0514_FOUNDATION_SIZE/2+pad){const d=dx+dz;if(d<bd){best=f;bd=d}}}return best
+}
+function v0514FoundationNear(x,z,max=3.2){let best=null,bd=max;for(const f of v0514Foundations()){const d=Math.hypot(x-f.x,z-f.z);if(d<bd){best=f;bd=d}}return best}
+function v0514FoundationSocketNear(x,z,max=2.35){
+  let best=null,bd=max;for(const f of v0514Foundations()){
+    const sockets=[{x:f.x,z:f.z-1.5,rot:0},{x:f.x,z:f.z+1.5,rot:0},{x:f.x-1.5,z:f.z,rot:Math.PI/2},{x:f.x+1.5,z:f.z,rot:Math.PI/2}];
+    for(const s of sockets){const d=Math.hypot(x-s.x,z-s.z);if(d<bd){best={...s,foundation:f};bd=d}}
+  }return best
+}
+function v0514FootprintBlocked(x,z,w,d,rot,{ignoreBuild=false}={}){
+  const c=Math.abs(Math.cos(rot)),s=Math.abs(Math.sin(rot)),ex=c*w/2+s*d/2+.06,ez=s*w/2+c*d/2+.06,minX=x-ex,maxX=x+ex,minZ=z-ez,maxZ=z+ez,all=[...obstacles,...v052ProcColliders];
+  for(const o of all){if(!o?.active)continue;if(ignoreBuild&&(o.tag==='build'||o.tag==='build-door'))continue;if(maxX>o.minX&&minX<o.maxX&&maxZ>o.minZ&&minZ<o.maxZ)return true}return false
+}
+function v0514StructureOccupies(type,x,z,threshold=.34){return structures.some(s=>s.type===type&&Math.hypot(s.x-x,s.z-z)<threshold)}
+function v0514SupportedWallAt(x,z){const f=v0514FoundationUnder(x,z,.12);if(!f)return null;const edge=Math.min(Math.abs(Math.abs(x-f.x)-1.5)+Math.abs(z-f.z),Math.abs(Math.abs(z-f.z)-1.5)+Math.abs(x-f.x));return edge<.30?f:null}
+function v0514RoofSupportAt(x,z){const f=v0514FoundationUnder(x,z,.20);if(!f)return false;let n=0;for(const s of structures)if(V0514_WALL_TYPES.includes(s.type)&&Math.hypot(s.x-f.x,s.z-f.z)<2.05)n++;return n>=2}
+function v0514Reason(type,x,z,rot){
+  const r=BUILD_RECIPES[type];if(!r)return 'PIEZA INVÁLIDA';if(!canAfford(r.cost))return 'FALTAN RECURSOS';
+  if(type==='foundation'){
+    if(v0514Foundations().some(f=>Math.abs(f.x-x)<2.82&&Math.abs(f.z-z)<2.82))return 'YA HAY UNA FUNDACIÓN AQUÍ';
+    if(v0514FootprintBlocked(x,z,2.85,2.85,rot))return 'TERRENO OCUPADO';if(Math.hypot(player.pos.x-x,player.pos.z-z)<1.65)return 'APÁRTATE PARA CONSTRUIR';return ''
+  }
+  if(type==='door'){const frame=v05NearestDoorFrame(x,z);if(!frame)return 'NECESITA PARED CON PUERTA';if(!v0514SupportedWallAt(frame.x,frame.z))return 'NECESITA FUNDACIÓN';if(structures.some(s=>s.type==='door'&&Math.hypot(s.x-frame.x,s.z-frame.z)<.7))return 'YA HAY UNA PUERTA EN ESTE MARCO';return ''}
+  if(V0514_WALL_TYPES.includes(type)){
+    if(!v0514SupportedWallAt(x,z))return 'NECESITAS FUNDACIÓN / SUELO';if(structures.some(s=>V0514_WALL_TYPES.includes(s.type)&&Math.hypot(s.x-x,s.z-z)<.32))return 'YA HAY UNA PARED AQUÍ';
+    if(v0514FootprintBlocked(x,z,r.w,r.d,rot,{ignoreBuild:false}))return 'ESPACIO OCUPADO';if(Math.hypot(player.pos.x-x,player.pos.z-z)<1.35)return 'APÁRTATE PARA CONSTRUIR';return ''
+  }
+  if(type==='roof'){
+    if(!v0514FoundationUnder(x,z,.25))return 'NECESITAS FUNDACIÓN / SUELO';if(!v0514RoofSupportAt(x,z))return 'SIN SOPORTE · COLOCA AL MENOS 2 PAREDES';if(structures.some(s=>s.type==='roof'&&Math.hypot(s.x-x,s.z-z)<1.1))return 'YA HAY UN TECHO AQUÍ';return ''
+  }
+  if(v0514FootprintBlocked(x,z,r.w,r.d,rot,{ignoreBuild:false}))return 'ESPACIO OCUPADO';
+  if(structures.some(s=>s.type!=='foundation'&&s.type!=='roof'&&Math.hypot(s.x-x,s.z-z)<(type==='sleepingbag'?1.0:type==='campfire'?1.0:.75)))return 'DEMASIADO CERCA';
+  if(Math.hypot(player.pos.x-x,player.pos.z-z)<1.35)return 'APÁRTATE PARA CONSTRUIR';return ''
+}
+v05BuildReason=v0514Reason;
+
+function v0514SnapBuild(type,rawX,rawZ,rawRot){
+  let x=rawX,z=rawZ,rot=Math.round(rawRot/(Math.PI/2))*(Math.PI/2),y=0;
+  if(type==='foundation'){x=Math.round(x/V0514_FOUNDATION_SIZE)*V0514_FOUNDATION_SIZE;z=Math.round(z/V0514_FOUNDATION_SIZE)*V0514_FOUNDATION_SIZE}
+  else if(V0514_WALL_TYPES.includes(type)){const s=v0514FoundationSocketNear(x,z,3.1);if(s){x=s.x;z=s.z;rot=s.rot;y=V0514_FOUNDATION_TOP}}
+  else if(type==='roof'){const f=v0514FoundationNear(x,z,3.1);if(f){x=f.x;z=f.z;rot=f.rot||0;y=V0514_FOUNDATION_TOP}}
+  else if(type==='door'){const f=v05NearestDoorFrame(x,z,3.0);if(f){x=f.x;z=f.z;rot=f.rot;y=v0514FoundationUnder(x,z)?V0514_FOUNDATION_TOP:0}}
+  else {x=Math.round(x*2)/2;z=Math.round(z*2)/2;if(v0514FoundationUnder(x,z))y=V0514_FOUNDATION_TOP}
+  return{x,z,rot,y}
+}
+updateBuildPreview=function(){
+  if(!buildMode||!buildPreview||paused)return;const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));dir.y=0;if(dir.lengthSq()<.001)dir.set(0,0,-1);dir.normalize();
+  const rawX=player.pos.x+dir.x*3.8,rawZ=player.pos.z+dir.z*3.8,s=v0514SnapBuild(buildMode,rawX,rawZ,yaw);buildPreview.position.set(s.x,s.y,s.z);buildPreview.rotation.y=s.rot;
+  const reason=v0514Reason(buildMode,s.x,s.z,s.rot);buildValid=!reason;v05SetPreviewColor(buildValid);const hint=$('build-hint'),place=$('build-place');if(hint){hint.textContent=buildValid?(buildMode==='foundation'?'AZUL · FUNDACIÓN VÁLIDA':'AZUL · SNAP ESTRUCTURAL VÁLIDO'):'ROJO · '+reason;hint.classList.toggle('valid',buildValid);hint.classList.toggle('invalid',!buildValid)}if(place)place.classList.toggle('invalid',!buildValid)
+};
+placeBuild=function(){
+  if(!buildMode||!buildPreview)return;const x=buildPreview.position.x,z=buildPreview.position.z,rot=buildPreview.rotation.y,reason=v0514Reason(buildMode,x,z,rot);if(reason){toast(reason,'bad');v05SetPreviewColor(false);return}
+  const r=BUILD_RECIPES[buildMode],id=`b-${Date.now()}-${Math.floor(Math.random()*9999)}`,type=buildMode;payCost(r.cost);scene.remove(buildPreview);buildPreview=null;spawnStructure(type,x,z,rot,id);toast(`${r.label} colocada`,'good');updateResourceHUD();renderInventory();saveGame();cancelBuild()
+};
+renderBuildMenu=function(){
+  const g=$('build-grid');if(!g)return;g.innerHTML='';const order=['foundation','wall','windowwall','doorframe','door','roof','sleepingbag','campfire','stash','barricade'];
+  for(const type of order){const r=BUILD_RECIPES[type];if(!r)continue;const ok=canAfford(r.cost),b=document.createElement('button');b.className='build-card'+(ok?'':' no-resources');b.dataset.buildType=type;b.innerHTML=`<b>${r.label}</b><span>${Object.entries(r.cost).map(([k,v])=>`${ITEMS[k].short} ${v}`).join(' · ')}</span><em>${type==='foundation'?'EMPIEZA AQUÍ':ok?'LISTO':'FALTAN RECURSOS'}</em>`;b.onclick=()=>selectBuild(type);g.appendChild(b)}
+};
+
+/* Repair vertical placement after save restore and after async GLB swaps. */
+function v0514RepairBuildHeights(){
+  for(const s of structures){if(!s?.group)continue;if(s.type==='foundation')s.group.position.y=0;else if(v0514FoundationUnder(s.x,s.z)&&['wall','windowwall','doorframe','door','roof','stash','campfire','sleepingbag'].includes(s.type))s.group.position.y=V0514_FOUNDATION_TOP}
+}
+function v0514AuditWorld(){
+  for(const n of resourceNodes||[])if(n?.group)v0514GroundHolder(n.group,0);for(const c of v0513Cars||[])if(c?.parent)v0514GroundHolder(c,0);
+  for(const chunk of v052Chunks.values())for(const q of chunk.group.children){if(q?.userData?.v0511Decor||q?.userData?.v0511Building)v0514GroundHolder(q,0)}
+  scene.traverse(o=>{if(o?.userData?.v0513MainProp&&o.parent===scene)v0514GroundHolder(o,0)});v0514RepairBuildHeights();v0514EnsureMilitaryEntrance()
+}
+function v0514Setup(){
+  const style=document.createElement('style');style.textContent=`.build-card[data-build-type="foundation"]{border-color:rgba(52,181,255,.75)!important;box-shadow:inset 0 0 22px rgba(38,157,255,.08)}.build-card[data-build-type="foundation"] em{color:#6fd0ff!important}.vast-v05 #build-hint.valid{color:#72ceff!important}`;document.head.appendChild(style);
+  v0514EnsureMilitaryEntrance();v0514RepairBuildHeights();setTimeout(v0514AuditWorld,550);setTimeout(v0514AuditWorld,1450);setTimeout(v0514AuditWorld,3200);toast('v0.5.14 · ESCALA REAL · GROUND SNAP · FUNDACIONES','good')
+}
+const v0514SetupBase=setupV05;
+setupV05=function(){v0514SetupBase();setTimeout(v0514Setup,40)};
