@@ -1,0 +1,94 @@
+/* v0.5.9 — aerial visual rework: seamless terrain, better props, clearer atmosphere and proper heli cameras */
+let v059TerrainTex=null,v059RoadTex=null,v059AirStreamAt=0;
+const v059MatCache=new Map();
+
+function v059GetTerrainTexture(){
+  if(v059TerrainTex)return v059TerrainTex;
+  v059TerrainTex=makeTexture('#5b5649','#756d5b',128);v059TerrainTex.repeat.set(12,12);v059TerrainTex.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);return v059TerrainTex
+}
+function v059GetRoadTexture(){
+  if(v059RoadTex)return v059RoadTex;
+  v059RoadTex=makeTexture('#303735','#525b57',128);v059RoadTex.repeat.set(9,9);v059RoadTex.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);return v059RoadTex
+}
+function v059TerrainColor(chunk){
+  const type=chunk.poi?.[0]?.type||'';if(type==='village')return 0x77705d;if(type==='industrial')return 0x68675d;if(type==='military')return 0x666c5d;
+  const h=v052Hash(chunk.cx,chunk.cz,959)%4;return [0x706b59,0x77705d,0x696a58,0x756b54][h]
+}
+function v059GroundMesh(chunk){
+  return chunk.group.children.find(o=>o?.isMesh&&o.geometry?.type==='PlaneGeometry'&&Math.abs((o.geometry.parameters?.width||0)-(V052_CHUNK+.6))<1)
+}
+function v059DressBuilding(chunk,o,idx){
+  if(o._v059Dress)return;o._v059Dress=true;const x=(o.minX+o.maxX)/2,z=(o.minZ+o.maxZ)/2,w=o.maxX-o.minX,d=o.maxZ-o.minZ;
+  let body=null,best=1e9;for(const q of chunk.group.children){if(!q?.isMesh||q.geometry?.type!=='BoxGeometry')continue;const dd=Math.hypot(q.position.x-x,q.position.z-z);if(dd<best){best=dd;body=q}}
+  if(!body||best>2.2)return;const hp=body.geometry.parameters?.height||4,top=body.position.y+hp/2,type=chunk.poi?.[0]?.type||'';
+  const trim=new THREE.MeshStandardMaterial({color:type==='military'?0x333b35:type==='industrial'?0x3b403d:0x443b31,roughness:.72,metalness:type==='industrial'?.22:.06});
+  if(type==='village'){
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(1,1,4),trim);roof.position.set(x,top+.58,z);roof.rotation.y=Math.PI/4;roof.scale.set(Math.max(3,w*.63),1.05,Math.max(3,d*.63));roof.castShadow=true;chunk.group.add(roof)
+  }else{
+    for(let j=0;j<2;j++){const vent=new THREE.Mesh(new THREE.CylinderGeometry(.24,.3,.48,8),trim);vent.position.set(x-w*.22+j*w*.44,top+.28,z);vent.castShadow=true;chunk.group.add(vent)}
+  }
+  const glass=new THREE.MeshStandardMaterial({color:0x263638,roughness:.18,metalness:.12,emissive:0x071112,emissiveIntensity:.18});
+  const frontZ=z+d/2+.015;for(const sx of [-.24,.24]){const win=new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.5,w*.18),1.05,.035),glass);win.position.set(x+w*sx,Math.min(top-.85,2.35),frontZ);chunk.group.add(win)}
+  const door=new THREE.Mesh(new THREE.BoxGeometry(1.05,2.05,.05),trim);door.position.set(x,1.025,frontZ+.01);chunk.group.add(door)
+}
+function v059BeautifyResource(n){
+  if(!n?._v058Proc||!n.group||n.group.userData?.v059Pretty)return;n.group.userData.v059Pretty=true;
+  if(n.resource==='wood'){
+    const leaf=new THREE.MeshStandardMaterial({color:0x34483a,roughness:.96}),branch=new THREE.MeshStandardMaterial({color:0x4a4033,roughness:1});
+    for(const [ox,oy,oz,s] of [[-.42,3.45,.12,.72],[.38,3.7,-.14,.64],[.05,4.45,.08,.76]]){const c=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),leaf);c.position.set(ox,oy,oz);c.scale.set(1,.9,1.05);c.castShadow=true;n.group.add(c)}
+    for(const side of [-1,1]){const b=new THREE.Mesh(new THREE.CylinderGeometry(.035,.07,1.25,6),branch);b.position.set(side*.28,2.65,0);b.rotation.z=side*.72;n.group.add(b)}
+  }else{
+    const col=n.resource==='metal'?0x4e5955:0x67665e,mat=new THREE.MeshStandardMaterial({color:col,roughness:.86,metalness:n.resource==='metal'?.34:.03});
+    for(let i=0;i<3;i++){const r=new THREE.Mesh(new THREE.DodecahedronGeometry(.24+i*.055,0),mat);r.position.set((i-1)*.28,.16+i*.05,(i%2?.2:-.16));r.rotation.set(.25*i,.7*i,.12*i);n.group.add(r)}
+  }
+}
+function v059BeautifyChunk(chunk){
+  if(!chunk||chunk._v059Pretty)return chunk;chunk._v059Pretty=true;
+  const g=v059GroundMesh(chunk);if(g){g.position.y=-.032;g.geometry.dispose();g.geometry=new THREE.PlaneGeometry(V052_CHUNK,V052_CHUNK);g.material=new THREE.MeshStandardMaterial({map:v059GetTerrainTexture(),color:v059TerrainColor(chunk),roughness:1,metalness:0});g.receiveShadow=true}
+  for(const q of chunk.group.children){if(!q?.isMesh||q===g||q.geometry?.type!=='PlaneGeometry')continue;const p=q.geometry.parameters||{};if((p.width>V052_CHUNK*.8&&p.height<14)||(p.height>V052_CHUNK*.8&&p.width<14)){q.material=new THREE.MeshStandardMaterial({map:v059GetRoadTexture(),color:0x5b625e,roughness:.94,metalness:.02});q.position.y=.018}}
+  let bi=0;for(const o of chunk.colliders||[])if(o.tag==='proc-building')v059DressBuilding(chunk,o,bi++);
+  if(chunk._v058Resources)for(const n of chunk._v058Resources)v059BeautifyResource(n);
+  return chunk
+}
+const v059GenerateChunkBase=v052GenerateChunk;
+v052GenerateChunk=function(cx,cz){return v059BeautifyChunk(v059GenerateChunkBase(cx,cz))};
+
+/* In flight render one extra chunk ring on medium/high quality so the horizon does not reveal the streaming square. */
+const v059StreamingBase=v052UpdateStreaming;
+v052UpdateStreaming=function(force=false){
+  if(!inFlyHeli||settings.quality==='low'){v059StreamingBase(force);return}
+  const t=performance.now();if(!force&&t<v059AirStreamAt)return;v059AirStreamAt=t+420;const cx=v052ChunkCoord(player.pos.x),cz=v052ChunkCoord(player.pos.z),radius=3;v052Discover(cx,cz);
+  for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++)v052GenerateChunk(cx+dx,cz+dz);
+  for(const [key,c] of [...v052Chunks])if(Math.abs(c.cx-cx)>radius+1||Math.abs(c.cz-cz)>radius+1)v052UnloadChunk(key)
+};
+
+/* Cleaner long-distance atmosphere: preserve depth without the flat grey wall seen from helicopters. */
+const v059NightSky=new THREE.Color(0x101820),v059DaySky=new THREE.Color(0x98a6a0),v059DawnSky=new THREE.Color(0x8c7863),v059SkyTmp=new THREE.Color();
+updateWorldTime=function(){
+  const hour=v057ClockFromRuntime(),light=v057LightForHour(hour),twilight=(hour>=5.5&&hour<7)||(hour>=18.5&&hour<20);sun.intensity=.12+light*2.15;hemi.intensity=.38+light*1.02;renderer.toneMappingExposure=.76+light*.34;
+  v059SkyTmp.copy(v059NightSky).lerp(twilight?v059DawnSky:v059DaySky,Math.pow(light,.62));scene.background.copy(v059SkyTmp);scene.fog.color.copy(v059SkyTmp);scene.fog.density=lerp(.0062,.00255,light);lights.forEach(l=>l.intensity=light<.45?(1-light)*1.8:0);
+  const hh=Math.floor(hour),mm=Math.floor((hour-hh)*60);$('clock-label').textContent=`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;const dl=$('day-label');if(dl)dl.style.display='none'
+};
+
+/* The original helicopter mesh is built along local +X while flight movement is local -Z. Rotate only the visual by 90° so chase camera finally sees the tail/nose correctly. */
+function v059AlignHeliVisual(h){if(!h?.visual)return;h.visual.rotation.y=Math.PI/2}
+const v059CreateHeliBase=v05CreateFlyHeli;
+v05CreateFlyHeli=function(){v059CreateHeliBase();for(const h of v054Fleet)v059AlignHeliVisual(h)};
+const v059UpdateHeliBase=v05UpdateFlyHeli;
+v05UpdateFlyHeli=function(dt){
+  v059UpdateHeliBase(dt);for(const h of v054Fleet)v059AlignHeliVisual(h);if(!inFlyHeli||!flyHeli)return;const h=flyHeli,k=clamp(dt*4.4,0,1);
+  if(v054HeliCamera){
+    const targetX=clamp(-h.turnSpeed*.55,-.7,.7),targetY=3.05+Math.min(1.15,Math.abs(h.speed)*.025),targetZ=10.4+Math.min(1.4,Math.abs(h.speed)*.035);camera.position.x=lerp(camera.position.x,targetX,k);camera.position.y=lerp(camera.position.y,targetY,k);camera.position.z=lerp(camera.position.z,targetZ,k);pitch=lerp(pitch,-.115,clamp(dt*2.8,0,1))
+  }else{
+    camera.position.x=lerp(camera.position.x,0,k);camera.position.y=lerp(camera.position.y,.72,k);camera.position.z=lerp(camera.position.z,-3.15,k);pitch=lerp(pitch,-.025,clamp(dt*3.2,0,1))
+  }
+  pitchNode.rotation.x=pitch;camera.rotation.set(0,0,0);camera.far=520;camera.updateProjectionMatrix()
+};
+
+function v059SetupVisuals(){
+  camera.far=520;camera.updateProjectionMatrix();for(const c of v052Chunks.values())v059BeautifyChunk(c);for(const h of v054Fleet)v059AlignHeliVisual(h);
+  const css=document.createElement('style');css.id='v059-style';css.textContent=`body.v057-flight #v057-flight-reticle{opacity:.62}body.v057-flight .top-left-panel{opacity:.84!important}body.v057-flight #mission{opacity:.9!important}`;document.head.appendChild(css);
+  toast('v0.5.9 · VISUAL REWORK + CÁMARAS DE HELI CORREGIDAS','good')
+}
+const v059SetupV05Base=setupV05;
+setupV05=function(){v059SetupV05Base();setTimeout(v059SetupVisuals,120)};
