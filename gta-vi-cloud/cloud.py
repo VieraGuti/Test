@@ -107,7 +107,9 @@ def run_one():
    result=api('POST','/api/worker-recover',json={'jobId':recovered['jobId']})
    state.update(status='uploaded_private',last={'jobId':recovered['jobId'],'watchUrl':result.get('watchUrl'),'reusedRender':True})
    return
-  item=api('GET','/api/worker-queue?claim=1');job=item.get('job')
+  kind=os.environ.get('JOB_KIND','').strip().lower()
+  kind=kind if kind in ('single','double') else ''
+  item=api('GET','/api/worker-queue?claim=1'+('&kind='+kind if kind else ''));job=item.get('job')
   if not job:state.update(status='queue_empty');return
   log.info('Claimed job %s (%s)',job['jobId'],job.get('kind'))
   with tempfile.TemporaryDirectory(prefix='gtavi-') as tmp:
