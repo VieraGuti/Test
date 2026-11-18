@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os,json,time,threading,tempfile,subprocess,shutil,math,logging,re
+import os,json,time,threading,tempfile,subprocess,shutil,math,logging,re,base64
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import urlparse
@@ -80,6 +80,27 @@ def transcribe_audio(source,output):
   voice.unlink(missing_ok=True)
  return None
 
+def visual_story(source,job,transcript,workdir):
+ if os.environ.get('ENABLE_VISUAL_STORY','true').lower() not in ('1','true','yes'):return None
+ try:
+  total=max(1.0,duration(source))
+  seconds=[min(max(0.3,total*ratio),max(0.5,total-0.4)) for ratio in (0.15,0.48,0.83)]
+  frames=[]
+  for idx,sec in enumerate(seconds):
+   image=workdir/f'frame_{idx}.jpg'
+   cmd(['ffmpeg','-nostdin','-v','error','-y','-ss',str(round(sec,2)),'-i',str(source),'-vf','scale=320:-2','-frames:v','1','-q:v','6',str(image)],limit=22)
+   if not image.exists() or image.stat().st_size<300:continue
+   frames.append(base64.b64encode(image.read_bytes()).decode('ascii'))
+   image.unlink(missing_ok=True)
+  if len(frames)<2:return None
+  r=api('POST','/api/ai-visual-story',json={'frames':frames,'creator':job.get('creator'),'sourceTitle':job.get('title'),'transcript':(transcript or {}).get('text','')[:2100]})
+  if r.get('ok'):
+   log.info('Visual review: frames=%d confidence=%s adultPossible=%s',r.get('framesReviewed',0),r.get('confidence'),r.get('adultPossible'))
+   return r
+ except Exception as exc:
+  log.warning('Visual editorial unavailable: %s',str(exc)[:170])
+ return None
+
 def truthful_hook(transcript,fallback):
  if not transcript:return str(fallback or 'GTA VI')[:75]
  segments=transcript.get('segments') or []
@@ -129,22 +150,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  path.write_text(header+'\n'.join(lines)+'\n',encoding='utf-8')
  return path
 
-def render(source,dest,title,creator,transcript=None):
+def render(source,dest,title,creator,transcript=None,context=None):
  end=min(MAX_SECONDS,duration(source))
  if end<1:raise RuntimeError('invalid_source_duration')
  image=dest.with_suffix('.png')
  ass=dest.with_suffix('.ass')
  hook=truthful_hook(transcript,title)
  graphic(image,hook,creator)
+ context_image=dest.with_name(dest.stem+'_context.png')
+ if context:graphic(context_image,str(context)[:145],creator)
  make_ass=create_ass(ass,transcript,end) if transcript else None
  # Fill the unused vertical space with a softened version of the source rather than black bars.
  # Use a short timed hook, then remove it; retain the full 16:9 source without cropping faces.
  f="[0:v]split=2[b][f];[b]scale=540:960:force_original_aspect_ratio=increase,crop=540:960,boxblur=8:1,fps=24[bg];[f]scale=540:700:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=24[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[frame];[frame][1:v]overlay=0:0:enable='lt(t,2.7)'[intro]"
- f+=';[intro]subtitles='+str(make_ass)+'[out]' if make_ass else ';[intro]null[out]'
+ if context:
+  f+=";[intro][2:v]overlay=0:0:enable='between(t,3,5.7)'[story]"
+  src='[story]'
+ else:src='[intro]'
+ f+=';'+src+'subtitles='+str(make_ass)+'[out]' if make_ass else ';'+src+'null[out]'
  try:
-  cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(source),'-loop','1','-i',str(image),'-filter_complex',f,'-map','[out]','-map','0:a?','-t',str(end),'-c:v','libx264','-preset','superfast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','96k','-movflags','+faststart',str(dest)],limit=350)
+  inputs=['-i',str(source),'-loop','1','-i',str(image)]
+  if context:inputs+=['-loop','1','-i',str(context_image)]
+  cmd(['ffmpeg','-nostdin','-v','error','-y']+inputs+['-filter_complex',f,'-map','[out]','-map','0:a?','-t',str(end),'-c:v','libx264','-preset','superfast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','96k','-movflags','+faststart',str(dest)],limit=350)
  finally:
   image.unlink(missing_ok=True)
+  context_image.unlink(missing_ok=True)
   ass.unlink(missing_ok=True)
  if not dest.exists() or dest.stat().st_size<25000:raise RuntimeError('render_failed')
 def merge(parts,output):
@@ -229,12 +259,23 @@ def run_one(kind_override=None):
     report_twitch_chat(clip,base)
     log.info('Download complete; starting FFmpeg source %d/%d',i+1,len(clips))
     transcript=transcribe_audio(raw,out)
-    if transcript:
+    editorial=visual_story(raw,job,transcript,base)
+    if editorial and editorial.get('confidence') in ('medium','high'):
+     choice=str(editorial.get('title') or '').strip()
+     if choice:
+      name=str(job.get('creator','Streamer'))[:25]
+      if name.lower() not in choice.lower():choice=name+': '+choice
+      job['title']=choice[:88].rstrip(' |:-')+' | GTA VI'
+     hook=str(editorial.get('hook') or '').strip()
+     if hook:job['title']=job['title']
+    elif transcript:
      hook=truthful_hook(transcript,job.get('title','GTA VI'))
      job['title']=(str(job.get('creator','Streamer'))[:24]+': '+hook[:48]).strip()[:90]+' | GTA VI'
     else:
-     log.warning('No verified speech transcript: keeping original title and temporary hook only')
-    render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'),transcript)
+     log.warning('No verified transcript or visual context, using original metadata')
+    if editorial and editorial.get('adultPossible'):job['ageHint']=True
+    note=(editorial.get('context') or '') if editorial and editorial.get('confidence') in ('medium','high') else None
+    render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'),transcript,note)
     log.info('Rendered source %d/%d size=%d',i+1,len(clips),out.stat().st_size)
     raw.unlink(missing_ok=True);segments.append(out)
    result=base/'final.mp4';merge(segments,result)
