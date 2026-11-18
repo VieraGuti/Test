@@ -163,6 +163,15 @@ def run_one(kind_override=None):
   if job:
    try:api('POST','/api/worker-queue',json={'jobId':job['jobId'],'status':'failed','error':str(e)[:140]})
    except Exception:pass
+def release_once():
+ try:
+  state.update(status='reviewing_private_short')
+  result=api('POST','/api/shorts-release',json={})
+  state.update(status=str(result.get('action','review_done')),last={'review':result.get('action'),'videoId':result.get('videoId'),'reason':result.get('reason')})
+  log.info('Shorts review result: %s video=%s reason=%s',result.get('action'),result.get('videoId'),result.get('reason'))
+ except Exception as exc:
+  state.update(status='review_failed',error=str(exc)[:180])
+  log.exception('Shorts review failed')
 class Server(BaseHTTPRequestHandler):
  def respond(self,code,obj):
   body=json.dumps(obj).encode()
@@ -187,6 +196,7 @@ class Server(BaseHTTPRequestHandler):
   return self.respond(202,{'accepted':True,'kind':kind or 'automatic'})
 if __name__=='__main__':
  if ENABLED and os.environ.get('AUTOSTART_ONCE')=='true':threading.Thread(target=run_one,daemon=True).start()
+ if ENABLED and os.environ.get('AUTOSTART_RELEASE_ONCE')=='true':threading.Thread(target=release_once,daemon=True).start()
  port=int(os.environ.get('PORT','10000'))
  log.info('Cloud worker listening port=%d enabled=%s',port,ENABLED)
  ThreadingHTTPServer(('0.0.0.0',port),Server).serve_forever()
