@@ -101,6 +101,12 @@ def run_one():
  job=None
  try:
   if not ENABLED:raise RuntimeError('worker_disabled')
+  recovered=api('GET','/api/worker-recover')
+  if recovered.get('ready'):
+   log.info('Retrying already-rendered MP4 job %s',recovered['jobId'])
+   result=api('POST','/api/worker-recover',json={'jobId':recovered['jobId']})
+   state.update(status='uploaded_private',last={'jobId':recovered['jobId'],'watchUrl':result.get('watchUrl'),'reusedRender':True})
+   return
   item=api('GET','/api/worker-queue?claim=1');job=item.get('job')
   if not job:state.update(status='queue_empty');return
   log.info('Claimed job %s (%s)',job['jobId'],job.get('kind'))
