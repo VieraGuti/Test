@@ -110,7 +110,11 @@ def run_one():
    if len(clips) not in (1,2):raise ValueError('invalid_clip_count')
    for i,clip in enumerate(clips):
     raw=base/f'input{i}.mp4';out=base/f'clip{i}.mp4'
-    download(clip,raw);render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'))
+    log.info('Downloading source %d/%d',i+1,len(clips))
+    download(clip,raw)
+    log.info('Download complete; starting FFmpeg source %d/%d',i+1,len(clips))
+    render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'))
+    log.info('Rendered source %d/%d size=%d',i+1,len(clips),out.stat().st_size)
     raw.unlink(missing_ok=True);segments.append(out)
    result=base/'final.mp4';merge(segments,result)
    url=upload(job,result)
