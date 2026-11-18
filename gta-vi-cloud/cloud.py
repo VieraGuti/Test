@@ -114,7 +114,7 @@ def upload(job,video):
    time.sleep(min(10,2+retry*2))
  api('POST','/api/worker-queue',json={'jobId':job['jobId'],'status':'uploaded_private'})
  return result.get('watchUrl')
-def run_one():
+def run_one(kind_override=None):
  with lock:
   if state['status']=='working':return
   state.update(status='working',error=None)
@@ -127,7 +127,7 @@ def run_one():
    result=api('POST','/api/worker-recover',json={'jobId':recovered['jobId']})
    state.update(status='uploaded_private',last={'jobId':recovered['jobId'],'watchUrl':result.get('watchUrl'),'reusedRender':True})
    return
-  kind=os.environ.get('JOB_KIND','').strip().lower()
+  kind=(kind_override or os.environ.get('JOB_KIND','')).strip().lower()
   kind=kind if kind in ('single','double') else ''
   item=api('GET','/api/worker-queue?claim=1'+('&kind='+kind if kind else ''));job=item.get('job')
   if not job:state.update(status='queue_empty');return
@@ -177,8 +177,14 @@ class Server(BaseHTTPRequestHandler):
   if not self.authorized():return self.respond(401,{'error':'unauthorized'})
   if not ENABLED:return self.respond(409,{'error':'disabled'})
   if state['status']=='working':return self.respond(409,{'error':'busy'})
-  threading.Thread(target=run_one,daemon=True).start()
-  return self.respond(202,{'accepted':True})
+  size=int(self.headers.get('Content-Length','0') or 0)
+  if size>1024:return self.respond(413,{'error':'body_too_large'})
+  try:body=json.loads(self.rfile.read(size)) if size else {}
+  except (ValueError,TypeError):return self.respond(400,{'error':'invalid_json'})
+  kind=str(body.get('kind') or '').lower()
+  if kind not in ('','single','double'):return self.respond(400,{'error':'invalid_kind'})
+  threading.Thread(target=run_one,args=(kind,),daemon=True).start()
+  return self.respond(202,{'accepted':True,'kind':kind or 'automatic'})
 if __name__=='__main__':
  if ENABLED and os.environ.get('AUTOSTART_ONCE')=='true':threading.Thread(target=run_one,daemon=True).start()
  port=int(os.environ.get('PORT','10000'))
