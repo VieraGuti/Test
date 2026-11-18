@@ -223,6 +223,15 @@ def process_loop():
    time.sleep(300)
    continue
   try:
+   budget=api('GET','/api/upload-budget')
+   if int(budget.get('remaining',0))<=0:
+    state['processPause']='youtube_daily_upload_quota_guard'
+    log.info('YouTube upload budget paused (%s uploads today)',budget.get('uploadedToday'))
+    time.sleep(300)
+    continue
+  except Exception as exc:
+   log.warning('Upload budget endpoint unavailable, local limit remains active: %s',str(exc)[:120])
+  try:
    choice='double' if runs>0 and runs%5==0 else 'single'
    state['processPause']=None
    run_one(choice)
