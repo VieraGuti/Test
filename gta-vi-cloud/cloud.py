@@ -210,7 +210,7 @@ def upload(job,video):
  with video.open('rb') as f:
   for index in range(n):
    api('POST','/api/worker-chunk',headers={'Content-Type':'application/octet-stream','X-Job-Id':job['jobId'],'X-Part':str(index)},content=f.read(CHUNK))
- api('POST','/api/worker-finalize',json={'jobId':job['jobId'],'partCount':n,'kind':job['kind'],'id':job['id'],'title':job.get('title','Highlight | GTA VI'),'moderation':{'mode':'not_scanned_on_free_host','visual_scan_completed':False,'adult_possible':True}})
+ api('POST','/api/worker-finalize',json={'jobId':job['jobId'],'partCount':n,'kind':job['kind'],'id':job['id'],'title':job.get('title','Highlight | GTA VI'),'moderation':{'mode':'sampled_frames_only' if job.get('visualReview') else 'not_scanned','sampled_frames_reviewed':int((job.get('visualReview') or {}).get('framesReviewed') or 0),'visual_scan_completed':False,'adult_possible':bool(job.get('ageHint') or (job.get('visualReview') or {}).get('adultPossible')) if job.get('visualReview') else None}})
  result=None
  for retry in range(6):
   try:
@@ -260,6 +260,7 @@ def run_one(kind_override=None):
     log.info('Download complete; starting FFmpeg source %d/%d',i+1,len(clips))
     transcript=transcribe_audio(raw,out)
     editorial=visual_story(raw,job,transcript,base)
+    job['visualReview']=editorial
     if editorial and editorial.get('confidence') in ('medium','high'):
      choice=str(editorial.get('title') or '').strip()
      if choice:
