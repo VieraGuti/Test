@@ -1,0 +1,4 @@
+# GTA VI Cloud Worker (Render tt)
+Standalone trial worker for an independent Render **Free Docker Web Service**. Nothing is auto-uploaded until WORKER_ENABLED=true, AUTOSTART_ONCE=true, and VIRAL_ADMIN_KEY is configured. A manual one-job trigger can also use POST /run with Bearer WORKER_RUN_TOKEN. GET /health is public; GET /status requires that token.
+Uses TwitchDownloaderCLI 1.56.5, yt-dlp, and FFmpeg. Preserves streamer audio and renders 540x960. Sends chunks to Vercel and attempts YouTube upload as **private** only. Safety scan is NOT operational in the 512MB free trial: always keep the upload private.
+No secrets or user footage are committed. Render free hosts may sleep after 15 minutes; not suitable for dependable scheduled processing. Egress can incur costs if workspace bandwidth is exhausted; limit trial to one short clip.
