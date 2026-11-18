@@ -11,8 +11,12 @@ ADMIN=os.environ.get('VIRAL_ADMIN_KEY','')
 TOKEN=os.environ.get('WORKER_RUN_TOKEN','')
 ENABLED=os.environ.get('WORKER_ENABLED','false').lower() in ('1','true','yes')
 MAX_SECONDS=max(8,min(30,int(os.environ.get('MAX_CLIP_SECONDS','16'))))
+AUTO_MONITOR=os.environ.get('AUTO_MONITOR','false').lower() in ('1','true','yes')
+AUTO_PROCESS=os.environ.get('AUTO_PROCESS','false').lower() in ('1','true','yes')
+POLL_SECONDS=max(30,int(os.environ.get('TWITCH_POLL_SECONDS','30')))
+UPLOADS_DAY_LIMIT=max(1,min(95,int(os.environ.get('UPLOADS_DAY_LIMIT','90'))))
 CHUNK=2800000
-state={'status':'idle','last':None,'error':None}
+state={'status':'idle','last':None,'error':None,'pollCount':0,'pollAdded':0,'lastPoll':None,'pollError':None,'monitoring':False,'autoProcessing':False}
 lock=threading.Lock()
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
 log=logging.getLogger('gtavi-worker')
@@ -172,13 +176,81 @@ def release_once():
  except Exception as exc:
   state.update(status='review_failed',error=str(exc)[:180])
   log.exception('Shorts review failed')
+
+def monitor_loop():
+ state['monitoring']=True
+ log.info('Twitch 30s discovery enabled')
+ youtube_due=0
+ while ENABLED and AUTO_MONITOR:
+  started=time.monotonic()
+  try:
+   result=api('POST','/api/twitch-poll',json={})
+   state['lastPoll']=result.get('at')
+   state['pollAdded']=int(result.get('added') or 0)
+   state['pollCount']=int(state.get('pollCount') or 0)+1
+   state['pollError']=None
+   if result.get('added'):
+    log.info('Twitch discovery: +%s clips, watched %s',result.get('added'),str(result.get('watching'))[:80])
+  except Exception as exc:
+   state['pollError']=str(exc)[:180]
+   log.warning('Twitch 30s discovery failed: %s',state['pollError'])
+  if time.time() >= youtube_due:
+   try:
+    # Uses its existing 2-hour cache. Do not issue a fresh YouTube search every 30 seconds.
+    ai=api('GET','/api/youtube-discover')
+    log.info('YouTube discovery: %s clips in cached batch',ai.get('count'))
+   except Exception as exc:log.warning('YouTube discovery unavailable: %s',str(exc)[:100])
+   youtube_due=time.time()+7200
+  time.sleep(max(1,POLL_SECONDS-(time.monotonic()-started)))
+ state['monitoring']=False
+
+def process_loop():
+ state['autoProcessing']=True
+ log.info('Automatic private uploads enabled, one video at a time')
+ last_day=''
+ started_today=0
+ runs=0
+ while ENABLED and AUTO_PROCESS:
+  day=time.strftime('%Y-%m-%d',time.gmtime())
+  if day!=last_day:
+   last_day=day
+   started_today=0
+  if state.get('status')=='working':
+   time.sleep(25)
+   continue
+  if started_today>=UPLOADS_DAY_LIMIT:
+   state['processPause']='daily_private_upload_limit'
+   time.sleep(300)
+   continue
+  try:
+   choice='double' if runs>0 and runs%5==0 else 'single'
+   state['processPause']=None
+   run_one(choice)
+   if state.get('status')=='uploaded_private':
+    started_today+=1
+    runs+=1
+    state['uploadedToday']=started_today
+   elif state.get('status')=='failed':
+    err=str(state.get('error') or '').lower()
+    if 'quota' in err or 'uploadlimit' in err:
+     state['processPause']='youtube_quota_or_rate_limit'
+     log.warning('YouTube quota reached; pausing automatic uploads')
+     time.sleep(3600)
+   elif state.get('status')=='queue_empty':
+    time.sleep(45)
+    continue
+  except Exception as exc:
+   log.exception('Auto-processing loop error: %s',str(exc)[:120])
+  time.sleep(20)
+ state['autoProcessing']=False
+
 class Server(BaseHTTPRequestHandler):
  def respond(self,code,obj):
   body=json.dumps(obj).encode()
   self.send_response(code);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def authorized(self):return bool(TOKEN) and self.headers.get('Authorization')=='Bearer '+TOKEN
  def do_GET(self):
-  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status']})
+  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status'],'monitoring':state.get('monitoring'),'autoProcessing':state.get('autoProcessing'),'lastPoll':state.get('lastPoll'),'pollAdded':state.get('pollAdded'),'pollError':state.get('pollError'),'uploadedToday':state.get('uploadedToday',0),'processPause':state.get('processPause')})
   if self.path=='/status' and self.authorized():return self.respond(200,state)
   return self.respond(401,{'error':'unauthorized'})
  def do_POST(self):
@@ -195,6 +267,8 @@ class Server(BaseHTTPRequestHandler):
   threading.Thread(target=run_one,args=(kind,),daemon=True).start()
   return self.respond(202,{'accepted':True,'kind':kind or 'automatic'})
 if __name__=='__main__':
+ if ENABLED and AUTO_MONITOR:threading.Thread(target=monitor_loop,daemon=True,name='twitch-30s-monitor').start()
+ if ENABLED and AUTO_PROCESS:threading.Thread(target=process_loop,daemon=True,name='shorts-auto-processing').start()
  if ENABLED and os.environ.get('AUTOSTART_ONCE')=='true':threading.Thread(target=run_one,daemon=True).start()
  if ENABLED and os.environ.get('AUTOSTART_RELEASE_ONCE')=='true':threading.Thread(target=release_once,daemon=True).start()
  port=int(os.environ.get('PORT','10000'))
