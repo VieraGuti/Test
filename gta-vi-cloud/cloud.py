@@ -4,13 +4,16 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import urlparse
 import httpx
-from PIL import Image,ImageDraw,ImageFont
+from PIL import Image,ImageDraw,ImageFont,ImageFilter,ImageEnhance
 
 API=os.environ.get('ENGINE_URL','https://gta-vi-viral-engine.vercel.app').rstrip('/')
 ADMIN=os.environ.get('VIRAL_ADMIN_KEY','')
 TOKEN=os.environ.get('WORKER_RUN_TOKEN','')
 ENABLED=os.environ.get('WORKER_ENABLED','false').lower() in ('1','true','yes')
 MAX_SECONDS=max(8,min(70,int(os.environ.get('MAX_CLIP_SECONDS','40'))))
+SHORT_WIDTH=1080 if os.environ.get('SHORT_WIDTH')=='1080' else 720
+SHORT_HEIGHT=SHORT_WIDTH*16//9
+SHORT_FPS=30
 AUTO_MONITOR=os.environ.get('AUTO_MONITOR','false').lower() in ('1','true','yes')
 AUTO_PROCESS=os.environ.get('AUTO_PROCESS','false').lower() in ('1','true','yes')
 POLL_SECONDS=max(30,int(os.environ.get('TWITCH_POLL_SECONDS','30')))
@@ -120,32 +123,40 @@ def ass_time(seconds):
  return f'{n//360000}:{(n//6000)%60:02d}:{(n//100)%60:02d}.{n%100:02d}'
 def ass_escape(text):
  return re.sub(r'[\r\n]+',' ',str(text or '')).replace('\\','').replace('{','(').replace('}',')').strip()
-def create_ass(path,transcript,max_seconds):
- segments=transcript.get('segments') if isinstance(transcript,dict) else None
- if not segments:return None
- header="""[Script Info]
+def create_ass(path,transcript,max_seconds,hook=None,context=None,creator=None):
+ scale=SHORT_WIDTH/720.0
+ size=lambda n:max(15,round(n*scale))
+ header=f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: 540
-PlayResY: 960
-WrapStyle: 2
+PlayResX: {SHORT_WIDTH}
+PlayResY: {SHORT_HEIGHT}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,DejaVu Sans,25,&H00FFFFFF,&H00FFFFFF,&HBB000000,&H96000000,1,0,0,0,100,100,0,0,1,3,1,2,28,28,118,1
+Style: Caption,DejaVu Sans,{size(36)},&H00FFFFFF,&H00FFFFFF,&HBA000000,&H90000000,1,0,0,0,100,100,0,0,1,3,1,2,{size(48)},{size(48)},{size(146)},1
+Style: Hook,DejaVu Sans,{size(39)},&H00FFFFFF,&H00FFFFFF,&HC0000000,&H8A000000,1,0,0,0,100,100,0,0,1,3,1,8,{size(45)},{size(45)},{size(154)},1
+Style: Context,DejaVu Sans,{size(31)},&H00FFFFFF,&H00FFFFFF,&HBC000000,&H8D000000,1,0,0,0,100,100,0,0,1,3,1,8,{size(50)},{size(50)},{size(154)},1
+Style: Creator,DejaVu Sans,{size(23)},&H0088E9FF,&H0088E9FF,&HB0000000,&H82000000,1,0,0,0,100,100,0,0,1,2,{size(42)},{size(42)},{size(45)},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
  lines=[]
- for seg in segments[:32]:
+ def add(style,begin,finish,value):
+  value=ass_escape(value)
+  if value and finish>begin:
+   lines.append(f'Dialogue: 0,{ass_time(begin)},{ass_time(finish)},{style},,0,0,0,,{value}')
+ add('Hook',0,min(1.5,max_seconds),hook)
+ add('Context',min(1.85,max_seconds),min(4.65,max_seconds),context)
+ add('Creator',0,max_seconds,creator)
+ segments=transcript.get('segments') if isinstance(transcript,dict) else None
+ for seg in (segments or [])[:48]:
   try:
-   start=max(0,float(seg.get('start',0)))
-   end=min(float(max_seconds),float(seg.get('end',start+1)))
+   start=max(0,float(seg.get('start',0)));finish=min(max_seconds,float(seg.get('end',start+1)))
   except (ValueError,TypeError):continue
-  if end<=start or start>max_seconds:continue
-  content=ass_escape(seg.get('text'))[:100]
-  if not content:continue
-  lines.append(f'Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,{content}')
+  add('Caption',start,finish,str(seg.get('text') or '')[:95])
  if not lines:return None
  path.write_text(header+'\n'.join(lines)+'\n',encoding='utf-8')
  return path
