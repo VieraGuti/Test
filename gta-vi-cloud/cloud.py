@@ -210,7 +210,7 @@ def upload(job,video):
  with video.open('rb') as f:
   for index in range(n):
    api('POST','/api/worker-chunk',headers={'Content-Type':'application/octet-stream','X-Job-Id':job['jobId'],'X-Part':str(index)},content=f.read(CHUNK))
- api('POST','/api/worker-finalize',json={'jobId':job['jobId'],'partCount':n,'kind':job['kind'],'id':job['id'],'title':job.get('title','Highlight | GTA VI'),'moderation':{'mode':'sampled_frames_only' if job.get('visualReview') else 'not_scanned','sampled_frames_reviewed':int((job.get('visualReview') or {}).get('framesReviewed') or 0),'visual_scan_completed':False,'adult_possible':bool(job.get('ageHint') or (job.get('visualReview') or {}).get('adultPossible')) if job.get('visualReview') else None}})
+ api('POST','/api/worker-finalize',json={'jobId':job['jobId'],'partCount':n,'kind':job['kind'],'id':job['id'],'title':job.get('title','Highlight | GTA VI'),'creator':job.get('creator'),'platform':job.get('platform'),'language':job.get('language'),'clips':job.get('clips'),'views':job.get('views',0),'ageHint':job.get('ageHint',False),'moderation':{'mode':'sampled_frames_only' if job.get('visualReview') else 'not_scanned','sampled_frames_reviewed':int((job.get('visualReview') or {}).get('framesReviewed') or 0),'visual_scan_completed':False,'adult_possible':bool(job.get('ageHint') or (job.get('visualReview') or {}).get('adultPossible')) if job.get('visualReview') else None}})
  result=None
  for retry in range(6):
   try:
