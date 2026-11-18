@@ -75,6 +75,26 @@ def merge(parts,output):
  concat.write_text(''.join("file '"+str(x.resolve())+"'\n" for x in parts),encoding='utf-8')
  try:cmd(['ffmpeg','-nostdin','-v','error','-y','-f','concat','-safe','0','-i',str(concat),'-c','copy','-movflags','+faststart',str(output)],limit=220)
  finally:concat.unlink(missing_ok=True)
+def report_twitch_chat(clip,tmp):
+ if os.environ.get('ENABLE_CHAT_SPIKES','false').lower() not in ('1','yes','true'):return
+ url=str(clip.get('url') or '')
+ if 'twitch.tv' not in url:return
+ path=tmp/'chat.json'
+ try:
+  cmd(['TwitchDownloaderCLI','chatdownload','--id',url,'--output',str(path),'--collision','Overwrite'],limit=75)
+  raw=json.loads(path.read_text(encoding='utf-8-sig'))
+  events=[]
+  for row in raw.get('comments',[])[:10000]:
+   t=row.get('content_offset_seconds')
+   body=(row.get('message') or {}).get('body','')
+   if isinstance(t,(int,float)) and t>=0:events.append({'t':t,'body':str(body)[:250]})
+  if events:
+   slug=str(clip.get('id') or '').replace('twitch-','')
+   api('POST','/api/chat-spikes',json={'platform':'twitch','streamId':slug,'events':events})
+   log.info('Chat signal analyzed from %d messages',len(events))
+ except Exception as exc:log.warning('Chat unavailable: %s',str(exc)[:90])
+ finally:path.unlink(missing_ok=True)
+
 def upload(job,video):
  size=video.stat().st_size
  if size>120000000:raise RuntimeError('trial_file_too_big')
@@ -128,6 +148,7 @@ def run_one():
     raw=base/f'input{i}.mp4';out=base/f'clip{i}.mp4'
     log.info('Downloading source %d/%d',i+1,len(clips))
     download(clip,raw)
+    report_twitch_chat(clip,base)
     log.info('Download complete; starting FFmpeg source %d/%d',i+1,len(clips))
     render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'))
     log.info('Rendered source %d/%d size=%d',i+1,len(clips),out.stat().st_size)
