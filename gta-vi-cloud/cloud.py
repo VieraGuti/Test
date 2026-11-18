@@ -83,7 +83,15 @@ def upload(job,video):
   for index in range(n):
    api('POST','/api/worker-chunk',headers={'Content-Type':'application/octet-stream','X-Job-Id':job['jobId'],'X-Part':str(index)},content=f.read(CHUNK))
  api('POST','/api/worker-finalize',json={'jobId':job['jobId'],'partCount':n,'kind':job['kind'],'id':job['id'],'title':job.get('title','Highlight | GTA VI'),'moderation':{'mode':'not_scanned_on_free_host','visual_scan_completed':False,'adult_possible':True}})
- result=api('POST','/api/youtube-upload',json={'id':job['id'],'kind':job['kind']})
+ result=None
+ for retry in range(6):
+  try:
+   result=api('POST','/api/youtube-upload',json={'id':job['id'],'kind':job['kind']})
+   break
+  except RuntimeError as e:
+   if retry>=5 or not any(x in str(e) for x in ('rendered_mp4_not_ready','rendered_blob_missing','video_blob_not_readable')):
+    raise
+   time.sleep(min(10,2+retry*2))
  api('POST','/api/worker-queue',json={'jobId':job['jobId'],'status':'uploaded_private'})
  return result.get('watchUrl')
 def run_one():
