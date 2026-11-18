@@ -64,15 +64,89 @@ def graphic(path,title,creator):
  d.rounded_rectangle((12,873,528,947),radius=12,fill=(8,10,18,210))
  d.text((23,892),str(creator)[:35],font=sm,fill=(245,220,120))
  im.save(path)
-def render(source,dest,title,creator):
+def transcribe_audio(source,output):
+ if os.environ.get('ENABLE_REAL_CAPTIONS','true').lower() not in ('1','true','yes'):return None
+ voice=output.with_suffix('.mp3')
+ try:
+  cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(source),'-vn','-ac','1','-ar','16000','-b:a','40k','-t',str(MAX_SECONDS),str(voice)],limit=35)
+  if not voice.exists() or voice.stat().st_size<1100:return None
+  result=api('POST','/api/ai-transcribe',headers={'Content-Type':'audio/mpeg'},content=voice.read_bytes())
+  if result.get('ok') and str(result.get('text','')).strip():
+   log.info('Transcript extracted, language=%s, segments=%d',result.get('language'),len(result.get('segments') or []))
+   return result
+ except Exception as exc:
+  log.warning('Speech transcription unavailable: %s',str(exc)[:145])
+ finally:
+  voice.unlink(missing_ok=True)
+ return None
+
+def truthful_hook(transcript,fallback):
+ if not transcript:return str(fallback or 'GTA VI')[:75]
+ segments=transcript.get('segments') or []
+ ranked=[]
+ for s in segments:
+  words=str(s.get('text','')).strip().split()
+  if len(words)<3:continue
+  t=str(s.get('text','')).strip()
+  score=(2 if ('!' in t or '?' in t or '¡' in t or '¿' in t) else 0)+(1 if 5<=len(words)<=15 else 0)
+  ranked.append((score,t))
+ if ranked:
+  return sorted(ranked,key=lambda x:x[0],reverse=True)[0][1][:75]
+ return str(transcript.get('text') or fallback).strip()[:75]
+
+def ass_time(seconds):
+ n=max(0,int(round(float(seconds)*100)))
+ return f'{n//360000}:{(n//6000)%60:02d}:{(n//100)%60:02d}.{n%100:02d}'
+def ass_escape(text):
+ return re.sub(r'[\r\n]+',' ',str(text or '')).replace('\\','').replace('{','(').replace('}',')').strip()
+def create_ass(path,transcript,max_seconds):
+ segments=transcript.get('segments') if isinstance(transcript,dict) else None
+ if not segments:return None
+ header="""[Script Info]
+ScriptType: v4.00+
+PlayResX: 540
+PlayResY: 960
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,DejaVu Sans,25,&H00FFFFFF,&H00FFFFFF,&HBB000000,&H96000000,1,0,0,0,100,100,0,0,1,3,1,2,28,28,118,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+ lines=[]
+ for seg in segments[:32]:
+  try:
+   start=max(0,float(seg.get('start',0)))
+   end=min(float(max_seconds),float(seg.get('end',start+1)))
+  except (ValueError,TypeError):continue
+  if end<=start or start>max_seconds:continue
+  content=ass_escape(seg.get('text'))[:100]
+  if not content:continue
+  lines.append(f'Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,{content}')
+ if not lines:return None
+ path.write_text(header+'\n'.join(lines)+'\n',encoding='utf-8')
+ return path
+
+def render(source,dest,title,creator,transcript=None):
  end=min(MAX_SECONDS,duration(source))
  if end<1:raise RuntimeError('invalid_source_duration')
- image=dest.with_suffix('.png');graphic(image,title,creator)
- f='[0:v]scale=540:960:force_original_aspect_ratio=decrease,pad=540:960:(ow-iw)/2:(oh-ih)/2:color=black,fps=24[v];[v][1:v]overlay=0:0:shortest=1[out]'
+ image=dest.with_suffix('.png')
+ ass=dest.with_suffix('.ass')
+ hook=truthful_hook(transcript,title)
+ graphic(image,hook,creator)
+ make_ass=create_ass(ass,transcript,end) if transcript else None
+ # Fill the unused vertical space with a softened version of the source rather than black bars.
+ # Use a short timed hook, then remove it; retain the full 16:9 source without cropping faces.
+ f="[0:v]split=2[b][f];[b]scale=540:960:force_original_aspect_ratio=increase,crop=540:960,boxblur=8:1,fps=24[bg];[f]scale=540:700:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=24[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[frame];[frame][1:v]overlay=0:0:enable='lt(t,2.7)'[intro]"
+ f+=';[intro]subtitles='+str(make_ass)+'[out]' if make_ass else ';[intro]null[out]'
  try:
-  cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(source),'-loop','1','-i',str(image),'-filter_complex',f,'-map','[out]','-map','0:a?','-t',str(end),'-c:v','libx264','-preset','ultrafast','-crf','29','-pix_fmt','yuv420p','-c:a','aac','-b:a','96k','-movflags','+faststart',str(dest)],limit=330)
- finally:image.unlink(missing_ok=True)
- if not dest.exists():raise RuntimeError('render_failed')
+  cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(source),'-loop','1','-i',str(image),'-filter_complex',f,'-map','[out]','-map','0:a?','-t',str(end),'-c:v','libx264','-preset','superfast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','96k','-movflags','+faststart',str(dest)],limit=350)
+ finally:
+  image.unlink(missing_ok=True)
+  ass.unlink(missing_ok=True)
+ if not dest.exists() or dest.stat().st_size<25000:raise RuntimeError('render_failed')
 def merge(parts,output):
  if len(parts)==1:shutil.copy2(parts[0],output);return
  concat=output.with_suffix('.txt')
@@ -154,7 +228,13 @@ def run_one(kind_override=None):
     download(clip,raw)
     report_twitch_chat(clip,base)
     log.info('Download complete; starting FFmpeg source %d/%d',i+1,len(clips))
-    render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'))
+    transcript=transcribe_audio(raw,out)
+    if transcript:
+     hook=truthful_hook(transcript,job.get('title','GTA VI'))
+     job['title']=(str(job.get('creator','Streamer'))[:24]+': '+hook[:48]).strip()[:90]+' | GTA VI'
+    else:
+     log.warning('No verified speech transcript: keeping original title and temporary hook only')
+    render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'),transcript)
     log.info('Rendered source %d/%d size=%d',i+1,len(clips),out.stat().st_size)
     raw.unlink(missing_ok=True);segments.append(out)
    result=base/'final.mp4';merge(segments,result)
