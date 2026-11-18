@@ -164,30 +164,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 def render(source,dest,title,creator,transcript=None,context=None):
  end=min(MAX_SECONDS,duration(source))
  if end<1:raise RuntimeError('invalid_source_duration')
- image=dest.with_suffix('.png')
+ frame=dest.with_name(dest.stem+'_background.jpg')
  ass=dest.with_suffix('.ass')
  hook=truthful_hook(transcript,title)
- graphic(image,hook,creator)
- context_image=dest.with_name(dest.stem+'_context.png')
- if context:graphic(context_image,str(context)[:145],creator)
- make_ass=create_ass(ass,transcript,end) if transcript else None
- # Fill the unused vertical space with a softened version of the source rather than black bars.
- # Use a short timed hook, then remove it; retain the full 16:9 source without cropping faces.
- f="[0:v]split=2[b][f];[b]scale=540:960:force_original_aspect_ratio=increase,crop=540:960,boxblur=8:1,fps=24[bg];[f]scale=540:700:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=24[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[frame];[frame][1:v]overlay=0:0:enable='lt(t,2.7)'[intro]"
- if context:
-  f+=";[intro][2:v]overlay=0:0:enable='between(t,3,5.7)'[story]"
-  src='[story]'
- else:src='[intro]'
- f+=';'+src+'subtitles='+str(make_ass)+'[out]' if make_ass else ';'+src+'null[out]'
  try:
-  inputs=['-i',str(source),'-loop','1','-i',str(image)]
-  if context:inputs+=['-loop','1','-i',str(context_image)]
-  cmd(['ffmpeg','-nostdin','-v','error','-y']+inputs+['-filter_complex',f,'-map','[out]','-map','0:a?','-t',str(end),'-c:v','libx264','-preset','superfast','-crf','24','-pix_fmt','yuv420p','-c:a','aac','-b:a','96k','-movflags','+faststart',str(dest)],limit=350)
+  # Generate the blurred background once. The old per-frame blur exhausted the Render timeout.
+  cmd(['ffmpeg','-nostdin','-v','error','-y','-ss','0.35','-i',str(source),
+   '-vf',f'scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase,crop={SHORT_WIDTH}:{SHORT_HEIGHT}',
+   '-frames:v','1',str(frame)],limit=35)
+  bg=Image.open(frame).convert('RGB')
+  bg=ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(round(22*SHORT_WIDTH/720)))).enhance(0.53)
+  bg.save(frame,quality=85,optimize=True)
+  overlay=create_ass(ass,transcript,end,hook,context,creator)
+  fgheight=(round(SHORT_HEIGHT*0.75)//2)*2
+  graph=(f'[0:v]fps={SHORT_FPS},scale={SHORT_WIDTH}:{fgheight}:force_original_aspect_ratio=decrease:flags=bicubic,'
+         'setsar=1,format=yuv420p[fg];'
+         '[1:v]format=yuv420p[bg];'
+         '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[composed]')
+  graph+=(f';[composed]subtitles={overlay}[out]' if overlay else ';[composed]null[out]')
+  cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(source),
+   '-loop','1','-framerate',str(SHORT_FPS),'-i',str(frame),
+   '-filter_complex',graph,'-map','[out]','-map','0:a?','-t',str(end),
+   '-c:v','libx264','-preset','veryfast','-crf','20',
+   '-maxrate',('8M' if SHORT_WIDTH==1080 else '5M'),
+   '-bufsize',('16M' if SHORT_WIDTH==1080 else '10M'),
+   '-threads','2','-r',str(SHORT_FPS),'-pix_fmt','yuv420p',
+   '-c:a','aac','-b:a','160k','-ar','48000',
+   '-movflags','+faststart',str(dest)],limit=780)
  finally:
-  image.unlink(missing_ok=True)
-  context_image.unlink(missing_ok=True)
+  frame.unlink(missing_ok=True)
   ass.unlink(missing_ok=True)
- if not dest.exists() or dest.stat().st_size<25000:raise RuntimeError('render_failed')
+ if not dest.exists() or dest.stat().st_size<35000:raise RuntimeError('render_failed')
+ log.info('Video quality: %dx%d / %dfps / H264 CRF20 / AAC160k / %.1fs',SHORT_WIDTH,SHORT_HEIGHT,SHORT_FPS,end)
+
 def merge(parts,output):
  if len(parts)==1:shutil.copy2(parts[0],output);return
  concat=output.with_suffix('.txt')
