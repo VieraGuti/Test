@@ -112,6 +112,14 @@ def run_one():
   item=api('GET','/api/worker-queue?claim=1'+('&kind='+kind if kind else ''));job=item.get('job')
   if not job:state.update(status='queue_empty');return
   log.info('Claimed job %s (%s)',job['jobId'],job.get('kind'))
+  if os.environ.get('ENABLE_AI_TITLE','true').lower() in ('true','1','yes'):
+   try:
+    ai=api('POST','/api/ai-title',json={'id':job['id'],'kind':job.get('kind')})
+    if ai.get('title') and len(ai['title'])<=100:
+     job['title']=ai['title']
+     log.info('Title improved using %s',ai.get('provider','AI'))
+   except Exception as e:
+    log.warning('AI title unavailable; keeping factual original title: %s',str(e)[:110])
   with tempfile.TemporaryDirectory(prefix='gtavi-') as tmp:
    base=Path(tmp);segments=[]
    clips=job.get('clips') or []
