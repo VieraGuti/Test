@@ -71,7 +71,11 @@ def clip_seconds(item):
 def same_moment(a,b):
  if str(a.get('creator','')).casefold()!=str(b.get('creator','')).casefold():return False
  x,y=date_of(a),date_of(b)
- if x and y and abs((x-y).total_seconds())<80:return True
+ if x and y:
+  delta=abs((x-y).total_seconds())
+  if delta<80:return True
+  # Similar titles from the same streamer hours apart are not the same moment.
+  if delta>300:return False
  def normalized(c):
   return re.sub(r'[^\w]+',' ',str(c.get('title') or '').casefold()).strip()
  aa,bb=normalized(a),normalized(b)
