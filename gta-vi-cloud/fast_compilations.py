@@ -5,7 +5,7 @@ with matching HEVC/H.264 + AAC stream characteristics and copies compressed
 packets into an MP4. Sources that cannot be joined safely remain candidates
 for later episodes; they are not silently corrupted by incompatible concat.
 
-Unlike the legacy 15–30 min render, a fast daily episode is 6–12 minutes.
+Unlike the legacy full-reencode render, target fast episodes are 10–25 minutes.
 This is an opt-in strategy: COMPILATION_FAST_MODE=true. Never enable it by
 restarting a running legacy compilation without first preserving that job.
 """
@@ -26,11 +26,11 @@ from daily_compilations import (
 )
 
 log=logging.getLogger('gtavi-fast-compilations')
-MIN_SECONDS=6*60
-MAX_SECONDS=12*60
-TARGET_SECONDS=10*60
+MIN_SECONDS=10*60
+MAX_SECONDS=25*60
+TARGET_SECONDS=20*60
 PROBE_LIMIT=8
-MAX_DOWNLOADS=70
+MAX_DOWNLOADS=130
 MIN_BYTES=1000
 
 
@@ -113,7 +113,7 @@ def _part(source,destination,key):
 def render_fast_plan(plan,folder,progress=None):
     """Create a real MP4 without CPU-heavy video encoding.
 
-    Preserves source audio/video, requires a 6–12 min verified MP4, and
+    Preserves source audio/video, requires a 10–25 min verified MP4, and
     skips incompatible formats rather than producing a corrupt compilation.
     """
     outdir=Path(folder);outdir.mkdir(parents=True,exist_ok=True)
@@ -126,6 +126,7 @@ def render_fast_plan(plan,folder,progress=None):
         tmp=Path(d)
         queue=[]
         source_clips=list(plan.get('clips') or [])[:MAX_DOWNLOADS]
+        if progress:progress({'stage':'probing','processed':0,'totalSources':len(source_clips),'durationSeconds':0,'targetSeconds':TARGET_SECONDS})
         for index,clip in enumerate(source_clips):
             if index>=PROBE_LIMIT:break
             try:
@@ -137,6 +138,7 @@ def render_fast_plan(plan,folder,progress=None):
                          clip.get('creator',''),spec['video'],spec['width'],spec['height'])
             except (RuntimeError,ValueError,subprocess.TimeoutExpired,OSError) as exc:
                 skipped.append({'clipId':str(clip.get('id') or ''),'reason':str(exc)[:110]})
+            if progress:progress({'stage':'probing','processed':index+1,'totalSources':len(source_clips),'durationSeconds':0,'targetSeconds':TARGET_SECONDS})
         reference=choose_primary([(q[4],q[5]) for q in queue])
         if reference is None:
             raise RuntimeError('no_compatible_stream_group: source quality unavailable')
@@ -226,4 +228,5 @@ def render_fast_plan(plan,folder,progress=None):
           'renderMethod':'direct_hevc_h264_stream_copy',
           'createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
     metadata_file.write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
+    if progress:progress({'stage':'complete','selected':len(used),'processed':len(source_clips),'totalSources':len(source_clips),'durationSeconds':round(duration,1),'targetSeconds':TARGET_SECONDS})
     return meta
