@@ -6,13 +6,18 @@ Durable state/storage and a publisher are required to fully automate distributio
 """
 from __future__ import annotations
 import argparse, datetime as dt, json, math, os, re, subprocess, tempfile, logging
-from collections import Counter, defaultdict
+from collections import Counter
+from difflib import SequenceMatcher
+import shutil
 from pathlib import Path
 from urllib.parse import urlparse
 import httpx
 
 log=logging.getLogger('gtavi-daily-render')
-MAX_CLIPS=8
+MIN_SECONDS=15*60
+MAX_SECONDS=30*60
+TARGET_SECONDS=28*60
+MAX_CLIPS=180  # safety bound, not an eight-clip editorial target
 MIN_CLIPS=3
 TARGET_WIDTH=1280
 TARGET_HEIGHT=720
@@ -60,21 +65,37 @@ def is_eligible(item,day):
 def rank(item):
  # Editorial quality leads. Popularity is only a tie-breaker.
  return float(item.get('editorialScore') or item.get('score') or 0)*2 + min(15,math.log1p(max(0,float(item.get('views') or 0))))
+def clip_seconds(item):
+ try:return float(item.get('duration') or 0)
+ except (TypeError,ValueError):return 0.0
+def same_moment(a,b):
+ if str(a.get('creator','')).casefold()!=str(b.get('creator','')).casefold():return False
+ x,y=date_of(a),date_of(b)
+ if x and y and abs((x-y).total_seconds())<80:return True
+ def normalized(c):
+  return re.sub(r'[^\w]+',' ',str(c.get('title') or '').casefold()).strip()
+ aa,bb=normalized(a),normalized(b)
+ return bool(len(aa)>10 and len(bb)>10 and SequenceMatcher(None,aa,bb).ratio()>=0.88)
 def select(items,lang,day,used_ids,max_clips=MAX_CLIPS):
- candidates=[x for x in items if language(x.get('language'))==lang and is_eligible(x,day) and x['id'] not in used_ids]
+ """Choose diverse clips by quality until roughly 28 minutes, never above 30."""
+ candidates=[x for x in items if language(x.get('language'))==lang and is_eligible(x,day) and str(x['id']) not in used_ids]
  candidates.sort(key=lambda x:(rank(x),date_of(x)),reverse=True)
- result=[];creators=Counter();seen=set()
- # First pick one clip per streamer, then allow second and third selections
- # only when there are too few distinct creators for the compilation.
- for per_creator_limit in (1,2,3):
+ chosen=[];creators=Counter();seen_ids=set();seconds=0.0
+ # Diversity pass: select one per creator first, then 2+, up to a generous
+ # ceiling so that a smaller language can still reach 15 minutes.
+ for creator_limit in range(1,17):
   for c in candidates:
-   key=str(c['id']).lower()
-   if key in seen:continue
+   ident=str(c['id']).casefold()
+   if ident in seen_ids:continue
    creator=str(c.get('creator') or 'Streamer').casefold()
-   if creators[creator]>=per_creator_limit:continue
-   result.append(c);creators[creator]+=1;seen.add(key)
-   if len(result)>=max_clips:return result
- return result
+   if creators[creator]>=creator_limit:continue
+   duration=clip_seconds(c)
+   if seconds+duration>MAX_SECONDS+0.001:continue
+   if any(same_moment(c,old) for old in chosen):continue
+   chosen.append(c);creators[creator]+=1;seen_ids.add(ident);seconds+=duration
+   if len(chosen)>=max_clips or seconds>=TARGET_SECONDS:
+    return chosen
+ return chosen
 def plan_by_language(items,state,day,langs=None):
  """Return draft plans. Does not mutate state."""
  if isinstance(day,str):day=dt.date.fromisoformat(day)
@@ -84,11 +105,13 @@ def plan_by_language(items,state,day,langs=None):
   history=state.get('languages',{}).get(lang,{})
   if str(day) in history.get('createdDays',{}):continue
   selected=select(items,lang,day,set(history.get('usedClipIds',[])))
-  if len(selected)<MIN_CLIPS:continue
+  selected_seconds=sum(clip_seconds(x) for x in selected)
+  if len(selected)<MIN_CLIPS or not MIN_SECONDS<=selected_seconds<=MAX_SECONDS:continue
   episode=int(history.get('lastEpisode',0))+1
   plans.append({'id':f'{lang}-{day.isoformat()}','day':day.isoformat(),'language':lang,'episode':episode,
     'title':TITLE_TEMPLATES[lang].format(n=episode),
     'clips':selected,'clipIds':[str(x['id']) for x in selected],
+    'plannedSeconds':round(selected_seconds,1),'targetSeconds':TARGET_SECONDS,
     'unverifiedSources':[{'id':str(c['id']),'creator':str(c.get('creator') or ''),'rights':str(c.get('rights') or 'unverified'),'url':str(c.get('url') or '')} for c in selected if str(c.get('rights') or '').lower() not in RIGHTS_OK],
     'categoryReviewNeeded':any(x.get('gameVerified') is not True for x in selected),
     'status':'awaiting_render_and_approval'})
