@@ -83,7 +83,7 @@ def select(items,lang,day,used_ids,max_clips=MAX_CLIPS):
  chosen=[];creators=Counter();seen_ids=set();seconds=0.0
  # Diversity pass: select one per creator first, then 2+, up to a generous
  # ceiling so that a smaller language can still reach 15 minutes.
- for creator_limit in range(1,17):
+ for creator_limit in range(1,max_clips+1):
   for c in candidates:
    ident=str(c['id']).casefold()
    if ident in seen_ids:continue
