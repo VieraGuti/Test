@@ -89,7 +89,7 @@ class DailyManager:
    meta['previewUrl']=self.base_url+'/daily/video/'+token if self.base_url else None
    self.status={'status':'ready_for_review','language':lang,'last':meta,
        'error':None,'scheduling':'trial_only'}
-   log.info('Daily compilation READY: lang=%s file=%s seconds=%s',lang,meta['outputFile'],meta.get('durationSeconds'))
+   log.info('Daily compilation READY: lang=%s file=%s seconds=%s preview=%s',lang,meta['outputFile'],meta.get('durationSeconds'),meta.get('previewUrl'))
    return self.status
   except Exception as e:
    log.exception('Daily compilation FAILED: lang=%s',lang)
