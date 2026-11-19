@@ -155,6 +155,10 @@ class Engine:
     self.update(upload='oauth_not_configured; local draft retained')
    return self.latest
   except Exception as exc:
+   if 'episode_already_prepared_for_today' in str(exc):
+    self.update(status='ready_for_upload',language=lang,error=None,message='Episode already prepared; checking pending YouTube uploads')
+    log.info('Existing episode detected for %s; do not duplicate the render',lang)
+    return self.latest
    self.update(status='failed',error=str(exc)[:260])
    log.exception('Dedicated compilation failed: %s',lang)
    return self.latest
