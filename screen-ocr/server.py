@@ -125,6 +125,8 @@ def process_frame(ocr):
     found = codes_from_text(ocr)
     current = timestamp()
     put(lastOCRAt=current,lastOCRExcerpt=ocr[:650],framesProcessed=get_public()["framesProcessed"]+1)
+    if get_public()["framesProcessed"] % 20 == 0:
+        logging.info("OCR heartbeat frames=%s candidates=%s", get_public()["framesProcessed"],len(get_public()["candidates"]))
     for code,context in found:
         new = False
         with STATE_LOCK:
@@ -188,6 +190,25 @@ def watcher():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route=self.path.split("?")[0]
+        if route == "/frame":
+            try:
+                with open(FRAMEFILE,"rb") as src:
+                    data=src.read()
+                if not data:
+                    raise FileNotFoundError()
+            except (FileNotFoundError, PermissionError):
+                self.send_response(503)
+                self.send_header("Access-Control-Allow-Origin","*")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type","image/jpeg")
+            self.send_header("Access-Control-Allow-Origin","*")
+            self.send_header("Cache-Control","no-store")
+            self.send_header("Content-Length",str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if route not in ("/","/health","/status"):
             self.send_response(404)
             self.end_headers()
@@ -204,6 +225,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length",str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin","*")
