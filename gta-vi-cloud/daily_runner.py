@@ -9,7 +9,8 @@ import datetime as dt
 import json, os, secrets, threading, time, logging
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from daily_compilations import LANGUAGES, plan_by_language, render_plan, apply_result
+from daily_compilations import LANGUAGES, plan_by_language, render_plan, apply_result, cleanup_after_confirmed_upload
+from youtube_long_upload import YoutubeLongUploader
 
 # Initial hypotheses: evening prime time in major regions for each language.
 # Per-language audience hour data is not yet present. These are NOT measured peaks.
@@ -35,6 +36,7 @@ class DailyManager:
   self.job_lock=threading.Lock()
   self.status={'status':'idle','last':None,'error':None,'scheduling':'trial_only'}
   self.files={}
+  self.uploader=YoutubeLongUploader()
   self.can_render=lambda:True
   self.enabled=os.environ.get('AUTO_DAILY_COMPILATIONS','false').lower() in ('true','yes','1')
   self.last_schedule_check=None
@@ -60,6 +62,9 @@ class DailyManager:
    for x in self.plans(day,languages)]
  def run_once(self,lang,day=None):
   if lang not in LANGUAGES:raise ValueError('invalid_language')
+  pending=self.status.get('last') or {}
+  if self.status.get('status') in ('ready_for_upload','upload_failed') and pending.get('outputFile') and Path(pending['outputFile']).is_file():
+   return {'status':'pending_upload_not_deleted','last':pending,'reason':'Upload or verification must succeed before generating a replacement'}
   if not self.job_lock.acquire(blocking=False):return {'status':'busy'}
   try:
    self.status={'status':'waiting_for_short','language':lang,'error':None}
@@ -82,21 +87,57 @@ class DailyManager:
    slot=dt.datetime.combine(day,dt.time(hour,minute),tzinfo=ZoneInfo(zone))
    meta['suggestedPublishAtUtc']=slot.astimezone(dt.timezone.utc).isoformat()
    meta['suggestedPublishZone']=zone
-   state=apply_result(self.state(),meta)
-   self.save_state(state)
    token=secrets.token_urlsafe(24)
    self.files[token]=Path(meta['outputFile'])
    meta['previewUrl']=self.base_url+'/daily/video/'+token if self.base_url else None
-   self.status={'status':'ready_for_review','language':lang,'last':meta,
-       'error':None,'scheduling':'trial_only'}
+   self.status={'status':'ready_for_upload','language':lang,'last':meta,'error':None,
+       'uploadConfigured':self.uploader.configured}
    log.info('Daily compilation READY: lang=%s file=%s seconds=%s preview=%s',lang,meta['outputFile'],meta.get('durationSeconds'),meta.get('previewUrl'))
-   return self.status
+   if not self.uploader.configured:
+    log.warning('Automatic upload disabled: OAuth refresh credentials not configured on Render; MP4 retained')
+    return self.status
+   return self.upload_and_cleanup(meta)
   except Exception as e:
    log.exception('Daily compilation FAILED: lang=%s',lang)
-   self.status.update(status='failed',error=str(e)[:270])
+   status='upload_failed' if self.status.get('status') in ('ready_for_upload','uploading') else 'failed'
+   self.status.update(status=status,error=str(e)[:270])
    return self.status
   finally:
    self.job_lock.release()
+ def upload_and_cleanup(self,meta):
+  if not self.uploader.configured:raise RuntimeError('youtube_oauth_not_configured')
+  # Publish at the region's evening slot if still in the future; otherwise
+  # schedule for the following day, never publish at an accidental past time.
+  now=dt.datetime.now(dt.timezone.utc)
+  slot=dt.datetime.fromisoformat(meta['suggestedPublishAtUtc'])
+  if slot<=now+dt.timedelta(minutes=45):
+   zone,hour,minute=REGIONAL_SLOTS[meta['language']]
+   current=now.astimezone(ZoneInfo(zone))
+   date=current.date()+dt.timedelta(days=1)
+   slot=dt.datetime.combine(date,dt.time(hour,minute),tzinfo=ZoneInfo(zone)).astimezone(dt.timezone.utc)
+  self.status.update(status='uploading',scheduledForUtc=slot.isoformat())
+  uploaded=self.uploader.upload(meta,publish_at=slot.isoformat())
+  # Save all series metadata before deleting any media.
+  state=apply_result(self.state(),meta)
+  state['languages'][meta['language']].setdefault('uploads',{})[meta['day']]={
+    'videoId':uploaded['videoId'],'watchUrl':uploaded['watchUrl'],
+    'scheduledForUtc':slot.isoformat()}
+  self.save_state(state)
+  cleanup_after_confirmed_upload(meta,uploaded['videoId'],uploaded['confirmation'])
+  for key,value in list(self.files.items()):
+   if str(value)==meta['outputFile']:self.files.pop(key,None)
+  result={k:v for k,v in meta.items() if k not in ('outputFile','previewUrl','skipped','unverifiedSources','chapters')}
+  result.update(status='uploaded_scheduled',videoId=uploaded['videoId'],watchUrl=uploaded['watchUrl'],
+     scheduledForUtc=slot.isoformat(),temporaryFilesRemoved=True)
+  self.status={'status':'uploaded_scheduled','language':meta['language'],'last':result,'error':None}
+  log.info('Daily compilation YOUTUBE CONFIRMED, files cleaned: %s %s',meta['id'],uploaded['watchUrl'])
+  return self.status
+ def retry_pending_upload(self):
+  pending=self.status.get('last') or {}
+  if not pending.get('outputFile') or not Path(pending['outputFile']).is_file():raise RuntimeError('no_uploaded_ready_draft')
+  if not self.job_lock.acquire(blocking=False):return {'status':'busy'}
+  try:return self.upload_and_cleanup(pending)
+  finally:self.job_lock.release()
  def begin(self,lang,day=None):
   if self.job_lock.locked():return False
   threading.Thread(target=self.run_once,args=(lang,day),daemon=True,name='compilation-'+lang).start()
@@ -109,7 +150,7 @@ class DailyManager:
     local_day=str(here.date())
     last=self.state().get('languages',{}).get(lang,{}).get('createdDays',{})
     # Render before prime time, leaving time for verification and scheduled upload.
-    if here.hour==10 and 0<=here.minute<5 and local_day not in last and not self.job_lock.locked():
+    if self.uploader.configured and here.hour==10 and 0<=here.minute<5 and local_day not in last and not self.job_lock.locked():
      self.run_once(lang,here.date())
    time.sleep(60)
  def bootstrap(self,languages):
