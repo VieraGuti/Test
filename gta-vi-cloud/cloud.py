@@ -385,9 +385,9 @@ def process_loop():
   except Exception as exc:
    log.warning('Upload budget endpoint unavailable, local limit remains active: %s',str(exc)[:120])
   try:
-   choice='double' if runs>0 and runs%5==0 else 'single'
+   # Choose the highest-ranked eligible single or double; never stall if no double exists.
    state['processPause']=None
-   run_one(choice)
+   run_one('auto')
    if state.get('status')=='uploaded_private':
     started_today+=1
     runs+=1
