@@ -13,7 +13,7 @@ from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from PIL import Image, ImageEnhance, ImageOps, ImageFilter
+from PIL import Image, ImageEnhance, ImageOps, ImageFilter, ImageStat
 import pytesseract
 
 STREAMER = os.environ.get("STREAM_CHANNEL", "thegrefg").lower()
@@ -104,120 +104,33 @@ def start_video(hls_url):
     return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 def recognize(path, light=False):
-    with Image.open(path) as image:
-        image.load()
-        image = image.convert("RGB")
-        width, height = image.size
-        gray = ImageOps.autocontrast(ImageOps.grayscale(image))
-        if light:
-            # Fast single OCR pass for the displayed countdown.
-            # Resize once to lower CPU usage on a small free instance.
-            target = 1200
-            if width > target:
-                gray = gray.resize((target, max(1,int(height*target/width))))
-            return pytesseract.image_to_string(gray,config="--psm 11",timeout=12)
-        # In the 4-minute tracking window, inspect the full frame and overlays.
-        full = ImageEnhance.Contrast(gray).enhance(1.6)
-        central = full.crop((0,max(0,int(height*.12)),width,min(height,int(height*.90))))
-        return "\n".join((
-            pytesseract.image_to_string(full,config="--psm 11",timeout=15),
-            pytesseract.image_to_string(central,config="--psm 6",timeout=15)
-        ))
-
-
-# Countdown gate shared by screenshot and speech service.
-# The background tracker only reads a low-frequency timer; heavier detection
-# is on from T-60 seconds through T+180 seconds.
-_event_zero_epoch = None
-_last_countdown_candidate = None
-_last_timer_read_at = 0.0
-_previous_event_post_end = 0.0
-
-def countdown_candidates(ocr):
-    """Find plausible visible hh:mm:ss or mm:ss overlays, with context scoring."""
-    lines = [ln.strip() for ln in ocr.splitlines() if ln.strip()]
-    options=[]
-    for line in lines:
-        for m in TIMER_PATTERN.finditer(line):
-            if m.group(1) is not None:
-                h, minute, second = int(m.group(1)),int(m.group(2)),int(m.group(3))
-                if minute >= 60 or second >= 60: continue
-                seconds=h*3600+minute*60+second
-            else:
-                minute,second=int(m.group(2)),int(m.group(3))
-                if second>=60:continue
-                seconds=minute*60+second
-            if not 0 <= seconds <= 7200:continue
-            score=3 if TIMER_CONTEXT.search(line) else 0
-            if len(line)<45: score+=1
-            if m.group(1) is not None: score+=1
-            options.append((score, seconds, line[:120]))
-    options.sort(key=lambda x:(-x[0],x[1]))
-    return options
-
-def refresh_window():
-    global _event_zero_epoch
-    current=time.time()
-    if _event_zero_epoch is None:
-        put(windowActive=False, scanMode="searching_timer",
-            countdownSeconds=None, windowStartAt=None, windowEndAt=None)
-        return False
-    until=_event_zero_epoch-current
-    current_event_active= -POST_EVENT_SECONDS <= until <= PRE_EVENT_SECONDS
-    previous_event_active=current<=_previous_event_post_end
-    active=current_event_active or previous_event_active
-    end=_event_zero_epoch+POST_EVENT_SECONDS
-    # Keep the schedule even if the overlay disappears at the moment of giveaway.
-    # Beyond the window wait for a new countdown rather than watch forever.
-    if until < -POST_EVENT_SECONDS and not previous_event_active:
-        put(windowActive=False,scanMode="waiting_next_timer",
-            countdownSeconds=0,windowStartAt=timestamp_from_epoch(_event_zero_epoch-PRE_EVENT_SECONDS),
-            windowEndAt=timestamp_from_epoch(end))
-        return False
-    mode=("tracking_codes_previous_event" if previous_event_active and not current_event_active
-          else "tracking_codes" if active else "waiting_countdown")
-    put(windowActive=active,scanMode=mode,
-        countdownSeconds=max(0,int(until)),
-        nextEventAt=timestamp_from_epoch(_event_zero_epoch),
-        windowStartAt=timestamp_from_epoch(_event_zero_epoch-PRE_EVENT_SECONDS),
-        windowEndAt=timestamp_from_epoch(_previous_event_post_end if previous_event_active and not current_event_active else end))
-    return active
-
-def timestamp_from_epoch(value):
-    return datetime.fromtimestamp(value,timezone.utc).isoformat()
-
-def update_timer(text):
-    global _event_zero_epoch,_last_countdown_candidate,_last_timer_read_at,_previous_event_post_end
-    current=time.time()
-    options=countdown_candidates(text)
-    _last_timer_read_at=current
-    put(timerScans=get_public()["timerScans"]+1,lastTimerAt=timestamp())
-    if not options:
-        refresh_window()
-        return
-    score, seconds, raw=options[0]
-    proposed=current+seconds
-    if _event_zero_epoch is None:
-        # Avoid locking onto an unrelated timer until 2 consistent scans, unless <=1min.
-        if seconds<=PRE_EVENT_SECONDS:
-            _event_zero_epoch=proposed
-        elif _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<35:
-            _event_zero_epoch=proposed
-        _last_countdown_candidate=proposed
-    elif abs(_event_zero_epoch-proposed)<42:
-        # Smooth OCR jitter; don't drift with every minor glitch.
-        _event_zero_epoch=0.85*_event_zero_epoch+0.15*proposed
-    else:
-        # A new countdown after a completed event; require 2 agreeing scans.
-        if _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<35:
-            old_event=_event_zero_epoch
-            if old_event <= current <= old_event+POST_EVENT_SECONDS:
-                _previous_event_post_end=max(_previous_event_post_end, old_event+POST_EVENT_SECONDS)
-            _event_zero_epoch=proposed
-            notify({"type":"next_countdown","time":timestamp(),"seconds":seconds,"text":raw})
-        _last_countdown_candidate=proposed
-    put(countdownText=raw)
-    refresh_window()
+    # Crop and OCR small horizontal regions instead of feeding full frames
+    # to expensive sparse-text segmentation, which timed out on free CPU.
+    with Image.open(path) as src:
+        src.load()
+        image=ImageOps.autocontrast(ImageOps.grayscale(src.convert("RGB")))
+    target=880 if light else 1152
+    if image.width>target:
+        image=image.resize((target,max(1,round(image.height*target/image.width))))
+    width,height=image.size
+    readings=[]
+    # Top, middle and lower thirds catch timers and codes anywhere on screen.
+    for i in range(3):
+        top=max(0,int(height*i/3)-8)
+        bottom=min(height,int(height*(i+1)/3)+8)
+        part=image.crop((0,top,width,bottom))
+        if ImageStat.Stat(part).mean[0]<104:
+            part=ImageOps.invert(part)
+        try:
+            reading=pytesseract.image_to_string(
+                part,config="--psm 6",timeout=4 if light else 7
+            )
+            readings.append(reading)
+        except RuntimeError as e:
+            logging.warning("OCR region %s timeout: %s",i,str(e)[:100])
+    if not readings:
+        raise RuntimeError("All OCR image regions timed out")
+    return "\n".join(readings)
 
 def codes_from_text(text):
     clean = text.upper().replace("—","-").replace("–","-").replace("_","-")
