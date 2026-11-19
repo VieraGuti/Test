@@ -7,8 +7,9 @@ RUN curl -fLsS --retry 3 https://github.com/lay295/TwitchDownloader/releases/dow
 COPY cloud.py ./cloud.py
 COPY daily_compilations.py ./daily_compilations.py
 COPY daily_runner.py ./daily_runner.py
+COPY youtube_long_upload.py ./youtube_long_upload.py
 COPY test_daily_compilations.py ./test_daily_compilations.py
-RUN python -m py_compile /srv/cloud.py /srv/daily_compilations.py /srv/daily_runner.py
+RUN python -m py_compile /srv/cloud.py /srv/daily_compilations.py /srv/daily_runner.py /srv/youtube_long_upload.py
 RUN python /srv/test_daily_compilations.py
 RUN useradd --create-home --uid 10001 worker
 USER worker
