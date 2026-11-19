@@ -196,13 +196,16 @@ def render_plan(plan,folder):
     mode='lossless_stream_copy'
    else:
     vf=f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps},setsar=1,format=yuv420p'
-    command=['ffmpeg','-nostdin','-v','error','-y','-i',str(src),
-        '-vf',vf,'-map','0:v:0','-c:v','libx264','-preset','ultrafast','-crf','20',
+    inputs=['-i',str(src)]
+    if not info['audio']:
+     inputs+=['-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000']
+    command=['ffmpeg','-nostdin','-v','error','-y']+inputs+[
+        '-vf',vf,'-map','0:v:0','-map','0:a:0' if info['audio'] else '1:a:0',
+        '-c:v','libx264','-preset','ultrafast','-crf','20',
         '-threads','1','-c:a','aac','-b:a','160k','-ar',str(target.get('sample_rate') or '48000'),
-        '-ac',str(target.get('channels') or 2),'-movflags','+faststart',str(target_file)]
-    if info['audio']:command[command.index('-c:a'):command.index('-c:a')]=['-map','0:a:0']
-    else:
-     command[command.index('-c:a'):command.index('-c:a')]=['-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000','-map','1:a:0','-shortest']
+        '-ac',str(target.get('channels') or 2),'-movflags','+faststart']
+    if not info['audio']:command.append('-shortest')
+    command.append(str(target_file))
     _run(command,600)
     mode='optimized_transcode'
    chapters.append({'startSeconds':round(elapsed,2),
