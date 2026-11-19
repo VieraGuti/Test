@@ -63,14 +63,16 @@ def select(items,lang,day,used_ids,max_clips=MAX_CLIPS):
  candidates=[x for x in items if language(x.get('language'))==lang and is_eligible(x,day) and x['id'] not in used_ids]
  candidates.sort(key=lambda x:(rank(x),date_of(x)),reverse=True)
  result=[];creators=Counter();seen=set()
- for c in candidates:
-  key=str(c['id']).lower()
-  if key in seen:continue
-  creator=str(c.get('creator') or 'Streamer').casefold()
-  if creators[creator]>=3:continue
-  # Prefer a varied edit rather than consecutive clips from one person.
-  result.append(c);creators[creator]+=1;seen.add(key)
-  if len(result)>=max_clips:break
+ # First pick one clip per streamer, then allow second and third selections
+ # only when there are too few distinct creators for the compilation.
+ for per_creator_limit in (1,2,3):
+  for c in candidates:
+   key=str(c['id']).lower()
+   if key in seen:continue
+   creator=str(c.get('creator') or 'Streamer').casefold()
+   if creators[creator]>=per_creator_limit:continue
+   result.append(c);creators[creator]+=1;seen.add(key)
+   if len(result)>=max_clips:return result
  return result
 def plan_by_language(items,state,day,langs=None):
  """Return draft plans. Does not mutate state."""
