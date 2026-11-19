@@ -67,25 +67,36 @@ def choose_primary(specs):
 
 
 def _download_720(url,path):
-    """Prefer Twitch's 720p60 stream instead of accidentally fetching 1440p HEVC."""
+    """Fast direct 1080p60 Twitch clip download, fallback to 720p.
+
+    Twitch clip playback is usually already HEVC/H264+AAC MP4. yt-dlp
+    retrieves the source bitstream; FFmpeg only remuxes it without quality loss.
+    """
     if not is_twitch_clip(url):
         raise ValueError('unsupported_twitch_source')
     slug=urlparse(url).path.rstrip('/').split('/')[-1]
     if not re.fullmatch(r'[A-Za-z0-9_-]{8,200}',slug):
         raise ValueError('invalid_twitch_clip_slug')
-    for identifier in (url,slug):
+    path.unlink(missing_ok=True)
+    try:
+        _run(['yt-dlp','--no-playlist','--no-warnings','--socket-timeout','12',
+              '--retries','2','-f','1080/720/best[height<=1080]/best',
+              '--merge-output-format','mp4','-o',str(path),url],40)
+        if path.is_file() and path.stat().st_size>=MIN_BYTES:return
+        raise RuntimeError('yt_dlp_missing_file')
+    except (RuntimeError,subprocess.TimeoutExpired,OSError) as exc:
+        log.warning('Direct 1080p clip download failed, fallback: %s',str(exc)[:110])
         path.unlink(missing_ok=True)
+    for identifier in (url,slug):
         try:
-            _run(['TwitchDownloaderCLI','clipdownload',
-                  '--id',identifier,'--quality','720p60',
-                  '--output',str(path),'--collision','Overwrite'],70)
-            if path.is_file() and path.stat().st_size>=MIN_BYTES:
-                return
+            _run(['TwitchDownloaderCLI','clipdownload','--id',identifier,
+                  '--quality','1080p60','--output',str(path),
+                  '--collision','Overwrite'],60)
+            if path.is_file() and path.stat().st_size>=MIN_BYTES:return
         except (RuntimeError,subprocess.TimeoutExpired,OSError) as exc:
-            log.warning('Fast download attempt failed: %s',str(exc)[:100])
-    # Final fallback to the existing multi-method downloader, not to recompression.
-    download_twitch_clip(url,path)
-
+            log.warning('TwitchDownloader fallback failed: %s',str(exc)[:90])
+            path.unlink(missing_ok=True)
+    raise RuntimeError('all_twitch_download_methods_failed')
 
 def _source(clip,index,tmp):
     path=clip.get('mediaPath')
