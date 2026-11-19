@@ -33,6 +33,12 @@ RUN_AUTOMATIC=os.environ.get('COMPILATION_SCHEDULER','true').lower() in ('true',
 AUTO_ON_BOOT=os.environ.get('BOOTSTRAP_COMPILATION_LANG','es').lower().strip()
 SOFT_LIMIT=85 # downloading bad clips must not loop forever
 MIN_CLIPS=3
+# An editorial first-pass safety screen. It does not replace checking video
+# frames or YouTube's own moderation, but avoids clearly sexual clip titles.
+ADULT_TITLE_RE=re.compile(r'\b(?:strip(?:\s+club)?|private\s+dance|horny|gooner|nud(?:e|ity)|naked|topless|porn(?:hub)?|sex(?:ual)?\s+scene|adult\s+club|голая|голый|обнаж[её]нн?\w*|порно|эротик\w*|desnudos?|desnudas?|sexy\s+scene)\b',re.I)
+def unsuitable_title(clip):
+ title=str(clip.get('title') or '')
+ return bool(ADULT_TITLE_RE.search(title))
 
 class Engine:
  def __init__(self):
@@ -78,7 +84,8 @@ class Engine:
    raise RuntimeError('episode_already_prepared_for_today')
   used=set(history.get('usedClipIds',[]))
   candidates=[x for x in self.feed() if x.get('language','').split('-')[0].lower()==lang
-             and is_eligible(x,day) and str(x['id']) not in used]
+             and is_eligible(x,day) and str(x['id']) not in used
+             and not unsuitable_title(x)]
   # Verified viewer engagement / editorial quality first. Source quality is
   # enforced by ffprobe during remux, not invented from catalogue metadata.
   def score(x):
