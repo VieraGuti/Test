@@ -231,6 +231,25 @@ def render_plan(plan,folder):
    'createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
  output.with_suffix('.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
  return meta
+def cleanup_after_confirmed_upload(meta,video_id,confirmation):
+ """Delete local render only after YouTube has confirmed the exact video ID."""
+ if not re.fullmatch(r'[A-Za-z0-9_-]{11}',str(video_id or '')):
+  raise ValueError('invalid_uploaded_video_id')
+ if not isinstance(confirmation,dict) or confirmation.get('platform')!='youtube' or confirmation.get('id')!=video_id:
+  raise ValueError('unverified_youtube_upload')
+ if confirmation.get('uploadStatus') not in ('uploaded','processed'):
+  raise ValueError('youtube_upload_not_confirmed')
+ file=Path(str(meta.get('outputFile') or '')).resolve()
+ if file.suffix.lower()!='.mp4' or not file.is_file():
+  raise ValueError('render_file_unavailable')
+ extra=file.with_suffix('.json')
+ file.unlink()
+ removed_extra=False
+ if extra.is_file():
+  extra.unlink()
+  removed_extra=True
+ return {'deletedMp4':True,'deletedMetadata':removed_extra,'videoId':video_id}
+
 def apply_result(state,meta):
  """Persist only after a completed render. Call with durable state storage."""
  state=json.loads(json.dumps(state))
