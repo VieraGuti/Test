@@ -103,22 +103,26 @@ def start_video(hls_url):
     ]
     return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
-def recognize(path):
-    with Image.open(path) as im:
-        im.load()
-        im = im.convert("RGB")
-        width, height = im.size
-        # OCR both the full image and its central/lower overlays.
-        full = ImageEnhance.Contrast(ImageOps.grayscale(im)).enhance(2)
-        central = full.crop((0, max(0,int(height*.12)), width, min(height,int(height*.90))))
-        variants = [(full, 11), (central, 6)]
-        readings = []
-        for image, mode in variants:
-            readings.append(pytesseract.image_to_string(
-                image,
-                config=f"--psm {mode}"
-            ))
-        return "\n".join(readings)
+def recognize(path, light=False):
+    with Image.open(path) as image:
+        image.load()
+        image = image.convert("RGB")
+        width, height = image.size
+        gray = ImageOps.autocontrast(ImageOps.grayscale(image))
+        if light:
+            # Fast single OCR pass for the displayed countdown.
+            # Resize once to lower CPU usage on a small free instance.
+            target = 1200
+            if width > target:
+                gray = gray.resize((target, max(1,int(height*target/width))))
+            return pytesseract.image_to_string(gray,config="--psm 11",timeout=12)
+        # In the 4-minute tracking window, inspect the full frame and overlays.
+        full = ImageEnhance.Contrast(gray).enhance(1.6)
+        central = full.crop((0,max(0,int(height*.12)),width,min(height,int(height*.90))))
+        return "\n".join((
+            pytesseract.image_to_string(full,config="--psm 11",timeout=15),
+            pytesseract.image_to_string(central,config="--psm 6",timeout=15)
+        ))
 
 
 # Countdown gate shared by screenshot and speech service.
@@ -284,7 +288,7 @@ def watcher():
                     continue
                 last_ocr_at=time.time()
                 try:
-                    text=recognize(FRAMEFILE)
+                    text=recognize(FRAMEFILE,light=not active)
                     update_timer(text)
                     if refresh_window():
                         process_frame(text)
