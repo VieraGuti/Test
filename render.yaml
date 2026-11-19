@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: young-class-archive
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: echo "Python standard library - no dependency installation needed"
+    startCommand: python app.py
+    healthCheckPath: /health
+    envVars:
+      - key: TARGET_HANDLES
+        value: youngclasstlc
