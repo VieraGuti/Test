@@ -131,6 +131,7 @@ def recognize(path, light=False):
 _event_zero_epoch = None
 _last_countdown_candidate = None
 _last_timer_read_at = 0.0
+_previous_event_post_end = 0.0
 
 def countdown_candidates(ocr):
     """Find plausible visible hh:mm:ss or mm:ss overlays, with context scoring."""
@@ -162,28 +163,31 @@ def refresh_window():
             countdownSeconds=None, windowStartAt=None, windowEndAt=None)
         return False
     until=_event_zero_epoch-current
-    active= -POST_EVENT_SECONDS <= until <= PRE_EVENT_SECONDS
+    current_event_active= -POST_EVENT_SECONDS <= until <= PRE_EVENT_SECONDS
+    previous_event_active=current<=_previous_event_post_end
+    active=current_event_active or previous_event_active
     end=_event_zero_epoch+POST_EVENT_SECONDS
     # Keep the schedule even if the overlay disappears at the moment of giveaway.
     # Beyond the window wait for a new countdown rather than watch forever.
-    if until < -POST_EVENT_SECONDS:
+    if until < -POST_EVENT_SECONDS and not previous_event_active:
         put(windowActive=False,scanMode="waiting_next_timer",
             countdownSeconds=0,windowStartAt=timestamp_from_epoch(_event_zero_epoch-PRE_EVENT_SECONDS),
             windowEndAt=timestamp_from_epoch(end))
         return False
-    mode="tracking_codes" if active else "waiting_countdown"
+    mode=("tracking_codes_previous_event" if previous_event_active and not current_event_active
+          else "tracking_codes" if active else "waiting_countdown")
     put(windowActive=active,scanMode=mode,
         countdownSeconds=max(0,int(until)),
         nextEventAt=timestamp_from_epoch(_event_zero_epoch),
         windowStartAt=timestamp_from_epoch(_event_zero_epoch-PRE_EVENT_SECONDS),
-        windowEndAt=timestamp_from_epoch(end))
+        windowEndAt=timestamp_from_epoch(_previous_event_post_end if previous_event_active and not current_event_active else end))
     return active
 
 def timestamp_from_epoch(value):
     return datetime.fromtimestamp(value,timezone.utc).isoformat()
 
 def update_timer(text):
-    global _event_zero_epoch,_last_countdown_candidate,_last_timer_read_at
+    global _event_zero_epoch,_last_countdown_candidate,_last_timer_read_at,_previous_event_post_end
     current=time.time()
     options=countdown_candidates(text)
     _last_timer_read_at=current
@@ -206,6 +210,9 @@ def update_timer(text):
     else:
         # A new countdown after a completed event; require 2 agreeing scans.
         if _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<35:
+            old_event=_event_zero_epoch
+            if old_event <= current <= old_event+POST_EVENT_SECONDS:
+                _previous_event_post_end=max(_previous_event_post_end, old_event+POST_EVENT_SECONDS)
             _event_zero_epoch=proposed
             notify({"type":"next_countdown","time":timestamp(),"seconds":seconds,"text":raw})
         _last_countdown_candidate=proposed
