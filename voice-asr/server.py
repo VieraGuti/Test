@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Near real-time Spanish speech transcription for a public Twitch stream.
+Vosk offline recognition. No Twitch or PlayStation credentials. No redeem automation.
+"""
+import json, logging, os, re, subprocess, threading, time, unicodedata
+from collections import deque
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from vosk import Model, KaldiRecognizer, SetLogLevel
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+SetLogLevel(-1)
+CHANNEL = os.environ.get("STREAM_CHANNEL", "thegrefg").lower()
+PORT = int(os.environ.get("PORT", "10000"))
+MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "/app/model/vosk-model-small-es-0.42")
+LOCK = threading.RLock()
+STATE = {
+    "service":"gta-vi-thegrefg-voice-asr-v1",
+    "channel":CHANNEL,"state":"starting","online":False,
+    "lastError":None,"startedAt":datetime.now(timezone.utc).isoformat(),
+    "lastTranscriptAt":None,"transcriptsProcessed":0,"lastTranscript":"",
+    "videoAudioOpenedAt":None,"lastAudioPacketAt":None,
+    "events":deque(maxlen=50),"recentTranscripts":deque(maxlen=40),
+    "possibleCodes":deque(maxlen=30),
+}
+SPEECH_TO_CHAR = {
+    "a":"A","be":"B","b":"B","ve":"B","ce":"C","c":"C","de":"D","d":"D",
+    "e":"E","efe":"F","f":"F","ge":"G","g":"G","hache":"H","h":"H",
+    "i":"I","jota":"J","j":"J","ka":"K","k":"K","ele":"L","l":"L",
+    "eme":"M","m":"M","ene":"N","n":"N","o":"O","pe":"P","p":"P",
+    "cu":"Q","q":"Q","erre":"R","r":"R","ese":"S","s":"S",
+    "te":"T","t":"T","u":"U","uve":"V","v":"V",
+    "dobleuve":"W","doble":"W","equis":"X","x":"X",
+    "ye":"Y","y":"Y","zeta":"Z","z":"Z",
+    "cero":"0","uno":"1","una":"1","dos":"2","tres":"3",
+    "cuatro":"4","cinco":"5","seis":"6","siete":"7",
+    "ocho":"8","nueve":"9"
+}
+KEYWORDS = re.compile(r"\b(?:codigo|codigos|clave|playstation|psn|regalo|canjear|gta|ganar)\b",re.I)
+SPOKEN = deque(maxlen=25)
+def ts():return datetime.now(timezone.utc).isoformat()
+def update(**kwargs):
+    with LOCK: STATE.update(kwargs)
+def event(info):
+    with LOCK:STATE["events"].appendleft(info)
+    logging.info("VOICE EVENT %s",json.dumps(info,ensure_ascii=False))
+def snapshot(short=False):
+    with LOCK:
+        d={k:v for k,v in STATE.items() if k not in ("events","recentTranscripts","possibleCodes")}
+        if not short:
+            d["events"]=list(STATE["events"])
+            d["recentTranscripts"]=list(STATE["recentTranscripts"])
+            d["possibleCodes"]=list(STATE["possibleCodes"])
+        return d
+
+def normalize(text):
+    return "".join(c for c in unicodedata.normalize("NFKD",text.lower()) if not unicodedata.combining(c))
+def maybe_spelled(text):
+    normalized=normalize(text)
+    words=re.findall(r"[a-z0-9]+",normalized)
+    chars=[SPEECH_TO_CHAR.get(w) for w in words]
+    # A plausible 12-character code can be dictated one word at a time,
+    # but mixed-in narration creates many false positives. Treat as a hint.
+    sequences=[]
+    start=0
+    while start<len(chars):
+        if chars[start] is None:
+            start+=1;continue
+        end=start
+        while end<len(chars) and chars[end] is not None:
+            end+=1
+        if end-start>=10:
+            sequence="".join(chars[start:end])
+            sequences.append(sequence)
+        start=end+1
+    return sequences
+
+def handle_transcript(text,is_partial=False):
+    text=text.strip()
+    if not text:return
+    t=ts()
+    if is_partial:
+        update(lastTranscript=text)
+        return
+    entry={"time":t,"channel":CHANNEL,"text":text,"kind":"voice_transcription"}
+    with LOCK:
+        STATE["recentTranscripts"].appendleft(entry)
+        STATE["lastTranscript"]=text
+        STATE["lastTranscriptAt"]=t
+        STATE["transcriptsProcessed"]+=1
+        SPOKEN.append((time.time(),text))
+    raw=normalize(text)
+    if KEYWORDS.search(raw):
+        event({"type":"voice_keyword","time":t,"text":text,"channel":CHANNEL})
+    # Only extract potential code when a relevant keyword was uttered recently
+    # or within this segment. Never advertise uncertain transcript as a valid code.
+    phrase=" ".join(msg for moment,msg in SPOKEN if time.time()-moment<22)
+    if KEYWORDS.search(normalize(phrase)):
+        seen=set()
+        for seq in maybe_spelled(phrase):
+            if seq in seen:continue
+            seen.add(seq)
+            if len(seq)>=12:
+                value=seq[:12]
+                code="-".join(value[n:n+4] for n in (0,4,8))
+                info={"type":"voice_spelled_candidate","time":t,"channel":CHANNEL,
+                      "code":code,"text":phrase[-230:],
+                      "status":"uncertain_manual_check_required"}
+                with LOCK:
+                    previous=[v["code"] for v in list(STATE["possibleCodes"])[:5]]
+                    if code not in previous:
+                        STATE["possibleCodes"].appendleft(info)
+                        STATE["events"].appendleft(info)
+                logging.info("VOICE POSSIBLE CODE %s",code)
+
+def stream_url():
+    update(state="resolving",lastError=None)
+    cmd=["streamlink","--stream-url",f"https://www.twitch.tv/{CHANNEL}",
+         "audio_only,160p,360p,480p,720p,best"]
+    run=subprocess.run(cmd,capture_output=True,text=True,timeout=40)
+    lines=run.stdout.strip().splitlines()
+    if run.returncode!=0 or not lines or not lines[-1].startswith("http"):
+        raise RuntimeError("Twitch audio stream unavailable: "+run.stderr[-500:])
+    return lines[-1]
+
+def monitor():
+    try:
+        update(state="loading_speech_model")
+        model=Model(MODEL_PATH)
+        logging.info("Vosk Spanish model ready")
+    except Exception as e:
+        logging.exception("Speech model unavailable")
+        update(state="model_error",lastError=str(e),online=False)
+        return
+    while True:
+        ff=None
+        try:
+            url=stream_url()
+            cmd=["ffmpeg","-hide_banner","-loglevel","error","-nostdin",
+                 "-i",url,"-vn","-ac","1","-ar","16000",
+                 "-f","s16le","-acodec","pcm_s16le","pipe:1"]
+            ff=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,bufsize=0)
+            rec=KaldiRecognizer(model,16000)
+            rec.SetWords(False)
+            update(state="listening",online=True,lastError=None,videoAudioOpenedAt=ts())
+            logging.info("Listening to TheGrefg audio through ffmpeg")
+            while ff.poll() is None:
+                data=ff.stdout.read(8192)
+                if not data:
+                    time.sleep(.2)
+                    continue
+                update(lastAudioPacketAt=ts(),online=True)
+                if rec.AcceptWaveform(data):
+                    result=json.loads(rec.Result())
+                    handle_transcript(result.get("text",""))
+                else:
+                    result=json.loads(rec.PartialResult())
+                    partial=result.get("partial","")
+                    if partial:
+                        update(lastTranscript=partial)
+            raise RuntimeError("ffmpeg audio process exited")
+        except Exception as e:
+            logging.warning("Audio reconnect: %s",e)
+            update(state="retrying",online=False,lastError=str(e)[:700])
+        finally:
+            if ff and ff.poll() is None:
+                ff.kill()
+                try:ff.wait(timeout=3)
+                except Exception:pass
+        time.sleep(8)
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.split("?")[0] not in ("/","/status","/health"):
+            self.send_response(404);self.end_headers();return
+        data=snapshot(short=self.path.startswith("/health"))
+        content=json.dumps(data,ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Cache-Control","no-store")
+        self.send_header("Access-Control-Allow-Origin","*")
+        self.send_header("Content-Length",str(len(content)))
+        self.end_headers();self.wfile.write(content)
+    def do_HEAD(self):
+        self.send_response(200);self.end_headers()
+    def do_OPTIONS(self):
+        self.send_response(204);self.send_header("Access-Control-Allow-Origin","*");self.end_headers()
+    def log_message(self,fmt,*args):pass
+if __name__=="__main__":
+    threading.Thread(target=monitor,daemon=True).start()
+    logging.info("Audio ASR HTTP server running port=%s channel=%s",PORT,CHANNEL)
+    ThreadingHTTPServer(("0.0.0.0",PORT),Handler).serve_forever()
