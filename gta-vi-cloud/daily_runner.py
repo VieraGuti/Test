@@ -10,6 +10,7 @@ import json, os, secrets, threading, time, logging
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from daily_compilations import LANGUAGES, plan_by_language, render_plan, apply_result, cleanup_after_confirmed_upload
+from fast_compilations import render_fast_plan
 from youtube_long_upload import YoutubeLongUploader
 
 # Initial hypotheses: evening prime time in major regions for each language.
@@ -82,7 +83,11 @@ class DailyManager:
    plan=plans[0]
    self.status.update(status='rendering',title=plan['title'],clips=len(plan['clipIds']))
    log.info('Daily compilation start: lang=%s day=%s clips=%d title=%s',lang,day,len(plan['clipIds']),plan['title'])
-   meta=render_plan(plan,self.root)
+   # Opt-in, isolated low-CPU path. Keep legacy until an existing job finishes.
+   use_fast=os.environ.get('COMPILATION_FAST_MODE','false').lower() in ('true','1','yes')
+   render=render_fast_plan if use_fast else render_plan
+   log.info('Daily compilation render path=%s', 'stream_copy' if use_fast else 'legacy_transcode')
+   meta=render(plan,self.root)
    zone,hour,minute=REGIONAL_SLOTS[lang]
    slot=dt.datetime.combine(day,dt.time(hour,minute),tzinfo=ZoneInfo(zone))
    meta['suggestedPublishAtUtc']=slot.astimezone(dt.timezone.utc).isoformat()
