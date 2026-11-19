@@ -82,7 +82,7 @@ def get_public():
 def discover_url():
     put(state="resolving_twitch_video",lastError=None)
     args = ["streamlink", "--stream-url", f"https://www.twitch.tv/{STREAMER}",
-            "720p,720p60,480p,480p60,best"]
+            "480p,480p60,360p,360p60,160p,best"]
     cp = subprocess.run(args, capture_output=True, text=True, timeout=35)
     url = cp.stdout.strip().splitlines()
     if cp.returncode != 0 or not url or not url[-1].startswith("http"):
@@ -97,8 +97,9 @@ def start_video(hls_url):
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin",
         "-user_agent", "Mozilla/5.0 (compatible; GTA-VI-CodeHunter/1.0)",
+        "-skip_frame", "nokey", "-threads", "1",
         "-i", hls_url,
-        "-an", "-vf", f"fps=1/{FRAME_SECONDS},scale=1600:-2",
+        "-an", "-vf", f"fps=1/{FRAME_SECONDS},scale=1024:-2",
         "-q:v", "3", "-f", "image2", "-update", "1", "-y", FRAMEFILE
     ]
     return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
