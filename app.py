@@ -61,7 +61,7 @@ def wayback(handle):
     found = []
     # Prefer exact profile and its immediate descendants, never scan unrelated accounts.
     for host in ('instagram.com', 'www.instagram.com'):
-        params = {'url': f'{host}/{handle}/*', 'output': 'json', 'filter': 'statuscode:200', 'collapse': 'urlkey', 'limit': '120', 'fl': 'timestamp,original,statuscode,mimetype'}
+        params = {'url': f'{host}/{handle}', 'matchType': 'prefix', 'output': 'json', 'filter': 'statuscode:200', 'collapse': 'urlkey', 'limit': '120', 'fl': 'timestamp,original,statuscode,mimetype'}
         raw = fetch_json('https://web.archive.org/cdx/search/cdx?' + urlencode(params))
         if not isinstance(raw, list):
             raise RuntimeError('CDX devolvió formato inesperado')
@@ -70,6 +70,9 @@ def wayback(handle):
             if not isinstance(row, list) or len(row) < 2 or not re.fullmatch(r'\d{14}', str(row[0])):
                 continue
             ts, original = row[0], row[1]
+            original_path = urlparse(original).path.rstrip('/').lower()
+            if original_path != f'/{handle}' and not original_path.startswith(f'/{handle}/'):
+                continue
             link = f'https://web.archive.org/web/{ts}/{original}'
             found.append({'key': f'wayback:{ts}:{original}', 'type': 'snapshot', 'platform': 'Wayback Machine', 'title': f'Captura del perfil @{handle}', 'url': link, 'date': f'{ts[:4]}-{ts[4:6]}-{ts[6:8]}', 'note': f'Página archivada: {original}. Puede contener solo una pantalla de acceso, no necesariamente fotos o historias.'})
     return found
