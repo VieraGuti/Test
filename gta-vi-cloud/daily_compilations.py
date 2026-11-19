@@ -153,88 +153,99 @@ def fps_value(spec):
   return int(round(n)) if 20<=n<=61 else 30
  except (ValueError,TypeError,ZeroDivisionError):return 30
 def render_plan(plan,folder):
- """Produce long-form video, copying source bitstreams when compatible.
-
- Re-encode only clips with different video/audio formats. The majority
- stream format becomes the reference to minimize free-worker CPU time.
- """
+ """Stream one source at a time to minimize disk and RAM; preserve codecs when possible."""
  outdir=Path(folder);outdir.mkdir(parents=True,exist_ok=True)
  output=outdir/(plan['id']+'.mp4')
- with tempfile.TemporaryDirectory(prefix='gta6-daily-') as workspace:
-  tmp=Path(workspace);sources=[];chapters=[];elapsed=0.0
-  for i,clip in enumerate(plan['clips']):
-   log.info('Compilation %s downloading clip %d/%d creator=%s',
-       plan['id'],i+1,len(plan['clips']),str(clip.get('creator') or '')[:35])
-   src=Path(clip.get('mediaPath') or '').resolve() if clip.get('mediaPath') else None
-   if not src or not src.is_file():
-    url=str(clip.get('url') or '')
-    if not is_twitch_clip(url):raise ValueError('supported_clip_url_or_local_mp4_required: '+str(clip['id']))
-    src=tmp/('source-%02d.mp4'%i)
-    _run(['TwitchDownloaderCLI','clipdownload','--id',url,
-          '--output',str(src),'--collision','Overwrite'],180)
-   if src.suffix.lower()!='.mp4' or src.stat().st_size<1000:
-    raise ValueError('unreadable_mp4: '+str(clip['id']))
-   info=media_spec(src)
-   sources.append((src,info,clip))
-   log.info('Downloaded source %d/%d, video=%s %sx%s fps=%s audio=%s',
-       i+1,len(plan['clips']),info['video'],info['width'],info['height'],info['fps'],info['audio'])
-  if len(sources)<MIN_CLIPS:raise RuntimeError('insufficient_sources')
-  groups=Counter((json.dumps(info,sort_keys=True) for _,info,_ in sources if info['video']=='h264' and info['audio']=='aac'))
-  if groups:
-   target=json.loads(groups.most_common(1)[0][0])
-  else:
-   target={'video':'h264','audio':'aac','width':1280,'height':720,'fps':'30/1',
-           'pix_fmt':'yuv420p','sample_rate':'48000','channels':2}
-  width=min(1920,max(640,target['width'] or 1280))
-  height=min(1080,max(360,target['height'] or 720))
-  fps=fps_value(target)
-  log.info('Compilation %s chosen reference: %sx%s @%s fps, %d original streams reusable',
-      plan['id'],width,height,fps,groups.most_common(1)[0][1] if groups else 0)
-  pieces=[]
-  for i,(src,info,clip) in enumerate(sources):
-   target_file=tmp/('part-%02d.mp4'%i)
-   if copy_compatible(info,target):
-    _run(['ffmpeg','-nostdin','-v','error','-y','-i',str(src),
-        '-map','0:v:0','-map','0:a:0','-c','copy','-avoid_negative_ts','make_zero',
-        '-movflags','+faststart',str(target_file)],120)
-    mode='lossless_stream_copy'
-   else:
-    vf=f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps},setsar=1,format=yuv420p'
-    inputs=['-i',str(src)]
-    if not info['audio']:
-     inputs+=['-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000']
-    command=['ffmpeg','-nostdin','-v','error','-y']+inputs+[
-        '-vf',vf,'-map','0:v:0','-map','0:a:0' if info['audio'] else '1:a:0',
-        '-c:v','libx264','-preset','ultrafast','-crf','20',
-        '-threads','1','-c:a','aac','-b:a','160k','-ar',str(target.get('sample_rate') or '48000'),
-        '-ac',str(target.get('channels') or 2),'-movflags','+faststart']
-    if not info['audio']:command.append('-shortest')
-    command.append(str(target_file))
-    _run(command,600)
-    mode='optimized_transcode'
-   chapters.append({'startSeconds':round(elapsed,2),
-     'creator':str(clip.get('creator') or 'Streamer'),
-     'sourceUrl':str(clip.get('url') or ''),
-     'rightsStatus':str(clip.get('rights') or 'unverified'),
-     'originalTitle':str(clip.get('title') or '')[:200]})
-   elapsed+=_duration(target_file)
-   pieces.append(target_file)
-   log.info('Compilation %s processed clip %d/%d mode=%s duration=%.1fs',
-       plan['id'],i+1,len(sources),mode,_duration(target_file))
-  concat=tmp/'concat.txt'
-  concat.write_text(''.join("file '"+str(x)+"'\n" for x in pieces),encoding='utf-8')
-  _run(['ffmpeg','-nostdin','-v','error','-y','-f','concat','-safe','0','-i',str(concat),
-        '-map','0:v:0','-map','0:a:0','-c','copy','-movflags','+faststart',str(output)],240)
-  recorded=_duration(output)
-  if recorded<sum(_duration(x) for x in pieces)*0.90:
-   raise RuntimeError('concat_duration_mismatch')
- meta={**{k:v for k,v in plan.items() if k!='clips'},'chapters':chapters,
-   'durationSeconds':round(recorded,2),'outputFile':str(output),
-   'status':'rendered_private_draft','copyrightReviewNeeded':bool(plan.get('unverifiedSources')),
-   'contentReviewNeeded':bool(plan.get('categoryReviewNeeded')),
-   'createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
- output.with_suffix('.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
- return meta
+ metadata_file=output.with_suffix('.json')
+ output.unlink(missing_ok=True);metadata_file.unlink(missing_ok=True)
+ chapters=[];skipped=[];elapsed=0.0;clipids=[];reference=None
+ try:
+  with tempfile.TemporaryDirectory(prefix='gta6-daily-') as workspace:
+   tmp=Path(workspace);pieces=[]
+   for i,clip in enumerate(plan['clips']):
+    if elapsed>=TARGET_SECONDS:break
+    log.info('Compilation %s source %d/%d creator=%s',plan['id'],i+1,len(plan['clips']),str(clip.get('creator') or '')[:35])
+    src=Path(clip.get('mediaPath') or '').resolve() if clip.get('mediaPath') else None
+    ephemeral=not src or not src.is_file()
+    if ephemeral:src=tmp/('source-%03d.mp4'%i)
+    target_file=tmp/('part-%03d.mp4'%i)
+    try:
+     if ephemeral:
+      url=str(clip.get('url') or '')
+      if not is_twitch_clip(url):raise ValueError('unsupported_clip_url')
+      _run(['TwitchDownloaderCLI','clipdownload','--id',url,
+            '--output',str(src),'--collision','Overwrite'],150)
+     if src.suffix.lower()!='.mp4' or not src.is_file() or src.stat().st_size<1000:
+      raise ValueError('unreadable_mp4')
+     info=media_spec(src)
+     if reference is None:
+      # Use the first ordinary H.264/AAC Twitch format so most streams can
+      # be copied, without decoding gigabytes into memory.
+      if (info['video']=='h264' and info['audio']=='aac' and
+          640<=info['width']<=1920 and 360<=info['height']<=1080 and
+          info['pix_fmt']=='yuv420p'):
+       reference=info.copy()
+      else:
+       reference={'video':'h264','audio':'aac','width':1280,'height':720,
+            'fps':'30/1','pix_fmt':'yuv420p','sample_rate':'48000','channels':2}
+     mode='lossless_stream_copy' if copy_compatible(info,reference) else 'transcode'
+     if mode=='lossless_stream_copy':
+      _run(['ffmpeg','-nostdin','-v','error','-y','-i',str(src),
+            '-map','0:v:0','-map','0:a:0','-c','copy','-avoid_negative_ts','make_zero',
+            '-movflags','+faststart',str(target_file)],120)
+     else:
+      width,height=reference['width'],reference['height']
+      vf=f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps={fps_value(reference)},setsar=1,format=yuv420p'
+      inputs=['-i',str(src)]
+      if not info['audio']:
+       inputs+=['-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000']
+      command=['ffmpeg','-nostdin','-v','error','-y']+inputs+[
+         '-vf',vf,'-map','0:v:0','-map','0:a:0' if info['audio'] else '1:a:0',
+         '-c:v','libx264','-preset','ultrafast','-crf','22','-threads','1',
+         '-c:a','aac','-b:a','128k','-ar',str(reference.get('sample_rate') or '48000'),
+         '-ac',str(reference.get('channels') or 2),'-movflags','+faststart']
+      if not info['audio']:command.append('-shortest')
+      command.append(str(target_file))
+      _run(command,540)
+     actual=_duration(target_file)
+     if actual<=0 or elapsed+actual>MAX_SECONDS:
+      target_file.unlink(missing_ok=True);continue
+     chapters.append({'startSeconds':round(elapsed,2),'creator':str(clip.get('creator') or 'Streamer'),
+       'sourceUrl':str(clip.get('url') or ''),'clipId':str(clip['id']),
+       'rightsStatus':str(clip.get('rights') or 'unverified'),
+       'originalTitle':str(clip.get('title') or '')[:200]})
+     clipids.append(str(clip['id']))
+     elapsed+=actual
+     pieces.append(target_file)
+     log.info('Compilation %s encoded %d/%d via %s, total %.1fs',
+        plan['id'],i+1,len(plan['clips']),mode,elapsed)
+    except (RuntimeError,ValueError,subprocess.TimeoutExpired,OSError) as exc:
+     skipped.append({'clipId':str(clip.get('id') or ''),'error':str(exc)[:100]})
+     log.warning('Compilation %s skipped %s: %s',plan['id'],str(clip.get('id') or '')[:90],str(exc)[:140])
+     target_file.unlink(missing_ok=True)
+    finally:
+     if ephemeral:src.unlink(missing_ok=True)
+   if not MIN_SECONDS<=elapsed<=MAX_SECONDS or len(pieces)<MIN_CLIPS:
+    raise RuntimeError('insufficient_rendered_duration_%d_seconds'%int(elapsed))
+   concat=tmp/'concat.txt'
+   concat.write_text(''.join("file '"+str(x)+"'\n" for x in pieces),encoding='utf-8')
+   _run(['ffmpeg','-nostdin','-v','error','-y','-f','concat','-safe','0','-i',str(concat),
+        '-map','0:v:0','-map','0:a:0','-c','copy','-movflags','+faststart',str(output)],360)
+   finished_duration=_duration(output)
+   if finished_duration<MIN_SECONDS-2 or finished_duration>MAX_SECONDS+0.1:
+    raise RuntimeError('final_duration_out_of_bounds_%.1fs'%finished_duration)
+  meta={**{k:v for k,v in plan.items() if k not in ('clips','clipIds')},
+    'clipIds':clipids,'chapters':chapters,'skippedClips':skipped,
+    'durationSeconds':round(finished_duration,2),'outputFile':str(output),
+    'fileBytes':output.stat().st_size,'status':'rendered_private_draft',
+    'copyrightReviewNeeded':bool(plan.get('unverifiedSources')),
+    'contentReviewNeeded':bool(plan.get('categoryReviewNeeded')),
+    'createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
+  metadata_file.write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
+  return meta
+ except BaseException:
+  output.unlink(missing_ok=True);metadata_file.unlink(missing_ok=True)
+  raise
 def cleanup_after_confirmed_upload(meta,video_id,confirmation):
  """Delete local render only after YouTube has confirmed the exact video ID."""
  if not re.fullmatch(r'[A-Za-z0-9_-]{11}',str(video_id or '')):
