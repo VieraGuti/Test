@@ -212,4 +212,7 @@ if __name__ == '__main__':
         STATE['items'] = list(EVIDENCE)
     port = int(os.getenv('PORT', '10000'))
     print(f'Serving {APP_NAME} on 0.0.0.0:{port}', flush=True)
+    if os.getenv('AUTO_SCAN_ON_BOOT', '1') == '1' and not STATE['last_scan']:
+        print('Starting initial public archives scan', flush=True)
+        start_scan()
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()
