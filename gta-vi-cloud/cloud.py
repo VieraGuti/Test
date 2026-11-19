@@ -93,7 +93,7 @@ def transcribe_audio(source,output):
 def request_visual_review(payload):
  # A broken AI provider must not halt the worker. Moderation refusals are NOT
  # provider outages and must never be retried with a more lenient model.
- for provider,route in (('gemini','/api/ai-visual-story'),('openrouter','/api/ai-visual-story-fallback')):
+ for provider,route in (('groq','/api/ai-visual-story-groq'),('gemini','/api/ai-visual-story')):
   try:
    result=api('POST',route,json=payload)
    if result.get('ok'):
