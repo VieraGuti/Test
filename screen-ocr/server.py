@@ -46,6 +46,9 @@ STATE = {
     "online": False,
     "lastFrameAt": None,
     "lastOCRAt": None,
+    "lastOCRDuration": None,
+    "lastOCRRegion": None,
+    "lastOCRMode": None,
     "lastOCRExcerpt": "",
     "framesProcessed": 0,
     "partialCandidates": {},
@@ -121,40 +124,46 @@ def start_video(hls_url):
     return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 _idle_region_idx = 0
+_active_region_idx = 0
 
 def recognize(path, light=False):
-    global _idle_region_idx
+    """Run at most one Tesseract pass per captured image.
+
+    Render Free provides only 0.15 CPU. The previous 3-ROI burst
+    saturated this limit exactly during the giveaway and stalled.
+    """
+    global _idle_region_idx, _active_region_idx
     with Image.open(path) as src:
         src.load()
         image=ImageOps.autocontrast(ImageOps.grayscale(src.convert("RGB")))
-    target=720 if light else 960
+    target=680 if light else 900
     if image.width>target:
         image=image.resize((target,max(1,round(image.height*target/image.width))))
     width,height=image.size
-    readings=[]
-    # One small region per low-power timer scan; all regions in prize window.
-    indices=[_idle_region_idx] if light else [0,1,2]
-    for i in indices:
-        top=max(0,int(height*i/3)-7)
-        bottom=min(height,int(height*(i+1)/3)+7)
-        part=image.crop((0,top,width,bottom))
-        if ImageStat.Stat(part).mean[0]<104:
-            part=ImageOps.invert(part)
-        try:
-            reading=pytesseract.image_to_string(part,config="--psm 6",
-                                              timeout=10 if light else 10)
-            readings.append(reading)
-        except RuntimeError as e:
-            logging.warning("OCR region %s timeout: %s",i,str(e)[:100])
-    result="\n".join(readings)
     if light:
-        # Keep checking the region where we saw a plausible timer; otherwise
-        # cycle top / middle / bottom, covering the complete stream.
-        if not countdown_candidates(result):
-            _idle_region_idx=(_idle_region_idx+1)%3
-    if not readings:
-        raise RuntimeError("OCR timed out on selected region")
-    return result
+        # Idle: sample one of three screen bands every timer scan.
+        region=_idle_region_idx
+        top=max(0,int(height*region/3)-9)
+        bottom=min(height,int(height*(region+1)/3)+9)
+        _idle_region_idx=(_idle_region_idx+1)%3
+    else:
+        # Prize window: alternating overlapping upper/lower halves
+        # takes half as many passes and avoids missing overlay boundaries.
+        region=_active_region_idx
+        _active_region_idx=(_active_region_idx+1)%2
+        top=0 if region==0 else int(height*.38)
+        bottom=int(height*.62) if region==0 else height
+    part=image.crop((0,top,width,bottom))
+    if ImageStat.Stat(part).mean[0]<104:
+        part=ImageOps.invert(part)
+    started=time.monotonic()
+    text=pytesseract.image_to_string(part,config="--psm 6",timeout=9)
+    elapsed=round(time.monotonic()-started,2)
+    put(lastOCRDuration=elapsed,lastOCRRegion=region,
+        lastOCRMode="light" if light else "intensive")
+    if elapsed>5:
+        logging.warning("OCR SLOW mode=%s region=%s duration=%ss", "light" if light else "intensive",region,elapsed)
+    return text
 
 # Countdown gate shared by screenshot and speech service.
 # The background tracker only reads a low-frequency timer; heavier detection
