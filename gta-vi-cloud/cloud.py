@@ -4,6 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import urlparse
 import httpx
+from daily_runner import DailyManager,REGIONAL_SLOTS
 from PIL import Image,ImageDraw,ImageFont,ImageFilter,ImageEnhance
 
 API=os.environ.get('ENGINE_URL','https://gta-vi-viral-engine.vercel.app').rstrip('/')
@@ -30,6 +31,7 @@ def api(method,path,**kw):
   r=c.request(method,API+path,headers=headers,**kw)
   if r.status_code>=400:raise RuntimeError('backend_'+str(r.status_code)+': '+r.text[:180])
   return r.json()
+daily_manager=DailyManager(lambda: api('GET','/api/feed'),base_url='https://gta-vi-viral-cloud-tt.onrender.com')
 def cmd(args,limit=240):
  p=subprocess.run(args,capture_output=True,text=True,timeout=limit)
  if p.returncode:raise RuntimeError(str(args[0])+' failed: '+(p.stderr or p.stdout)[-240:])
@@ -413,10 +415,33 @@ class Server(BaseHTTPRequestHandler):
   self.send_response(code);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def authorized(self):return bool(TOKEN) and self.headers.get('Authorization')=='Bearer '+TOKEN
  def do_GET(self):
-  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status'],'monitoring':state.get('monitoring'),'autoProcessing':state.get('autoProcessing'),'lastPoll':state.get('lastPoll'),'pollAdded':state.get('pollAdded'),'pollError':state.get('pollError'),'uploadedToday':state.get('uploadedToday',0),'processPause':state.get('processPause')})
+  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status'],'monitoring':state.get('monitoring'),'autoProcessing':state.get('autoProcessing'),'lastPoll':state.get('lastPoll'),'pollAdded':state.get('pollAdded'),'pollError':state.get('pollError'),'uploadedToday':state.get('uploadedToday',0),'processPause':state.get('processPause'),'dailyStatus':daily_manager.status.get('status'),'dailyLanguage':daily_manager.status.get('language'),'dailyEnabled':daily_manager.enabled})
   if self.path=='/status' and self.authorized():return self.respond(200,state)
+  if self.path=='/daily/status' and self.authorized():return self.respond(200,daily_manager.status)
+  if self.path=='/daily/schedule':return self.respond(200,{'experimentalLocalEveningSlots':{k:{'timezone':v[0],'hour':v[1],'minute':v[2]} for k,v in REGIONAL_SLOTS.items()},'daily':daily_manager.status.get('status'),'note':'local evening test slots; not proven audience peaks by language'})
+  if self.path.startswith('/daily/video/'):
+   token=self.path[len('/daily/video/'):]
+   video=daily_manager.files.get(token)
+   if not video or not video.is_file():return self.respond(404,{'error':'draft_unavailable_or_expired'})
+   self.send_response(200);self.send_header('Content-Type','video/mp4');self.send_header('Content-Length',str(video.stat().st_size));self.send_header('Cache-Control','private,no-store');self.end_headers()
+   with video.open('rb') as f:
+    while True:
+     block=f.read(1024*256)
+     if not block:break
+     self.wfile.write(block)
+   return
   return self.respond(401,{'error':'unauthorized'})
  def do_POST(self):
+  if self.path=='/daily/run':
+   if not self.authorized():return self.respond(401,{'error':'unauthorized'})
+   n=int(self.headers.get('Content-Length','0') or 0)
+   if n>1024:return self.respond(413,{'error':'body_too_large'})
+   try:b=json.loads(self.rfile.read(n)) if n else {}
+   except (ValueError,TypeError):return self.respond(400,{'error':'invalid_json'})
+   lang=str(b.get('language') or 'es').lower()
+   if lang not in REGIONAL_SLOTS:return self.respond(400,{'error':'invalid_language'})
+   if not daily_manager.begin(lang):return self.respond(409,{'error':'busy'})
+   return self.respond(202,{'accepted':True,'language':lang})
   if self.path!='/run':return self.respond(404,{'error':'not_found'})
   if not self.authorized():return self.respond(401,{'error':'unauthorized'})
   if not ENABLED:return self.respond(409,{'error':'disabled'})
@@ -433,6 +458,9 @@ if __name__=='__main__':
  if ENABLED and AUTO_MONITOR:threading.Thread(target=monitor_loop,daemon=True,name='twitch-30s-monitor').start()
  if ENABLED and AUTO_PROCESS:threading.Thread(target=process_loop,daemon=True,name='shorts-auto-processing').start()
  if ENABLED and os.environ.get('AUTOSTART_ONCE')=='true':threading.Thread(target=run_one,daemon=True).start()
+ bootstrap=[x.strip().lower() for x in os.environ.get('AUTOSTART_COMPILATIONS_ONCE','').split(',') if x.strip()]
+ if bootstrap:threading.Thread(target=daily_manager.bootstrap,args=(bootstrap,),daemon=True,name='first-compilations').start()
+ if daily_manager.enabled:threading.Thread(target=daily_manager.scheduler,daemon=True,name='daily-compilations-scheduler').start()
  if ENABLED and os.environ.get('AUTOSTART_RELEASE_ONCE')=='true':threading.Thread(target=release_once,daemon=True).start()
  port=int(os.environ.get('PORT','10000'))
  log.info('Cloud worker listening port=%d enabled=%s',port,ENABLED)
