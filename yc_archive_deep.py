@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
+from email.utils import parsedate_to_datetime
 
 MAX_RESPONSE = 1_100_000
 TIMEOUT = 11
@@ -19,7 +20,7 @@ CC_INDEXES = [
 
 def request_text(url):
     host=urlparse(url).hostname
-    if host not in {"arquivo.pt","index.commoncrawl.org"}:
+    if host not in {"arquivo.pt","index.commoncrawl.org","archive.is"}:
         raise ValueError("Archive host not permitted")
     request=Request(url,headers={"User-Agent":"YoungClassArchive/2.1 (+public historical media research)","Accept":"application/json,text/plain"})
     try:
@@ -103,11 +104,36 @@ def commoncrawl_single(handle,index):
                       "note":"Registro WARC con bytes históricos potencialmente recuperables. No equivale a una fotografía hasta inspeccionar el contenido de la respuesta."})
     return found
 
+def archive_today(handle):
+    original=f"https://www.instagram.com/{handle}/"
+    raw=request_text("https://archive.is/timemap/"+original)
+    found=[]
+    # TimeMap replies use RFC 7089 Link syntax, not JSON.
+    for line in raw.splitlines()[:150]:
+        for piece in line.split(", <"):
+            if 'rel="memento"' not in piece:continue
+            match=re.search(r'<(https?://[^> ]+)>',piece)
+            if not match:continue
+            url=match.group(1)
+            if urlparse(url).hostname not in ("archive.md","archive.ph","archive.is","archive.today"):continue
+            date=""
+            dm=re.search(r'datetime="([^"]+)"',piece)
+            if dm:
+                try:date=parsedate_to_datetime(dm.group(1)).date().isoformat()
+                except Exception:pass
+            found.append({"key":"archivetoday:"+url,
+                          "type":"snapshot","kind":"archivo","platform":"Archive.today",
+                          "title":"Captura de Instagram @"+handle+" en Archive.today",
+                          "url":url,"date":date,
+                          "note":"Captura publicada por Archive.today. La página puede ser un inicio de sesión; verificar que contiene fotos o vídeos antes de hablar de recuperación."})
+    return found[:50]
+
 def scan_deep_sources(handles):
     outcomes={}
     with ThreadPoolExecutor(max_workers=8) as pool:
         tasks={}
         for handle in handles:
+            tasks[pool.submit(archive_today,handle)]="Archive.today · @"+handle
             tasks[pool.submit(arquivo_images,handle)]="Imágenes históricas · @"+handle
             tasks[pool.submit(arquivo_cdx,handle)]="CDX Arquivo.pt · @"+handle
             for ix in CC_INDEXES:
