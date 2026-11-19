@@ -1,0 +1,151 @@
+"""Daily, language-separated GTA VI compilations from cleared media.
+
+Run as an independent batch job after an authorized media manifest is available.
+This module only prepares MP4 drafts and metadata; it does NOT publish to YouTube.
+Persist state and MP4 files in durable storage when enabling a production scheduler.
+"""
+from __future__ import annotations
+import argparse, datetime as dt, json, math, os, re, subprocess, tempfile
+from collections import Counter, defaultdict
+from pathlib import Path
+
+MAX_CLIPS=12
+MIN_CLIPS=3
+TARGET_WIDTH=1280
+TARGET_HEIGHT=720
+RIGHTS_OK={'owned','authorized','licensed','cleared','approved'}
+LANGUAGES={'es':'es','en':'en','ru':'ru','pt':'pt','de':'de','fr':'fr','it':'it','uk':'uk','pl':'pl'}
+TITLE_TEMPLATES={
+ 'es':'Mejores clips de GTA VI de la semana | #{n}',
+ 'en':'Best GTA VI Clips of the Week | #{n}',
+ 'ru':'Лучшие моменты GTA VI за неделю | #{n}',
+ 'pt':'Melhores clipes de GTA VI da semana | #{n}',
+ 'de':'Die besten GTA VI Clips der Woche | #{n}',
+ 'fr':'Meilleurs clips GTA VI de la semaine | #{n}',
+ 'it':'I migliori clip di GTA VI della settimana | #{n}',
+ 'uk':'Найкращі моменти GTA VI за тиждень | #{n}',
+ 'pl':'Najlepsze klipy GTA VI tygodnia | #{n}',
+}
+def language(code):
+ raw=str(code or '').strip().lower().replace('_','-').split('-')[0]
+ return LANGUAGES.get(raw)
+def date_of(item):
+ raw=item.get('createdAt') or item.get('publishedAt') or item.get('uploadedAt')
+ try:
+  x=dt.datetime.fromisoformat(str(raw).replace('Z','+00:00'))
+  return x if x.tzinfo else x.replace(tzinfo=dt.timezone.utc)
+ except (ValueError,TypeError):return None
+def is_eligible(item,day):
+ when=date_of(item)
+ if not when:return False
+ end=dt.datetime.combine(day+dt.timedelta(days=1),dt.time.min,tzinfo=dt.timezone.utc)
+ if not (end-dt.timedelta(days=7) <= when < end):return False
+ if language(item.get('language')) is None:return False
+ if str(item.get('rights') or '').lower() not in RIGHTS_OK:return False
+ if item.get('gameVerified') is not True:return False
+ if item.get('ageReviewRequired') or item.get('adultPossible'):return False
+ if item.get('approvedForCompilation') is not True:return False
+ if not str(item.get('mediaPath') or ''):return False
+ if not str(item.get('id') or ''):return False
+ dur=float(item.get('duration') or 0)
+ return 7 <= dur <= 90
+def rank(item):
+ # Editorial quality leads. Popularity is only a tie-breaker.
+ return float(item.get('editorialScore') or item.get('score') or 0)*2 + min(15,math.log1p(max(0,float(item.get('views') or 0))))
+def select(items,lang,day,used_ids,max_clips=MAX_CLIPS):
+ candidates=[x for x in items if language(x.get('language'))==lang and is_eligible(x,day) and x['id'] not in used_ids]
+ candidates.sort(key=lambda x:(rank(x),date_of(x)),reverse=True)
+ result=[];creators=Counter();seen=set()
+ for c in candidates:
+  key=str(c['id']).lower()
+  if key in seen:continue
+  creator=str(c.get('creator') or 'Streamer').casefold()
+  if creators[creator]>=3:continue
+  # Prefer a varied edit rather than consecutive clips from one person.
+  result.append(c);creators[creator]+=1;seen.add(key)
+  if len(result)>=max_clips:break
+ return result
+def plan_by_language(items,state,day,langs=None):
+ """Return draft plans. Does not mutate state."""
+ if isinstance(day,str):day=dt.date.fromisoformat(day)
+ wanted=list(dict.fromkeys(language(x) for x in (langs or LANGUAGES) if language(x)))
+ plans=[]
+ for lang in wanted:
+  history=state.get('languages',{}).get(lang,{})
+  if str(day) in history.get('createdDays',{}):continue
+  selected=select(items,lang,day,set(history.get('usedClipIds',[])))
+  if len(selected)<MIN_CLIPS:continue
+  episode=int(history.get('lastEpisode',0))+1
+  plans.append({'id':f'{lang}-{day.isoformat()}','day':day.isoformat(),'language':lang,'episode':episode,
+    'title':TITLE_TEMPLATES[lang].format(n=episode),
+    'clips':selected,'clipIds':[str(x['id']) for x in selected],
+    'status':'awaiting_render_and_approval'})
+ return plans
+def _run(cmd,timeout=600):
+ p=subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
+ if p.returncode:raise RuntimeError('ffmpeg_error: '+(p.stderr or '')[-500:])
+def _duration(path):
+ p=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(path)],capture_output=True,text=True,timeout=20)
+ if p.returncode:raise RuntimeError('ffprobe_error')
+ return max(0,float(p.stdout.strip()))
+def render_plan(plan,folder):
+ """Assemble approved local MP4s into a 720p long-form video with original audio."""
+ outdir=Path(folder);outdir.mkdir(parents=True,exist_ok=True)
+ output=outdir/(plan['id']+'.mp4')
+ with tempfile.TemporaryDirectory(prefix='gta6-weekly-') as tmp:
+  tmp=Path(tmp);pieces=[];chapters=[];elapsed=0.0
+  for i,clip in enumerate(plan['clips']):
+   src=Path(clip['mediaPath']).resolve()
+   if not src.is_file() or src.suffix.lower()!='.mp4':raise ValueError('authorized_local_mp4_required: '+str(clip['id']))
+   target=tmp/('part-%02d.mp4'%i)
+   filtervideo=f'scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1,format=yuv420p'
+   _run(['ffmpeg','-nostdin','-v','error','-y','-i',str(src),'-vf',filtervideo,
+       '-map','0:v:0','-map','0:a:0','-c:v','libx264','-preset','veryfast','-crf','22',
+       '-c:a','aac','-b:a','160k','-ar','48000','-ac','2','-movflags','+faststart',str(target)],600)
+   chapters.append({'startSeconds':round(elapsed,2),'creator':str(clip.get('creator') or 'Streamer'),'sourceUrl':str(clip.get('url') or '')})
+   elapsed+=_duration(target)
+   pieces.append(target)
+  concat=tmp/'concat.txt'
+  concat.write_text(''.join("file '"+str(x)+"'\n" for x in pieces),encoding='utf-8')
+  _run(['ffmpeg','-nostdin','-v','error','-y','-f','concat','-safe','0','-i',str(concat),
+        '-c','copy','-movflags','+faststart',str(output)],600)
+ meta={**{k:v for k,v in plan.items() if k!='clips'},'chapters':chapters,
+   'durationSeconds':round(_duration(output),2),'outputFile':str(output),
+   'status':'rendered_private_draft','createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
+ output.with_suffix('.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
+ return meta
+def apply_result(state,meta):
+ """Persist only after a completed render. Call with durable state storage."""
+ state=json.loads(json.dumps(state))
+ lang=meta['language'];bucket=state.setdefault('languages',{}).setdefault(lang,{})
+ day=meta['day']
+ if day in bucket.setdefault('createdDays',{}):raise ValueError('daily_digest_already_exists')
+ if int(meta['episode'])!=int(bucket.get('lastEpisode',0))+1:raise ValueError('episode_sequence_conflict')
+ bucket['lastEpisode']=int(meta['episode'])
+ bucket['createdDays'][day]=meta['id']
+ bucket['usedClipIds']=list(dict.fromkeys(bucket.get('usedClipIds',[])+meta['clipIds']))[-1500:]
+ return state
+def main():
+ p=argparse.ArgumentParser(description='Create language-specific daily GTA VI best-of video drafts')
+ p.add_argument('--manifest',required=True,help='JSON manifest of cleared media records')
+ p.add_argument('--state',required=True,help='Durable state JSON (persist outside ephemeral Render disk)')
+ p.add_argument('--day',default=dt.datetime.now(dt.timezone.utc).date().isoformat())
+ p.add_argument('--out',required=True)
+ p.add_argument('--languages',default='es,en,ru,pt,de,fr,it,uk,pl')
+ p.add_argument('--plan-only',action='store_true')
+ args=p.parse_args()
+ data=json.loads(Path(args.manifest).read_text(encoding='utf-8'))
+ clips=data if isinstance(data,list) else data.get('candidates',data.get('clips',[]))
+ state=json.loads(Path(args.state).read_text(encoding='utf-8')) if Path(args.state).exists() else {}
+ plans=plan_by_language(clips,state,args.day,args.languages.split(','))
+ if args.plan_only:
+  print(json.dumps([{'id':x['id'],'title':x['title'],'language':x['language'],'clips':x['clipIds']} for x in plans],ensure_ascii=False,indent=2))
+  return
+ for plan in plans:
+  meta=render_plan(plan,args.out)
+  state=apply_result(state,meta)
+  tmp=Path(args.state).with_suffix('.tmp')
+  tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding='utf-8')
+  os.replace(tmp,args.state)
+  print(json.dumps({'id':meta['id'],'title':meta['title'],'file':meta['outputFile'],'status':meta['status']},ensure_ascii=False))
+if __name__=='__main__':main()
