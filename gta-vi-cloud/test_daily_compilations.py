@@ -36,7 +36,7 @@ class DigestTests(unittest.TestCase):
   self.assertLessEqual(abs(TARGET_SECONDS-duration),80)
  def test_keep_rights_flag_without_blocking_draft(self):
   cs=samples('en')
-  cs[0]['rights']='unverified'
+  cs[-1]['rights']='unverified'  # highest-viewed clip, guaranteed to be considered
   plans=plan_by_language(cs,{},DAY,['en'])
   self.assertEqual(len(plans),1)
   self.assertTrue(any(x['rights']=='unverified' for x in plans[0]['unverifiedSources']))
