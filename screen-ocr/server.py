@@ -354,8 +354,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         if self.path.startswith("/health"):return
         return super().log_message(format,*args)
+def status_logger():
+    while True:
+        time.sleep(30)
+        data=get_public()
+        logging.info("OCR STATUS state=%s online=%s frames=%s timerScans=%s countdown=%s active=%s lastFrame=%s err=%s",
+            data.get("state"),data.get("online"),data.get("framesProcessed"),
+            data.get("timerScans"),data.get("countdownSeconds"),data.get("windowActive"),
+            data.get("lastFrameAt"),data.get("lastError"))
+
 if __name__ == "__main__":
     threading.Thread(target=watcher,daemon=True).start()
+    threading.Thread(target=status_logger,daemon=True).start()
     server=ThreadingHTTPServer(("0.0.0.0",HTTP_PORT),Handler)
     logging.info("OCR API listening at :%s for %s",HTTP_PORT,STREAMER)
     server.serve_forever()
