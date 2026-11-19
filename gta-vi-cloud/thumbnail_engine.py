@@ -13,7 +13,7 @@ Requires FFmpeg, ffprobe and Pillow. All other dependencies are stdlib.
 """
 from __future__ import annotations
 import datetime as dt
-import json,logging,math,shutil,subprocess,sys,tempfile
+import json,logging,math,shutil,subprocess,sys,tempfile,urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -124,12 +124,33 @@ def pick_diverse(samples,count=2,duration=1):
 
 def _font(size):
     _,_,_,_,ImageFont,_,_=_pil()
-    for path in FONT_PATHS:
-        try:return ImageFont.truetype(path,int(size))
+    paths=list(FONT_PATHS)
+    # Vercel Sandbox minimal images have no system fonts. Download an official
+    # OFL-licensed Noto Sans font only once per machine. This supports ES/RU/UK
+    # and the other languages without a large system dependency.
+    cached=Path(tempfile.gettempdir())/"gtavi-noto-sans-v2.ttf"
+    if cached.is_file() and cached.stat().st_size>10000:
+        paths.insert(0,str(cached))
+    for path in paths:
+        try:
+            font=ImageFont.truetype(path,int(size))
+            if str(path)==str(cached):
+                try:font.set_variation_by_axes([100,900])
+                except (OSError,ValueError,AttributeError):pass
+            return font
         except OSError:pass
-    # Pillow's bundled default does not guarantee Cyrillic glyph support, so
-    # reject if no Unicode TrueType font is available rather than render tofu.
-    raise RuntimeError("unicode_bold_font_unavailable")
+    url=("https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/"
+         "NotoSans%5Bwdth%2Cwght%5D.ttf")
+    req=urllib.request.Request(url,headers={"User-Agent":"GTA-VI-Thumbnails/1.0"})
+    with urllib.request.urlopen(req,timeout=25) as response:
+        font_data=response.read(4*1024*1024+1)
+    if not (10000<len(font_data)<4*1024*1024) or font_data[:4] not in (b"\x00\x01\x00\x00",b"OTTO"):
+        raise RuntimeError("noto_font_download_invalid")
+    cached.write_bytes(font_data)
+    font=ImageFont.truetype(str(cached),int(size))
+    try:font.set_variation_by_axes([100,900])
+    except (OSError,ValueError,AttributeError):pass
+    return font
 
 
 def _fit_text(draw,text,width,initial,minsize=28):
