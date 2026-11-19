@@ -227,6 +227,69 @@ def upload(file_path,meta,checkpoint):
     if completed:return completed,publish
     raise RuntimeError('upload_finished_without_youtube_confirmation')
 
+
+def upload_or_repair_thumbnail(movie,meta,video_id):
+    """Post a real-frame thumbnail after the YouTube video is confirmed.
+
+    Independent of the upload receipt: a thumbnail error cannot re-upload
+    the video, and a later invocation retries just the image. One 50-unit
+    thumbnail API call per successfully handled episode.
+    """
+    status_file=movie.with_suffix(".thumbnail-upload.json")
+    if status_file.exists():
+        try:
+            prior=read_json(status_file)
+            if prior.get("videoId")==video_id and prior.get("status")=="uploaded":
+                log("THUMBNAIL_ALREADY_UPLOADED",videoId=video_id)
+                return prior
+        except (OSError,ValueError):pass
+    try:
+        from thumbnail_engine import generate_thumbnails
+        thumb=generate_thumbnails(movie,meta)
+        file=Path(thumb["thumbnailFile"]).resolve()
+        if file.suffix.lower() not in (".jpg",".jpeg") or not file.is_file():
+            raise RuntimeError("thumbnail_file_invalid")
+        size=file.stat().st_size
+        if size<10000 or size>2*1024*1024:
+            raise RuntimeError("thumbnail_not_within_safe_size_budget")
+        token_data=call_bridge("token")
+        if token_data.get("channelId")!=CHANNEL:
+            raise RuntimeError("thumbnail_oauth_channel_mismatch")
+        url=("https://www.googleapis.com/upload/youtube/v3/thumbnails/set?"
+             +urllib.parse.urlencode({"videoId":video_id,"uploadType":"media"}))
+        headers={"Authorization":"Bearer "+token_data["accessToken"],
+                 "Content-Type":"image/jpeg","Content-Length":str(size)}
+        for attempt in range(3):
+            try:
+                with youtube_request(url,"POST",headers,file.read_bytes(),timeout=100) as response:
+                    result=json.loads(response.read())
+                if not result.get("items"):
+                    raise RuntimeError("thumbnail_api_no_confirmation")
+                record={"status":"uploaded","videoId":video_id,
+                        "thumbnailFile":str(file),"bytes":size,
+                        "api":"youtube_thumbnails_set",
+                        "uploadedAt":dt.datetime.now(dt.timezone.utc).isoformat(),
+                        "sourceSeconds":thumb.get("selectedSourceSeconds")}
+                save_json(status_file,record)
+                log("THUMBNAIL_UPLOADED",videoId=video_id,bytes=size)
+                return record
+            except urllib.error.HTTPError as error:
+                status=int(error.code)
+                if status in (429,500,502,503,504) and attempt<2:
+                    time.sleep(4*(attempt+1))
+                    continue
+                raise RuntimeError("youtube_thumbnail_http_"+str(status)) from None
+    except Exception as exc:
+        # Important: YouTube MP4 already exists. Do NOT mark it failed or
+        # retry the whole MP4 just because thumbnail generation/upload failed.
+        report={"status":"needs_retry","videoId":video_id,
+                "error":str(exc)[:160],
+                "checkedAt":dt.datetime.now(dt.timezone.utc).isoformat()}
+        save_json(status_file,report)
+        log("THUMBNAIL_NEEDS_RETRY",videoId=video_id,error=report["error"])
+        return report
+
+
 def main():
     if len(sys.argv)!=2:raise SystemExit('Usage: upload_compilation_from_drive.py /path/to/video.mp4')
     movie=Path(sys.argv[1]).resolve()
@@ -241,11 +304,13 @@ def main():
         prior=read_json(receipt_path)
         if re.fullmatch(r'[A-Za-z0-9_-]{11}',str(prior.get('videoId') or '')):
             log('ALREADY_UPLOADED',videoId=prior['videoId'])
+            upload_or_repair_thumbnail(movie,meta,prior['videoId'])
             return
     remote=call_bridge('check',compilationId=meta['id'])
     if remote.get('receipt'):
         log('ALREADY_CONFIRMED_REMOTE',videoId=remote['receipt']['videoId'])
         save_json(receipt_path,remote['receipt'])
+        upload_or_repair_thumbnail(movie,meta,remote['receipt']['videoId'])
         return
     log('START',compilationId=meta['id'],bytes=movie.stat().st_size,chapters=len(meta['chapters']))
     video_id,publish=upload(movie,meta,movie.with_suffix('.upload-state.json'))
@@ -255,6 +320,7 @@ def main():
     movie.with_suffix('.upload-state.json').unlink(missing_ok=True)
     log('YOUTUBE_UPLOAD_CONFIRMED',videoId=video_id,
         watchUrl=receipt['youtubeUrl'],privacy=receipt['privacyStatus'],scheduled=publish)
+    upload_or_repair_thumbnail(movie,meta,video_id)
 
 if __name__=='__main__':
     main()
