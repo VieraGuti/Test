@@ -5,7 +5,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl unz
 RUN pip install --no-cache-dir httpx==0.28.1 pillow==11.3.0 'yt-dlp>=2026.1'
 RUN curl -fLsS --retry 3 https://github.com/lay295/TwitchDownloader/releases/download/1.56.5/TwitchDownloaderCLI-1.56.5-Linux-x64.zip -o /tmp/td.zip && mkdir /tmp/td && unzip -q /tmp/td.zip -d /tmp/td && find /tmp/td -type f -name TwitchDownloaderCLI -exec cp {} /usr/local/bin/TwitchDownloaderCLI \; && chmod +x /usr/local/bin/TwitchDownloaderCLI && rm -rf /tmp/td /tmp/td.zip
 COPY cloud.py ./cloud.py
-RUN python -m py_compile /srv/cloud.py
+COPY daily_compilations.py ./daily_compilations.py
+COPY test_daily_compilations.py ./test_daily_compilations.py
+RUN python -m py_compile /srv/cloud.py /srv/daily_compilations.py
+RUN python /srv/test_daily_compilations.py
 RUN useradd --create-home --uid 10001 worker
 USER worker
 CMD ["python","cloud.py"]
