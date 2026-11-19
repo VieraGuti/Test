@@ -180,7 +180,12 @@ class Vault:
                 if normalized.startswith("/") or ".." in normalized.split("/"): rejected+=1;continue
                 name=safe_name(normalized)
                 ext=Path(name).suffix.lower()
-                if ext not in EXTENSIONS:continue
+                # Never turn a private Instagram export or direct-message attachment public by accident.
+                lower_path=normalized.lower()
+                private_parts=('messages/','inbox/','direct/','private/','contacts/','message_requests/','chat/')
+                if ext not in EXTENSIONS or ext in ('.txt','.pdf') or any(part in lower_path for part in private_parts):
+                    rejected+=1
+                    continue
                 if entry.file_size<=0 or entry.file_size>LIMIT:rejected+=1;continue
                 unpacked+=entry.file_size
                 if unpacked>MAX_UNPACKED:raise ValueError("ZIP supera tamaño descomprimido permitido")
