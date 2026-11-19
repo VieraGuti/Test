@@ -7,6 +7,7 @@ import httpx
 from daily_runner import DailyManager,REGIONAL_SLOTS
 from PIL import Image,ImageDraw,ImageFont,ImageFilter,ImageEnhance
 from video_branding import short_positions, short_caption_tags, video_dimensions
+from shorts_title_policy import title_from_clip_source, hold_for_adult_title
 
 API=os.environ.get('ENGINE_URL','https://gta-vi-viral-engine.vercel.app').rstrip('/')
 ADMIN=os.environ.get('VIRAL_ADMIN_KEY','')
@@ -250,6 +251,18 @@ def upload(job,video):
    time.sleep(min(10,2+retry*2))
  api('POST','/api/worker-queue',json={'jobId':job['jobId'],'status':'uploaded_private'})
  return result.get('watchUrl')
+def report_job_failure(job_id,error):
+ # Retry transient 404/edge failures so bad clips do not remain claimable.
+ for attempt in range(4):
+  try:
+   api('POST','/api/worker-queue',json={'jobId':job_id,'status':'failed','error':str(error)[:140]})
+   return True
+  except Exception as exc:
+   log.warning('Failure report retry %d/4 for job %s: %s',attempt+1,str(job_id)[:16],str(exc)[:100])
+   if attempt<3:time.sleep((2,4,7)[attempt])
+ log.error('Queue failed to acknowledge unsuccessful job %s; manual recovery required',str(job_id)[:30])
+ return False
+
 def run_one(kind_override=None):
  with lock:
   if state['status']=='working' or daily_manager.job_lock.locked():return
@@ -268,6 +281,8 @@ def run_one(kind_override=None):
   item=api('GET','/api/worker-queue?claim=1'+('&kind='+kind if kind else ''));job=item.get('job')
   if not job:state.update(status='queue_empty');return
   log.info('Claimed job %s (%s)',job['jobId'],job.get('kind'))
+  if hold_for_adult_title(job):
+   raise RuntimeError('source_title_indicates_adult_content: hold for review')
   # Generate titles after analyzing the actual footage and speech.
   with tempfile.TemporaryDirectory(prefix='gtavi-') as tmp:
    base=Path(tmp);segments=[]
@@ -309,7 +324,12 @@ def run_one(kind_override=None):
      quote=truthful_hook(transcript,'')
      job['title']=(str(job.get('creator') or 'Streamer')[:24]+': «'+quote[:58]+'»')[:95]
     else:
-     raise RuntimeError('title_context_unverified: no transcript or visual story')
+     backup=title_from_clip_source(job)
+     if not backup:
+      raise RuntimeError('title_context_unverified: transcript/visual/source title not descriptive')
+     job['title']=backup
+     job['titleProvenance']='source_twitch_clip_metadata'
+     log.info('AI context missing; using descriptive source-provided Twitch clip title')
     if re.search(r'(?i)(momento\s+[ée]pico|esto\s+es\s+viral|you\s+won.t\s+believe)',job['title']):
      raise RuntimeError('title_is_generic: hold for review')
     log.info('Verified title from transcript/visual analysis: %s',job['title'])
@@ -327,8 +347,7 @@ def run_one(kind_override=None):
   state.update(status='failed',error=str(e)[:250])
   log.exception('Processing failed')
   if job:
-   try:api('POST','/api/worker-queue',json={'jobId':job['jobId'],'status':'failed','error':str(e)[:140]})
-   except Exception:pass
+   report_job_failure(job['jobId'],e)
 def release_once():
  try:
   state.update(status='reviewing_private_short')
