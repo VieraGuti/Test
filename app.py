@@ -430,6 +430,7 @@ PAGE = r'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name
 <div class="import-row"><input type="password" id="vault-admin" placeholder="Clave de administrador" autocomplete="off" aria-label="Clave de administrador"><input type="file" id="vault-upload" accept=".zip,.jpg,.jpeg,.png,.webp,.gif,.mp4,.mov,.m4v,.webm,.mp3,.wav,.m4a,.ogg,.flac,.pdf,.txt" multiple><button class="btn" id="vault-upload-btn" type="button" onclick="vaultUpload()">Importar archivos</button></div>
 <div id="vault-upload-status" class="small" style="margin:12px 0">La clave solo se envía al servidor para autorizar la importación; no se guarda en el navegador.</div>
 </details>
+<div class="card" style="margin-top:16px;border-color:#434e2b"><h3 style="margin:0 0 6px">Búsqueda alternativa desde este dispositivo</h3><p style="margin:0 0 12px">Si Render pierde conexión a los archivos, intenta consultar los índices públicos directamente desde tu navegador. No hace falta una cuenta de Instagram. Los resultados son candidatos hasta revisar el contenido.</p><button class="btn" id="browser-scan-btn" type="button" onclick="scanBrowser()">Buscar fotos y páginas históricas aquí</button><div class="small" id="browser-scan-info" style="margin-top:12px">Modo navegador: sin iniciar</div><div id="browser-hits" class="grid"></div></div>
 <div class="sectionhead"><h2>Estado de la investigación</h2><span class="small" id="updated">Todavía sin escaneo</span></div><div id="sources"></div>
 <div class="sectionhead"><h2>Hallazgos y pistas</h2><div class="toolbar"><select id="filter" onchange="render()"><option value="all">Todo el material</option><option value="snapshot">Capturas archivadas</option><option value="media_online">Vídeos y audios localizados</option><option value="historical_reference">Pistas históricas</option><option value="media_candidate">Otros archivos candidatos</option><option value="reference">Referencias oficiales</option></select><a class="ghost" href="/export.json" download>Exportar JSON</a><a class="ghost" href="/export.csv" download>Exportar CSV</a></div></div><div id="items" class="grid"></div>
 <div class="sectionhead"><h2>Otras vías de búsqueda</h2></div><div class="grid"><div class="card"><h3>Historias archivadas por terceros</h3><p>Comprobación manual en Instarchiver, respetando sus condiciones. Solo sirve si capturaron el perfil cuando las historias estaban disponibles.</p><a href="https://instarchiver.net/users" target="_blank" rel="noopener noreferrer">Abrir Instarchiver ↗</a></div><div class="card"><h3>Cuenta original del artista</h3><p>Si Young Class recupera su acceso, puede exportar el archivo privado de historias desde Instagram. Esa es la fuente más completa.</p><a href="https://www.instagram.com/youngclasstlc/" target="_blank" rel="noopener noreferrer">Comprobar perfil ↗</a></div><div class="card"><h3>Búsqueda de menciones y copias</h3><p>Localizar material republicado por seguidores, colaboradores y canales antiguos. Verificar siempre la procedencia y los derechos.</p><a href="https://www.google.com/search?q=%22youngclasstlc%22" target="_blank" rel="noopener noreferrer">Buscar menciones ↗</a></div><div class="card"><h3>Archivo histórico manual</h3><p>Buscar versiones del perfil por fecha y abrir las capturas originales. Algunos recuerdos solo mostrarán una pantalla de inicio de sesión.</p><a href="https://web.archive.org/web/*/https://www.instagram.com/youngclasstlc/" target="_blank" rel="noopener noreferrer">Abrir calendario Wayback ↗</a></div></div>
@@ -493,6 +494,71 @@ async function vaultUpload(){
   status.textContent='Importación terminada: '+imported+' archivos nuevos, '+failed+' subidas fallidas. '+(!vaultData.persistent?'Recuerda: el almacenamiento actual no es persistente.':'');
   input.value='';await loadVault()
  }finally{button.disabled=false}
+}
+
+const HISTORIC_IG=['youngclasssss','youngclasstlc','youngclass_'];
+function trustedArchiveLink(s){
+ try{const u=new URL(s);return u.protocol==='https:'&&u.hostname==='arquivo.pt'?u.href:null}catch(_){return null}
+}
+async function archiveBrowserFetch(url){
+ const abort=new AbortController(),t=setTimeout(()=>abort.abort(),12000);
+ try{
+  const res=await fetch(url,{mode:'cors',signal:abort.signal,cache:'no-store'});
+  if(!res.ok)throw Error('HTTP '+res.status);
+  return await res.json()
+ }finally{clearTimeout(t)}
+}
+async function downloadBrowserArchived(url,name){
+ const safe=trustedArchiveLink(url);
+ if(!safe)return;
+ try{
+  const res=await fetch(safe,{mode:'cors'});
+  if(!res.ok)throw Error('HTTP '+res.status);
+  const b=await res.blob();
+  if(b.size>50*1024*1024)throw Error('Archivo mayor de 50 MB');
+  if(!b.type.startsWith('image/'))throw Error('El archivo no parece una imagen');
+  const temp=URL.createObjectURL(b),a=document.createElement('a');a.href=temp;a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(temp),12000);
+ }catch(e){alert('No se ha podido descargar la imagen desde el navegador: '+e.message+'. El archivo podría estar bloqueado por la fuente.')}
+}
+async function scanBrowser(){
+ const btn=document.getElementById('browser-scan-btn');
+ const info=document.getElementById('browser-scan-info');
+ const display=document.getElementById('browser-hits');
+ btn.disabled=true;btn.textContent='Buscando en los archivos…';info.textContent='Consultando 3 perfiles en los índices de imágenes y páginas antiguas.';
+ let hits=[],fails=0,completed=0;
+ try{
+  const requests=[];
+  for(const h of HISTORIC_IG){
+   requests.push(archiveBrowserFetch('https://arquivo.pt/imagesearch?'+new URLSearchParams({q:h,maxItems:'30',from:'2016',to:'2025'}))
+    .then(data=>{
+      for(const a of (data.responseItems||[]).slice(0,30)){
+       const media=trustedArchiveLink(a.imgLinkToArchive);
+       const ctx=JSON.stringify([a.pageURL,a.pageTitle,a.imgSrc,a.imgAlt,a.imgTitle,a.imgCaption]).toLowerCase();
+       if(!media||!ctx.includes(h))continue;
+       hits.push({kind:'foto',handle:h,url:media,date:String(a.imgTstamp||a.pageTstamp||'').slice(0,8),title:'Imagen histórica candidata de @'+h,source:a.pageURL||'',description:String(a.pageTitle||'')})
+      }
+    }).catch(()=>fails++).finally(()=>{completed++;info.textContent=completed+'/6 consultas completadas'}));
+   requests.push(archiveBrowserFetch('https://arquivo.pt/textsearch?'+new URLSearchParams({q:'"'+h+'"',maxItems:'25',from:'2016',to:'2025'}))
+    .then(data=>{
+      for(const a of (data.response_items||[]).slice(0,25)){
+       const link=trustedArchiveLink(a.linkToArchive||a.linkToNoFrame);
+       if(!link)continue;
+       hits.push({kind:'pagina',handle:h,url:link,date:String(a.tstamp||'').slice(0,8),title:String(a.title||'Captura vinculada a @'+h),source:String(a.originalURL||''),description:'Página archivada, comprobar si contiene media real'})
+      }
+    }).catch(()=>fails++).finally(()=>{completed++;info.textContent=completed+'/6 consultas completadas'}));
+  }
+  await Promise.allSettled(requests);
+  const unique=[...new Map(hits.map(h=>[h.url,h])).values()];
+  const images=unique.filter(x=>x.kind==='foto').length;
+  info.textContent='Búsqueda terminada: '+unique.length+' referencias, '+images+' posibles imágenes. '+(fails?'Fallaron '+fails+' de 6 consultas por red o permisos del archivo.':'Las seis consultas respondieron.')+' Ninguna imagen se considera recuperada hasta abrirla y verificarla.';
+  display.innerHTML=unique.length?unique.slice(0,70).map((x,i)=>{
+   const preview=x.kind==='foto'?'<img class="library-media" loading="lazy" src="'+esc(x.url)+'" alt="'+esc(x.title)+'">':'';
+   const safeName='YoungClass_'+x.handle+'_'+(x.date||'archivo')+'.jpg';
+   return '<article class="card">'+preview+'<span class="pill candidate">'+(x.kind==='foto'?'Imagen candidata':'Página archivada')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description)+'</p><div class="meta">'+esc(x.date)+' · '+esc(x.source)+'</div>'+(x.kind==='foto'?'<button class="btn" type="button" style="margin-top:10px" onclick="downloadBrowserArchived('+JSON.stringify(x.url).replace(/"/g,'&quot;')+','+JSON.stringify(safeName).replace(/"/g,'&quot;')+')">Intentar descargar imagen</button>':'')+'</article>'
+  }).join(''):'<div class="empty">Este navegador no encontró imágenes ni capturas en las consultas que pudieron completarse. Eso no demuestra que no existan copias en otros archivos.</div>';
+ }catch(e){info.textContent='Error del navegador: '+e.message}
+ finally{btn.disabled=false;btn.textContent='Repetir búsqueda desde aquí'}
 }
 loadVault();
 
