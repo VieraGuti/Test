@@ -112,7 +112,7 @@ class YoutubeLongUploader:
       if response is not None and response.status_code==308:
        rr=response.headers.get('Range','')
        m=re.search(r'bytes=0-(\d+)',rr)
-       offset=(int(m.group(1))+1) if m else end+1
+       offset=(int(m.group(1))+1) if m else 0
        break
       if response is not None and 400<=response.status_code<500:
        raise RuntimeError('youtube_chunk_rejected_http_'+str(response.status_code))
