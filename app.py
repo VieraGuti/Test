@@ -19,15 +19,223 @@ from urllib.request import Request, urlopen
 
 APP_NAME = 'YOUNG CLASS // ARCHIVE'
 HANDLES = [h.strip().lower().lstrip('@') for h in os.getenv('TARGET_HANDLES', 'youngclasstlc').split(',') if re.fullmatch(r'[a-zA-Z0-9_.@]{2,30}', h.strip())]
-HANDLES = list(dict.fromkeys(HANDLES)) or ['youngclasstlc']
+HANDLES = list(dict.fromkeys(HANDLES + ['youngclass_'])) or ['youngclasstlc']  # second handle is an unconfirmed historical lead
 DATA_FILE = Path(os.getenv('ARCHIVE_DATA_PATH', '/tmp/young-class-archive.json'))
 LOCK = threading.Lock()
 STATE = {'running': False, 'last_scan': None, 'sources': {}, 'items': [], 'error': None}
 
 # Separately verified contemporary references are NOT recovered deleted media.
 EVIDENCE = [
-    {'key': 'youtube:2KQbKeLGgoQ', 'type': 'reference', 'platform': 'YouTube', 'title': 'RECORRIDO — YOUNG CLASS (videoclip oficial)', 'url': 'https://www.youtube.com/watch?v=2KQbKeLGgoQ', 'date': '2024-01-04', 'note': 'Descripción pública enlaza al Instagram /youngclasstlc. Es evidencia del alias, no una historia recuperada.'},
-    {'key': 'youtube:BlVNGp_g93Q', 'type': 'reference', 'platform': 'YouTube', 'title': 'YOUNG CLASS — MI MILLÓN', 'url': 'https://www.youtube.com/watch?v=BlVNGp_g93Q', 'date': '2024-11-20', 'note': 'Descripción pública menciona /youngclasstlc. Referencia histórica, no copia de una historia.'},
+  {
+    "key": "youtube:2KQbKeLGgoQ",
+    "type": "media_online",
+    "kind": "video",
+    "platform": "YouTube",
+    "title": "RECORRIDO — Young Class (videoclip oficial)",
+    "url": "https://www.youtube.com/watch?v=2KQbKeLGgoQ",
+    "date": "2024-01-04",
+    "note": "Videoclip público localizado. Su descripción vincula @youngclasstlc. No es contenido borrado recuperado."
+  },
+  {
+    "key": "youtube:BlVNGp_g93Q",
+    "type": "media_online",
+    "kind": "video",
+    "platform": "YouTube",
+    "title": "MI MILLÓN — Young Class",
+    "url": "https://www.youtube.com/watch?v=BlVNGp_g93Q",
+    "date": "2024-11-20",
+    "note": "Videoclip público conservado. Fuente para contrastar identidades y colaboradores."
+  },
+  {
+    "key": "youtube:p82AhyPZd7Y",
+    "type": "media_online",
+    "kind": "audio",
+    "platform": "YouTube",
+    "title": "BADLOBA — Young Class (audio original)",
+    "url": "https://www.youtube.com/watch?v=p82AhyPZd7Y",
+    "date": "2017-01-14",
+    "note": "Audio publicado en 2017. En su descripción figura @YoungClasstlc, Facebook /youngclassss y créditos de Rev Visual Records."
+  },
+  {
+    "key": "youtube:XBeox3rLAlM",
+    "type": "media_online",
+    "kind": "video",
+    "platform": "YouTube",
+    "title": "KELOWÁ — Young Class (vídeo oficial de 2017)",
+    "url": "https://www.youtube.com/watch?v=XBeox3rLAlM",
+    "date": "2017-02-28",
+    "note": "Videoclip de 2017 con créditos y antiguo contacto en su descripción. Sigue referenciado públicamente."
+  },
+  {
+    "key": "youtube:sCwIBr7vPCc",
+    "type": "media_online",
+    "kind": "video",
+    "platform": "YouTube",
+    "title": "BUSCANDO EL SOBRE (REMIX) — MBS Rolling, Denyerkin, Young Class y El Jincho",
+    "url": "https://www.youtube.com/watch?v=sCwIBr7vPCc",
+    "date": "2017-11-01",
+    "note": "Videoclip de colaboración de 2017; su descripción incluye @YOUNGCLASSSSS, otra pista de usuario histórico, sin confirmar que fuera cuenta de Instagram."
+  },
+  {
+    "key": "youtube:jL5rQkdLT5M",
+    "type": "media_online",
+    "kind": "video",
+    "platform": "YouTube",
+    "title": "PA' TRAS — Young Class (2018)",
+    "url": "https://www.youtube.com/watch?v=jL5rQkdLT5M",
+    "date": "2018-01-19",
+    "note": "Videoclip oficial de 2018; su descripción enlaza Instagram @YoungClasstlc y Facebook /youngclassss."
+  },
+  {
+    "key": "soundcloud:blessed-2017",
+    "type": "media_online",
+    "kind": "audio",
+    "platform": "SoundCloud",
+    "title": "BLESSED — M El Cobi ft. Young Class (copia de 2017)",
+    "url": "https://m.soundcloud.com/alvarotaboada/m-elcobi-blessed-ft-young-class",
+    "date": "2017-04-13",
+    "note": "Audio publicado por tercero y conservado en SoundCloud. Comprobar permisos y procedencia antes de reutilizar."
+  },
+  {
+    "key": "soundcloud:suerte-2017",
+    "type": "media_online",
+    "kind": "audio",
+    "platform": "SoundCloud",
+    "title": "SUERTE — Joyce Santana (mezcla y master: Young Class)",
+    "url": "https://m.soundcloud.com/joycesantana/suerte",
+    "date": "2017-12-13",
+    "note": "Audio con crédito de mezcla y master atribuido a Young Class; colaboración técnica, no tema propio."
+  },
+  {
+    "key": "spotify:dando-2017",
+    "type": "media_online",
+    "kind": "audio",
+    "platform": "Spotify",
+    "title": "DANDO LA NOTA — Young Class con WE$T DUBAI",
+    "url": "https://open.spotify.com/intl-es/track/57cUcXHGkLj5OPVxm5mpLC",
+    "date": "2017-11-24",
+    "note": "Grabación de colaboración distribuida en plataformas; figura como lanzamiento original de 2017."
+  },
+  {
+    "key": "spotify:buscando-2017",
+    "type": "media_online",
+    "kind": "audio",
+    "platform": "Spotify",
+    "title": "BUSCANDO EL SOBRE (REMIX) — grabación de 2017",
+    "url": "https://open.spotify.com/track/7dD1OoGvpbuHDh5vx4ecYK",
+    "date": "2017-11-01",
+    "note": "Edición de audio disponible con créditos a Young Class junto a MBS Rolling, El Jincho y Denyerkin."
+  },
+  {
+    "key": "audiomack:allmoney",
+    "type": "media_online",
+    "kind": "audio",
+    "platform": "Audiomack",
+    "title": "ALL MONEY — Young Class (copia de plataforma)",
+    "url": "https://audiomack.com/young-class/song/all-money-5413341",
+    "date": "2020-07-18",
+    "note": "Grabación que continúa listada en Audiomack, dentro de Grandes Clásicos."
+  },
+  {
+    "key": "apple:kelowa",
+    "type": "media_online",
+    "kind": "audio",
+    "platform": "Apple Music",
+    "title": "KELOWÁ — otra edición de la grabación",
+    "url": "https://music.apple.com/es/song/1781250678",
+    "date": "2020-07-18",
+    "note": "Edición distribuida de audio con material histórico reeditado; sirve como copia de contraste."
+  },
+  {
+    "key": "historical:versaalante",
+    "type": "historical_reference",
+    "kind": "audio",
+    "platform": "ElGeneroPlus",
+    "title": "ALANTE — Versa La V (prod. Young Class y Misael Relative)",
+    "url": "https://elgeneroplus.com/archivos/alante/",
+    "date": "2018-10-27",
+    "note": "Artículo antiguo enlaza videoclip y MP3; también menciona @youngclass_. Investigar estos enlaces originales y una eventual copia."
+  },
+  {
+    "key": "historical:trap2018",
+    "type": "historical_reference",
+    "kind": "articulo",
+    "platform": "Trap This",
+    "title": "Prensa de 2018: Young Class y la etapa NIKE MAFIA",
+    "url": "https://darkblog777.wordpress.com/2018/01/31/el-trap-en-espana-mejores-artistas-y-canciones/",
+    "date": "2018-01-31",
+    "note": "Artículo publicado en enero de 2018 que menciona etapa de 2016, WE$T DUBAI, Badloba, Kelowá y XNXX."
+  },
+  {
+    "key": "historical:carnaval2018",
+    "type": "historical_reference",
+    "kind": "foto",
+    "platform": "Mi Pueblo Fuerteventura",
+    "title": "Carnaval de Corralejo de 2018 — cartel/agenda de Young Class",
+    "url": "https://mipueblofuerteventura.eu/index.php/noticias-fuerteventura/la-oliva/itemlist/tag/Carnaval%2Bde%2BCarnavales?start=3",
+    "date": "2018-03-10",
+    "note": "La agenda menciona actuación de Young Class junto a Manuel Turizo. Posible vía hacia carteles y fotografías de actuaciones."
+  },
+  {
+    "key": "historical:album2020",
+    "type": "historical_reference",
+    "kind": "audio",
+    "platform": "Amazon Music",
+    "title": "GRANDES CLÁSICOS — catálogo de 17 temas antiguos",
+    "url": "https://music.amazon.com/tracks/B0DNTJSGB5",
+    "date": "2020-07-18",
+    "note": "Catálogo que documenta 17 títulos, entre ellos Camuflaje, One Dream, Blessed, Tokio Drift, All Money, Kelowá, Xnxx y Young Grey. No son 17 descargas recuperadas."
+  },
+  {
+    "key": "historical:beatport",
+    "type": "historical_reference",
+    "kind": "audio",
+    "platform": "Beatport",
+    "title": "Discografía y metadatos comerciales antiguos de Young Class",
+    "url": "https://www.beatport.com/artist/young-class/665311/tracks",
+    "date": "2020-07-18",
+    "note": "Listado histórico de pistas y colaboradores; útil para detectar canciones no disponibles en otros catálogos."
+  },
+  {
+    "key": "historical:spotify",
+    "type": "historical_reference",
+    "kind": "cuenta",
+    "platform": "Spotify",
+    "title": "Perfil y biografía — NIKE MAFIA / WE$T DUBAI",
+    "url": "https://open.spotify.com/intl-fr/artist/0K99SbJ1zxuXvxUyhV2NPj",
+    "date": "",
+    "note": "Biografía del artista y discografía; documenta su etapa de grupo y lanzamientos antiguos."
+  },
+  {
+    "key": "historical:channel",
+    "type": "historical_reference",
+    "kind": "cuenta",
+    "platform": "YouTube",
+    "title": "Canal oficial YOUNG CLASS (@youngclass1998)",
+    "url": "https://www.youtube.com/channel/UCEW_1BJjhqNSjphsyCE8I0Q",
+    "date": "",
+    "note": "Canal oficial actual; tiene entre sus palabras clave NIKE MAFIA. Utilizar para descubrir vídeos originales, listas y enlaces históricos."
+  },
+  {
+    "key": "historical:soundcharts",
+    "type": "historical_reference",
+    "kind": "articulo",
+    "platform": "Soundcharts",
+    "title": "Biografía musical histórica de Young Class",
+    "url": "https://soundcharts.com/es/artist/11e83feb-17ac-3c90-9838-aa1c026db3d8",
+    "date": "",
+    "note": "Fuente secundaria que menciona La Nike Mafia y relación con WE$T DUBAI."
+  },
+  {
+    "key": "historical:oldinstagram",
+    "type": "historical_reference",
+    "kind": "cuenta",
+    "platform": "ElGeneroPlus",
+    "title": "Pista del usuario @youngclass_ en prensa musical de 2018",
+    "url": "https://elgeneroplus.com/archivos/alante/",
+    "date": "2018-10-27",
+    "note": "El usuario se menciona en un artículo de producción musical. Falta confirmar propiedad exacta y si es perfil anterior."
+  }
 ]
 
 def stamp():
@@ -62,6 +270,7 @@ def wayback(handle):
     # Prefer exact profile and its immediate descendants, never scan unrelated accounts.
     for host in ('instagram.com', 'www.instagram.com'):
         params = {'url': f'{host}/{handle}', 'matchType': 'prefix', 'output': 'json', 'filter': 'statuscode:200', 'collapse': 'urlkey', 'limit': '120', 'fl': 'timestamp,original,statuscode,mimetype'}
+        params.update({'from': '2015', 'to': '2025'})
         raw = fetch_json('https://web.archive.org/cdx/search/cdx?' + urlencode(params))
         if not isinstance(raw, list):
             raise RuntimeError('CDX devolvió formato inesperado')
@@ -123,11 +332,11 @@ def run_scan():
             with LOCK:
                 STATE['sources'] = dict(status)
                 STATE['items'] = list(items.values())
-    final = sorted(items.values(), key=lambda i: (i['type'] == 'reference', i.get('date') or ''), reverse=False)
+    final = sorted(items.values(), key=lambda i: (i['type'] not in ('snapshot', 'media_candidate'), i.get('date') or '9999-99-99', i.get('title') or ''))
     with LOCK:
         STATE.update({'running': False, 'last_scan': stamp(), 'sources': status, 'items': final, 'error': None})
         snapshot = dict(STATE)
-    print('YOUNGCLASS_SCAN_SUMMARY ' + json.dumps({'last_scan': snapshot['last_scan'], 'total': len(final), 'counts': {t: sum(1 for item in final if item.get('type') == t) for t in ('snapshot','media_candidate','reference','story')}, 'sources': status, 'sample': [{'title': item['title'], 'url': item['url'], 'type': item['type']} for item in final[:7]]}, ensure_ascii=False), flush=True)
+    print('YOUNGCLASS_SCAN_SUMMARY ' + json.dumps({'last_scan': snapshot['last_scan'], 'total': len(final), 'counts': {t: sum(1 for item in final if item.get('type') == t) for t in ('snapshot','media_candidate','reference','historical_reference','media_online','story')}, 'sources': status, 'sample': [{'title': item['title'], 'url': item['url'], 'type': item['type']} for item in final[:7]]}, ensure_ascii=False), flush=True)
     try:
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
         DATA_FILE.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -146,15 +355,15 @@ def start_scan():
 
 PAGE = r'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0d0d12"><title>Young Class — Archivo histórico</title><style>
 :root{color-scheme:dark;--bg:#0b0b10;--card:#16161e;--edge:#30303c;--muted:#a1a1af;--accent:#d8ff55;--txt:#f4f3f8}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse 60% 36% at 88% 0%,#303b16,transparent),var(--bg);color:var(--txt);font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}a{color:inherit}button{font:inherit;cursor:pointer}main{max-width:1130px;margin:0 auto;padding:38px 22px 72px}.eyebrow{font-size:11px;color:var(--accent);letter-spacing:.22em;font-weight:800}.hero{display:flex;align-items:end;justify-content:space-between;gap:26px;margin:12px 0 30px;flex-wrap:wrap}h1{font-size:clamp(36px,7vw,75px);line-height:1.04;letter-spacing:-.06em;margin:0 0 12px;font-weight:850}h1 span{color:var(--accent)}.lede{color:#b9b9c3;font-size:16px;max-width:640px;margin:0}.btn{background:var(--accent);border:0;color:#141611;font-weight:800;border-radius:12px;padding:13px 22px}.btn:disabled{opacity:.55;cursor:wait}.ghost{display:inline-block;border:1px solid #3b3b49;border-radius:12px;padding:10px 14px;text-decoration:none;color:#ddd}.tags{display:flex;gap:9px;flex-wrap:wrap;margin:17px 0 0}.tag{border:1px solid #383941;border-radius:99px;font-size:12px;padding:5px 10px;color:#ccc}.panels{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:28px 0}.panel,.card,.source,.notice{background:rgba(23,23,31,.92);border:1px solid var(--edge);border-radius:16px}.panel{padding:20px}.number{font-size:29px;font-weight:800;letter-spacing:-.045em}.small{font-size:12px;color:var(--muted)}.notice{padding:16px 19px;margin:20px 0;color:#bdbdc7}.notice strong{color:white}.sectionhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:34px}h2{font-size:19px;letter-spacing:-.025em}select{background:#24242e;color:white;border:1px solid #41414f;border-radius:10px;padding:10px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:19px;min-width:0}.card h3{margin:10px 0 8px;line-height:1.35;font-size:16px}.card p{font-size:13px;color:var(--muted);margin:0 0 15px}.card a{display:inline-block;color:var(--accent);font-weight:700;text-decoration:none}.pill{display:inline-block;border-radius:5px;background:#343622;color:#e0fca1;font-weight:750;padding:3px 7px;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.pill.ref{background:#302b3c;color:#d6c3fd}.pill.candidate{background:#3b2d20;color:#ffd19c}.meta{font-size:12px;color:#aaa;margin-top:5px}.sources{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 0}.source{padding:9px 12px;font-size:12px;color:#c2c2cc}.source b{color:#e0ff8d}.source.error{border-color:#6d3b3b;color:#ffbebe}.toolbar{display:flex;gap:9px;flex-wrap:wrap}.empty{padding:24px;border:1px dashed #444451;border-radius:14px;color:var(--muted)}footer{margin-top:40px;color:#888895;font-size:12px}footer a{color:#ccc}@media(max-width:700px){main{padding:24px 15px 50px}.panels{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.hero{align-items:start}.panel{padding:15px}} </style></head>
-<body><main><div class="eyebrow">INVESTIGACIÓN DE ARCHIVOS PÚBLICOS / 2026</div><div class="hero"><div><h1>YOUNG CLASS<span>.</span><br>ARCHIVE</h1><p class="lede">Reconstruimos el rastro digital histórico del artista. Capturas de páginas antiguas, archivos públicos y pistas verificables. Sin inventar historias desaparecidas.</p><div class="tags"><span class="tag">Objetivo: @youngclasstlc</span><span class="tag">Wayback Machine</span><span class="tag">Arquivo.pt</span><span class="tag">Internet Archive</span></div></div><button id="scan" class="btn" onclick="scan()">↻ Buscar archivos</button></div>
-<div class="panels"><div class="panel"><div class="small">Páginas históricas</div><div class="number" id="snap">0</div></div><div class="panel"><div class="small">Archivos candidatos</div><div class="number" id="cand">0</div></div><div class="panel"><div class="small">Historias recuperadas</div><div class="number" id="story">0</div></div><div class="panel"><div class="small">Referencias verificadas</div><div class="number" id="refs">0</div></div></div>
+<body><main><div class="eyebrow">INVESTIGACIÓN DE ARCHIVOS PÚBLICOS / 2026</div><div class="hero"><div><h1>YOUNG CLASS<span>.</span><br>ARCHIVE</h1><p class="lede">Reconstruimos el rastro digital histórico del artista. Capturas de páginas antiguas, archivos públicos y pistas verificables. Sin inventar historias desaparecidas.</p><div class="tags"><span class="tag">@youngclasstlc</span><span class="tag">@youngclass_ · pista sin confirmar</span><span class="tag">NIKE MAFIA · 2016–2018</span><span class="tag">Wayback Machine</span><span class="tag">Arquivo.pt</span><span class="tag">Internet Archive</span></div></div><button id="scan" class="btn" onclick="scan()">↻ Buscar archivos</button></div>
+<div class="panels"><div class="panel"><div class="small">Páginas históricas</div><div class="number" id="snap">0</div></div><div class="panel"><div class="small">Audio y vídeo localizado</div><div class="number" id="cand">0</div></div><div class="panel"><div class="small">Historias recuperadas</div><div class="number" id="story">0</div></div><div class="panel"><div class="small">Referencias y pistas</div><div class="number" id="refs">0</div></div></div>
 <div class="notice"><strong>Importante:</strong> un enlace a un archivo web <em>no equivale</em> a una foto o historia recuperada. Las historias que nadie guardó mientras estaban públicas no se pueden reconstruir. Esta app no solicita contraseñas, no burla controles de acceso ni descarga masivamente material de terceros.</div>
 <div class="sectionhead"><h2>Estado de la investigación</h2><span class="small" id="updated">Todavía sin escaneo</span></div><div id="sources" class="sources"></div>
-<div class="sectionhead"><h2>Hallazgos y pistas</h2><div class="toolbar"><select id="filter" onchange="render()"><option value="all">Todo el material</option><option value="snapshot">Capturas archivadas</option><option value="media_candidate">Archivos candidatos</option><option value="reference">Referencias oficiales</option></select><a class="ghost" href="/export.json" download>Exportar JSON</a><a class="ghost" href="/export.csv" download>Exportar CSV</a></div></div><div id="items" class="grid"></div>
+<div class="sectionhead"><h2>Hallazgos y pistas</h2><div class="toolbar"><select id="filter" onchange="render()"><option value="all">Todo el material</option><option value="snapshot">Capturas archivadas</option><option value="media_online">Vídeos y audios localizados</option><option value="historical_reference">Pistas históricas</option><option value="media_candidate">Otros archivos candidatos</option><option value="reference">Referencias oficiales</option></select><a class="ghost" href="/export.json" download>Exportar JSON</a><a class="ghost" href="/export.csv" download>Exportar CSV</a></div></div><div id="items" class="grid"></div>
 <div class="sectionhead"><h2>Otras vías de búsqueda</h2></div><div class="grid"><div class="card"><h3>Historias archivadas por terceros</h3><p>Comprobación manual en Instarchiver, respetando sus condiciones. Solo sirve si capturaron el perfil cuando las historias estaban disponibles.</p><a href="https://instarchiver.net/users" target="_blank" rel="noopener noreferrer">Abrir Instarchiver ↗</a></div><div class="card"><h3>Cuenta original del artista</h3><p>Si Young Class recupera su acceso, puede exportar el archivo privado de historias desde Instagram. Esa es la fuente más completa.</p><a href="https://www.instagram.com/youngclasstlc/" target="_blank" rel="noopener noreferrer">Comprobar perfil ↗</a></div><div class="card"><h3>Búsqueda de menciones y copias</h3><p>Localizar material republicado por seguidores, colaboradores y canales antiguos. Verificar siempre la procedencia y los derechos.</p><a href="https://www.google.com/search?q=%22youngclasstlc%22" target="_blank" rel="noopener noreferrer">Buscar menciones ↗</a></div><div class="card"><h3>Archivo histórico manual</h3><p>Buscar versiones del perfil por fecha y abrir las capturas originales. Algunos recuerdos solo mostrarán una pantalla de inicio de sesión.</p><a href="https://web.archive.org/web/*/https://www.instagram.com/youngclasstlc/" target="_blank" rel="noopener noreferrer">Abrir calendario Wayback ↗</a></div></div>
 <footer>Herramienta independiente de investigación histórica. Las fuentes pertenecen a sus titulares. No afiliada a Meta, Instagram, YouTube ni Internet Archive. En alojamiento gratuito, los datos locales pueden perderse al reiniciar: exporta los hallazgos.</footer></main><script>
 let state={items:[],sources:{},running:false}; const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function render(){let a=state.items||[];document.getElementById('snap').textContent=a.filter(x=>x.type==='snapshot').length;document.getElementById('cand').textContent=a.filter(x=>x.type==='media_candidate').length;document.getElementById('story').textContent=a.filter(x=>x.type==='story').length;document.getElementById('refs').textContent=a.filter(x=>x.type==='reference').length;document.getElementById('updated').textContent=state.running?'Consultando fuentes…':state.last_scan?'Último escaneo: '+new Date(state.last_scan).toLocaleString('es-ES'):'Todavía sin escaneo';let b=document.getElementById('scan');b.disabled=!!state.running;b.textContent=state.running?'Buscando…':'↻ Buscar archivos';document.getElementById('sources').innerHTML=Object.entries(state.sources||{}).map(([n,v])=>`<div class="source ${v.status==='error'?'error':''}" title="${esc(v.message||'')}">${esc(n)} · ${v.status==='error'?'No disponible':`<b>${v.count}</b> hallazgos`}</div>`).join('')||'<span class="small">Pulsa Buscar archivos para consultar las fuentes públicas.</span>';let f=document.getElementById('filter').value;let cards=a.filter(x=>f==='all'||x.type===f);const titles={snapshot:'Captura archivada',media_candidate:'Candidato (sin verificar)',reference:'Referencia oficial',story:'Historia recuperada'};document.getElementById('items').innerHTML=cards.length?cards.map(x=>`<article class="card"><span class="pill ${x.type==='reference'?'ref':x.type==='media_candidate'?'candidate':''}">${esc(titles[x.type]||x.type)}</span><div class="meta">${esc(x.platform)} ${x.date?'· '+esc(x.date):''}</div><h3>${esc(x.title)}</h3><p>${esc(x.note)}</p><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">Ver fuente original ↗</a></article>`).join(''):'<div class="empty">Sin registros en esta categoría. Los archivos públicos pueden no conservar copias de este perfil.</div>'}
+function render(){let a=state.items||[];document.getElementById('snap').textContent=a.filter(x=>x.type==='snapshot').length;document.getElementById('cand').textContent=a.filter(x=>x.type==='media_online').length;document.getElementById('story').textContent=a.filter(x=>x.type==='story').length;document.getElementById('refs').textContent=a.filter(x=>x.type==='reference'||x.type==='historical_reference').length;document.getElementById('updated').textContent=state.running?'Consultando fuentes…':state.last_scan?'Último escaneo: '+new Date(state.last_scan).toLocaleString('es-ES'):'Todavía sin escaneo';let b=document.getElementById('scan');b.disabled=!!state.running;b.textContent=state.running?'Buscando…':'↻ Buscar archivos';document.getElementById('sources').innerHTML=Object.entries(state.sources||{}).map(([n,v])=>`<div class="source ${v.status==='error'?'error':''}" title="${esc(v.message||'')}">${esc(n)} · ${v.status==='error'?'No disponible':`<b>${v.count}</b> hallazgos`}</div>`).join('')||'<span class="small">Pulsa Buscar archivos para consultar las fuentes públicas.</span>';let f=document.getElementById('filter').value;let cards=a.filter(x=>f==='all'||x.type===f);const titles={snapshot:'Captura archivada',media_candidate:'Candidato (sin verificar)',media_online:'Audio/vídeo público localizado',historical_reference:'Pista histórica',reference:'Referencia oficial',story:'Historia recuperada'};document.getElementById('items').innerHTML=cards.length?cards.map(x=>`<article class="card"><span class="pill ${x.type==='reference'||x.type==='historical_reference'?'ref':x.type==='media_candidate'?'candidate':''}">${esc(titles[x.type]||x.type)}</span><div class="meta">${esc(x.platform)} ${x.date?'· '+esc(x.date):''}</div><h3>${esc(x.title)}</h3><p>${esc(x.note)}</p><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">Ver fuente original ↗</a></article>`).join(''):'<div class="empty">Sin registros en esta categoría. Los archivos públicos pueden no conservar copias de este perfil.</div>'}
 async function refresh(){try{let r=await fetch('/api/state',{cache:'no-store'});state=await r.json();render()}catch(e){document.getElementById('updated').textContent='No se ha podido consultar el servidor'}}
 async function scan(){try{let r=await fetch('/api/scan',{method:'POST'});if(!r.ok)throw Error();await refresh()}catch(e){alert('No se pudo iniciar el escaneo')}}refresh();setInterval(refresh,4500);
 </script></body></html>'''
