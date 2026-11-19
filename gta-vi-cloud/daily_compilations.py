@@ -123,6 +123,29 @@ def plan_by_language(items,state,day,langs=None):
 def _run(cmd,timeout=600):
  p=subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
  if p.returncode:raise RuntimeError('ffmpeg_error: '+(p.stderr or '')[-500:])
+def download_twitch_clip(url,target):
+ """Try URL, sanitized clip slug and yt-dlp before marking one source bad."""
+ if not is_twitch_clip(url):raise ValueError('not_twitch_clip')
+ slug=urlparse(url).path.strip('/').rsplit('/',1)[-1]
+ if not re.fullmatch(r'[A-Za-z0-9_-]{8,200}',slug):raise ValueError('invalid_clip_identifier')
+ attempts=[
+  ['TwitchDownloaderCLI','clipdownload','--id',url,'--output',str(target),'--collision','Overwrite'],
+  ['TwitchDownloaderCLI','clipdownload','--id',slug,'--output',str(target),'--collision','Overwrite'],
+  ['yt-dlp','--no-playlist','--no-warnings','--socket-timeout','12','--retries','2',
+   '-f','best[ext=mp4]/best','--merge-output-format','mp4','-o',str(target),url]
+ ]
+ last=None
+ for number,command in enumerate(attempts,1):
+  target.unlink(missing_ok=True)
+  try:
+   _run(command,45 if number<=2 else 70)
+   if target.is_file() and target.stat().st_size>=1000:return
+   last=RuntimeError('source_file_missing')
+  except (RuntimeError,subprocess.TimeoutExpired,OSError) as exc:
+   last=exc
+   log.warning('Download method %d failed for %s: %s',number,slug[:60],str(exc)[:100])
+ raise RuntimeError('all_twitch_download_methods_failed: '+str(last)[:80])
+
 def _duration(path):
  p=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(path)],capture_output=True,text=True,timeout=20)
  if p.returncode:raise RuntimeError('ffprobe_error')
@@ -173,8 +196,7 @@ def render_plan(plan,folder):
      if ephemeral:
       url=str(clip.get('url') or '')
       if not is_twitch_clip(url):raise ValueError('unsupported_clip_url')
-      _run(['TwitchDownloaderCLI','clipdownload','--id',url,
-            '--output',str(src),'--collision','Overwrite'],150)
+      download_twitch_clip(url,src)
      if src.suffix.lower()!='.mp4' or not src.is_file() or src.stat().st_size<1000:
       raise ValueError('unreadable_mp4')
      info=media_spec(src)
