@@ -90,6 +90,27 @@ def transcribe_audio(source,output):
   voice.unlink(missing_ok=True)
  return None
 
+def request_visual_review(payload):
+ # A broken AI provider must not halt the worker. Moderation refusals are NOT
+ # provider outages and must never be retried with a more lenient model.
+ for provider,route in (('gemini','/api/ai-visual-story'),('openrouter','/api/ai-visual-story-fallback')):
+  try:
+   result=api('POST',route,json=payload)
+   if result.get('ok'):
+    log.info('Visual review: provider=%s frames=%d confidence=%s adultPossible=%s',provider,result.get('framesReviewed',0),result.get('confidence'),result.get('adultPossible'))
+    return result
+   if result.get('adultPossible') or result.get('blocked') or result.get('refused'):
+    log.warning('Visual review flagged content; not falling back to another provider')
+    return result
+   error=str(result.get('error') or result.get('reason') or '')
+   if not any(x in error.lower() for x in ('unavailable','timeout','rate_limit','quota','http_5','http_429')):
+    log.warning('Visual review rejected by %s, not a provider outage: %s',provider,error[:80])
+    return None
+   log.warning('Visual provider %s unavailable (%s), trying alternate',provider,error[:100])
+  except Exception as exc:
+   log.warning('Visual provider %s unavailable: %s',provider,str(exc)[:145])
+ return None
+
 def visual_story(source,job,transcript,workdir):
  if os.environ.get('ENABLE_VISUAL_STORY','true').lower() not in ('1','true','yes'):return None
  try:
@@ -103,10 +124,7 @@ def visual_story(source,job,transcript,workdir):
    frames.append(base64.b64encode(image.read_bytes()).decode('ascii'))
    image.unlink(missing_ok=True)
   if len(frames)<2:return None
-  r=api('POST','/api/ai-visual-story',json={'frames':frames,'creator':job.get('creator'),'sourceTitle':job.get('title'),'transcript':(transcript or {}).get('text','')[:2100]})
-  if r.get('ok'):
-   log.info('Visual review: frames=%d confidence=%s adultPossible=%s',r.get('framesReviewed',0),r.get('confidence'),r.get('adultPossible'))
-   return r
+  return request_visual_review({'frames':frames,'creator':job.get('creator'),'sourceTitle':job.get('title'),'transcript':(transcript or {}).get('text','')[:2100]})
  except Exception as exc:
   log.warning('Visual editorial unavailable: %s',str(exc)[:170])
  return None
