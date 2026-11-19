@@ -258,12 +258,13 @@ def submit_groq_storyboard(job,video,transcript,tmp):
  """
  try:
   length=duration(video)
-  if length<16 or length>45:
+  if length<9 or length>45:
    log.info('Groq final storyboard skipped: video duration %.1fs',length)
    return False
   pattern=tmp/'storyboard_%02d.jpg'
+  tile='5x3' if length>=16 else '4x2'
   cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(video),
-    '-vf','fps=1,scale=180:-2,tile=5x3','-vsync','0',
+    '-vf','fps=1,scale=180:-2,tile='+tile,'-vsync','0',
     '-frames:v','3','-q:v','5',str(pattern)],limit=45)
   paths=sorted(tmp.glob('storyboard_*.jpg'))
   if not 2<=len(paths)<=3:
