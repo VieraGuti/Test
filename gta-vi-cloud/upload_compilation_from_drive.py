@@ -244,6 +244,14 @@ def upload_or_repair_thumbnail(movie,meta,video_id):
                 return prior
         except (OSError,ValueError):pass
     try:
+        try:
+            import PIL
+        except ImportError:
+            # Small Pillow wheel only, no Torch/YOLO/OpenCV or expensive cloud model.
+            import subprocess
+            subprocess.run([sys.executable,"-m","pip","install","--disable-pip-version-check",
+                            "--quiet","Pillow>=10,<13"],
+                           check=True,timeout=110,capture_output=True)
         from thumbnail_engine import generate_thumbnails
         thumb=generate_thumbnails(movie,meta)
         file=Path(thumb["thumbnailFile"]).resolve()
