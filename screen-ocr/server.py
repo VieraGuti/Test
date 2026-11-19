@@ -208,15 +208,15 @@ def update_timer(text):
         # Avoid locking onto an unrelated timer until 2 consistent scans, unless <=1min.
         if seconds<=PRE_EVENT_SECONDS:
             _event_zero_epoch=proposed
-        elif _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<35:
+        elif _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<12:
             _event_zero_epoch=proposed
         _last_countdown_candidate=proposed
-    elif abs(_event_zero_epoch-proposed)<42:
+    elif abs(_event_zero_epoch-proposed)<12:
         # Smooth OCR jitter; don't drift with every minor glitch.
         _event_zero_epoch=0.85*_event_zero_epoch+0.15*proposed
     else:
         # A new countdown after a completed event; require 2 agreeing scans.
-        if _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<35:
+        if _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<12:
             old_event=_event_zero_epoch
             if old_event <= current <= old_event+POST_EVENT_SECONDS:
                 _previous_event_post_end=max(_previous_event_post_end, old_event+POST_EVENT_SECONDS)
