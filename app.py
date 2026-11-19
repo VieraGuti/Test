@@ -403,7 +403,7 @@ PAGE = r'''<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name
 <div class="panels"><div class="panel"><div class="small">Páginas históricas</div><div class="number" id="snap">0</div></div><div class="panel"><div class="small">Audio y vídeo localizado</div><div class="number" id="cand">0</div></div><div class="panel"><div class="small">Historias recuperadas</div><div class="number" id="story">0</div></div><div class="panel"><div class="small">Referencias y pistas</div><div class="number" id="refs">0</div></div></div>
 <div class="notice"><strong>Importante:</strong> un enlace a un archivo web <em>no equivale</em> a una foto o historia recuperada. Las historias que nadie guardó mientras estaban públicas no se pueden reconstruir. Esta app no solicita contraseñas, no burla controles de acceso ni descarga masivamente material de terceros.</div>
 <div class="sectionhead"><h2>Estado de la investigación</h2><span class="small" id="updated">Todavía sin escaneo</span></div><div id="sources" class="sources"></div>
-<div class="sectionhead vault-header"><h2>Biblioteca recuperada · descarga directa</h2><div class="vault-tools"><select id="vault-filter" onchange="renderVault()"><option value="all">Todos los archivos</option><option value="foto">Fotos</option><option value="video">Vídeos</option><option value="audio">Audios</option><option value="documento">Documentos</option></select><span class="small" id="vault-count">Comprobando archivos…</span></div></div>
+<div class="sectionhead vault-header"><h2>Biblioteca recuperada · descarga directa</h2><div class="vault-tools"><select id="vault-filter" onchange="renderVault()"><option value="all">Todos los archivos</option><option value="foto">Fotos</option><option value="video">Vídeos</option><option value="audio">Audios</option><option value="documento">Documentos</option></select><span class="small" id="vault-count">Comprobando archivos…</span><a class="ghost" href="/media/all.zip" download="young-class-archivos.zip" id="vault-bulk">Descargar todo ZIP</a></div></div>
 <p class="lede">Aquí aparecen exclusivamente archivos que el servidor conserva de verdad. Puedes reproducirlos y descargarlos aquí mismo, sin salir de Young Class Archive. Las pistas de investigación quedan en una sección separada.</p>
 <div id="vault-storage" class="vault-info">Comprobando almacenamiento…</div>
 <div id="vault-items" class="grid vault-grid"><div class="empty">Cargando biblioteca…</div></div>
@@ -439,7 +439,7 @@ function renderVault(){
    if(x.kind==='foto')media='<img class="library-media" loading="lazy" src="'+preview+'" alt="'+esc(x.filename)+'">';
    if(x.kind==='video')media='<video class="library-media" controls preload="metadata" playsinline src="'+preview+'"></video>';
    if(x.kind==='audio')media='<audio controls preload="none" src="'+preview+'"></audio>';
-   return '<article class="card library-item">'+media+'<div class="meta">'+esc(x.kind.toUpperCase())+' · '+(x.size/(1024*1024)).toFixed(2)+' MB · '+esc(x.date||'')+'</div><h3 class="filename">'+esc(x.filename)+'</h3><p>'+esc(x.source||'Archivo autorizado')+'</p><a class="dl" href="'+url+'" download="'+esc(x.filename)+'">↓ Descargar archivo</a></article>'
+   return '<article class="card library-item">'+media+'<div class="meta">'+esc(x.album||x.kind.toUpperCase())+' · '+(x.size/(1024*1024)).toFixed(2)+' MB · '+esc(x.date||'')+'</div><h3 class="filename">'+esc(x.filename)+'</h3><p>'+esc(x.source||'Archivo autorizado')+'</p><a class="dl" href="'+url+'" download="'+esc(x.filename)+'">↓ Descargar archivo</a></article>'
  }).join(''):'<div class="empty">Aún no hay archivos guardados en el servidor. Puedes importar una exportación ZIP de Instagram, fotos, vídeos y audios con permiso del artista. Los enlaces externos de la sección de investigación no cuentan como recuperaciones.</div>';
 }
 async function loadVault(){
@@ -538,6 +538,26 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, PAGE, 'text/html; charset=utf-8')
         if path == '/health':
             return self.respond(200, '{"ok":true}')
+        if path == '/media/all.zip':
+            try:
+                path_to_zip=vault.create_bulk_zip()
+                try:
+                    with path_to_zip.open('rb') as z:
+                        self.send_response(200)
+                        self.send_header('Content-Type','application/zip')
+                        self.send_header('Content-Disposition','attachment; filename="young-class-archivos.zip"')
+                        self.send_header('Content-Length',str(path_to_zip.stat().st_size))
+                        self.send_header('Cache-Control','no-store')
+                        self.end_headers()
+                        while True:
+                            block=z.read(1024*1024)
+                            if not block:break
+                            self.wfile.write(block)
+                finally:
+                    path_to_zip.unlink(missing_ok=True)
+                return
+            except (ValueError,OSError,Exception) as exc:
+                return self.respond(400,json.dumps({'error':str(exc)[:170]},ensure_ascii=False))
         if path == '/api/media':
             try:
                 return self.respond(200, json.dumps({'items':vault.get_entries(),'count':len(vault.get_entries()),'persistent':vault.is_persistent(),'uploads_enabled':bool(os.getenv('YC_ADMIN_TOKEN'))}, ensure_ascii=False))
