@@ -118,7 +118,7 @@ class Vault:
             dst.write_bytes(raw)
             dst.replace(self.local_index)
         self._entries = entries
-    def add_file(self, filepath, filename, category=None, source="Archivo aportado con permiso"):
+    def add_file(self, filepath, filename, category=None, source="Archivo aportado con permiso", album="Importaciones"):
         filename = safe_name(filename)
         ext = Path(filename).suffix.lower()
         mime = EXTENSIONS.get(ext)
@@ -143,7 +143,7 @@ class Vault:
                 shutil.copyfile(filepath,dest)
             row={"id":digest+ext,"sha256":digest,"filename":filename,
                  "mime":mime,"kind":category,"size":size,"date":utcnow(),
-                 "source":str(source or "Archivo autorizado")[:180]}
+                 "source":str(source or "Archivo autorizado")[:180], "album":str(album)[:70]}
             rows.insert(0,row)
             self.save_entries(rows)
             return row,True
@@ -191,11 +191,38 @@ class Vault:
                     with archive.open(entry) as fd:
                         shutil.copyfileobj(fd,tmp,length=1024*1024)
                 try:
-                    row,created=self.add_file(temp,name,source="Importación de archivo Instagram/propietario · "+normalized[:100])
+                    lower_path=normalized.lower()
+                    album=("Historias Instagram" if "stor" in lower_path or "histori" in lower_path else "Publicaciones Instagram" if "post" in lower_path or "publication" in lower_path else "Reels Instagram" if "reel" in lower_path else "Archivo importado")
+                    row,created=self.add_file(temp,name,source="Importación de archivo Instagram/propietario · "+normalized[:100],album=album)
                     if created:saved.append(row)
                 except (ValueError,OSError):rejected+=1
                 finally:temp.unlink(missing_ok=True)
         return {"imported":len(saved),"rejected":rejected,"items":saved[:25]}
+    def create_bulk_zip(self):
+        rows=self.get_entries()
+        if not rows: raise ValueError("No hay archivos")
+        if len(rows)>700 or sum(x["size"] for x in rows)>500*1024*1024:
+            raise ValueError("Biblioteca demasiado grande para descarga ZIP; descarga los archivos individualmente")
+        tmp=tempfile.NamedTemporaryFile(prefix="yc-bulk-",suffix=".zip",delete=False)
+        result=Path(tmp.name)
+        tmp.close()
+        try:
+            with zipfile.ZipFile(result,"w",compression=zipfile.ZIP_STORED,allowZip64=True) as output:
+                for x in rows:
+                    source,length,_=self.open_file(x)
+                    filename=x["id"][:9]+"_"+safe_name(x["filename"])
+                    with source, output.open(filename,"w",force_zip64=True) as dst:
+                        remaining=length
+                        while remaining>0:
+                            block=source.read(min(1024*1024,remaining))
+                            if not block:raise ValueError("Archivo incompleto")
+                            dst.write(block)
+                            remaining-=len(block)
+            return result
+        except Exception:
+            result.unlink(missing_ok=True)
+            raise
+
     def import_stream(self,stream,length,filename):
         if not length or length>LIMIT:raise ValueError("El archivo supera el límite de 160 MB")
         with tempfile.NamedTemporaryFile(prefix="yc-upload-",delete=False) as tmp:
