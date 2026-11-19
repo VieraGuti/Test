@@ -127,6 +127,7 @@ def run_scan():
     with LOCK:
         STATE.update({'running': False, 'last_scan': stamp(), 'sources': status, 'items': final, 'error': None})
         snapshot = dict(STATE)
+    print('YOUNGCLASS_SCAN_SUMMARY ' + json.dumps({'last_scan': snapshot['last_scan'], 'total': len(final), 'counts': {t: sum(1 for item in final if item.get('type') == t) for t in ('snapshot','media_candidate','reference','story')}, 'sources': status, 'sample': [{'title': item['title'], 'url': item['url'], 'type': item['type']} for item in final[:7]]}, ensure_ascii=False), flush=True)
     try:
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
         DATA_FILE.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
