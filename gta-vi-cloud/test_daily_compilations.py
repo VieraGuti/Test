@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from daily_compilations import (
  plan_by_language,apply_result,select,MIN_SECONDS,MAX_SECONDS,TARGET_SECONDS,
+ copy_compatible,fps_value,
  cleanup_after_confirmed_upload,
 )
 DAY=dt.date(2026,11,19)
@@ -76,7 +77,7 @@ class DigestTests(unittest.TestCase):
    self.assertTrue(file.exists())
    with self.assertRaises(ValueError):cleanup_after_confirmed_upload(meta,'123456789ab',{'platform':'youtube','id':'WRONG'})
    self.assertTrue(file.exists())
-   result=cleanup_after_confirmed_upload(meta,'123456789ab',{'platform':'youtube','id':'123456789ab'})
+   result=cleanup_after_confirmed_upload(meta,'123456789ab',{'platform':'youtube','id':'123456789ab','uploadStatus':'processed'})
    self.assertTrue(result['deletedMp4'])
    self.assertFalse(file.exists())
    self.assertFalse(file.with_suffix('.json').exists())
