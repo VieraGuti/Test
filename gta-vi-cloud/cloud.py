@@ -260,14 +260,7 @@ def run_one(kind_override=None):
   item=api('GET','/api/worker-queue?claim=1'+('&kind='+kind if kind else ''));job=item.get('job')
   if not job:state.update(status='queue_empty');return
   log.info('Claimed job %s (%s)',job['jobId'],job.get('kind'))
-  if os.environ.get('ENABLE_AI_TITLE','true').lower() in ('true','1','yes'):
-   try:
-    ai=api('POST','/api/ai-title',json={'id':job['id'],'kind':job.get('kind')})
-    if ai.get('title') and len(ai['title'])<=100:
-     job['title']=ai['title']
-     log.info('Title improved using %s',ai.get('provider','AI'))
-   except Exception as e:
-    log.warning('AI title unavailable; keeping factual original title: %s',str(e)[:110])
+  # Generate titles after analyzing the actual footage and speech.
   with tempfile.TemporaryDirectory(prefix='gtavi-') as tmp:
    base=Path(tmp);segments=[]
    clips=job.get('clips') or []
@@ -292,18 +285,26 @@ def run_one(kind_override=None):
     job['visualReview']=visual
     if visual and visual.get('confidence') in ('medium','high'):
      editorial=visual
-    if editorial and editorial.get('confidence') in ('medium','high'):
-     choice=str(editorial.get('title') or '').strip()
-     if choice:
-      name=str(job.get('creator','Streamer'))[:25]
-      if name.lower() not in choice.lower():choice=name+': '+choice
-      job['title']=choice[:88].rstrip(' |:-')
-      if not job['title'].upper().endswith('GTA VI'):job['title']+=' | GTA VI'
-    elif transcript:
-     hook=truthful_hook(transcript,job.get('title','GTA VI'))
-     job['title']=(str(job.get('creator','Streamer'))[:24]+': '+hook[:48]).strip()[:90]+' | GTA VI'
+    # Gemini visual review takes priority; Groq speech editorial is fallback.
+    verified=visual if (visual or {}).get('confidence') in ('medium','high') and (visual or {}).get('title') else editorial
+    if verified and verified.get('confidence') in ('medium','high') and verified.get('title'):
+     choice=re.sub(r'\s+',' ',str(verified['title'])).strip()
+     choice=re.sub(r'(?i)\s*\|\s*GTA\s*(VI|6)\s*$','',choice).strip(' |:-')
+     evidence=str((transcript or {}).get('text') or '')+' '+str((visual or {}).get('context') or '')
+     if not re.search(r'(?i)\b(GTA\s*(VI|6)|Grand Theft Auto VI)\b',evidence):
+      choice=re.sub(r'(?i)\b(GTA\s*(VI|6)|Grand Theft Auto VI)\b','',choice).strip(' |:-')
+     if len(choice)<12:raise RuntimeError('title_context_unverified')
+     creator=str(job.get('creator') or 'Streamer')[:24]
+     if creator.casefold() not in choice.casefold():choice=creator+': '+choice
+     job['title']=choice[:95].rstrip(' |:-')
+    elif transcript and len(str(transcript.get('text') or '').split())>=4:
+     quote=truthful_hook(transcript,'')
+     job['title']=(str(job.get('creator') or 'Streamer')[:24]+': «'+quote[:58]+'»')[:95]
     else:
-     log.warning('No verified transcript or visual context: using original metadata')
+     raise RuntimeError('title_context_unverified: no transcript or visual story')
+    if re.search(r'(?i)(momento\s+[ée]pico|esto\s+es\s+viral|you\s+won.t\s+believe)',job['title']):
+     raise RuntimeError('title_is_generic: hold for review')
+    log.info('Verified title from transcript/visual analysis: %s',job['title'])
     if editorial and editorial.get('adultPossible'):job['ageHint']=True
     if visual and visual.get('adultPossible'):job['ageHint']=True
     note=(editorial.get('context') or '') if editorial and editorial.get('confidence') in ('medium','high') else None
