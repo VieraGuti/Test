@@ -19,6 +19,14 @@ import pytesseract
 STREAMER = os.environ.get("STREAM_CHANNEL", "thegrefg").lower()
 FRAME_SECONDS = max(2, int(os.environ.get("FRAME_SECONDS", "4")))
 HTTP_PORT = int(os.environ.get("PORT", "10000"))
+# Minimal timer OCR every 15s; full-resolution code OCR only around a giveaway.
+TIMER_SCAN_SECONDS = max(5, int(os.environ.get("TIMER_SCAN_SECONDS", "15")))
+ACTIVE_SCAN_SECONDS = max(2, int(os.environ.get("ACTIVE_SCAN_SECONDS", "3")))
+PRE_EVENT_SECONDS = max(10, int(os.environ.get("PRE_EVENT_SECONDS", "60")))
+POST_EVENT_SECONDS = max(20, int(os.environ.get("POST_EVENT_SECONDS", "180")))
+TIMER_PATTERN = re.compile(r"(?<![0-9])(?:(\d{1,2})\s*:\s*)?(\d{1,2})\s*:\s*(\d{2})(?![0-9])")
+TIMER_CONTEXT = re.compile(r"SORTEO|REGALO|CODIG|CÓDIG|GIVEAWAY|TIMER|COUNTDOWN|PR[ÓO]XIMO|NEXT|DROP", re.I)
+
 FRAMEFILE = "/tmp/gta6_grefg_ocr.jpg"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -32,6 +40,15 @@ STATE = {
     "lastOCRAt": None,
     "lastOCRExcerpt": "",
     "framesProcessed": 0,
+    "timerScans": 0,
+    "countdownSeconds": None,
+    "countdownText": None,
+    "nextEventAt": None,
+    "windowStartAt": None,
+    "windowEndAt": None,
+    "windowActive": False,
+    "scanMode": "searching_timer",
+    "lastTimerAt": None,
     "lastError": None,
     "lastHeartbeat": time.time(),
     "startedAt": datetime.now(timezone.utc).isoformat(),
@@ -103,6 +120,94 @@ def recognize(path):
             ))
         return "\n".join(readings)
 
+
+# Countdown gate shared by screenshot and speech service.
+# The background tracker only reads a low-frequency timer; heavier detection
+# is on from T-60 seconds through T+180 seconds.
+_event_zero_epoch = None
+_last_countdown_candidate = None
+_last_timer_read_at = 0.0
+
+def countdown_candidates(ocr):
+    """Find plausible visible hh:mm:ss or mm:ss overlays, with context scoring."""
+    lines = [ln.strip() for ln in ocr.splitlines() if ln.strip()]
+    options=[]
+    for line in lines:
+        for m in TIMER_PATTERN.finditer(line):
+            if m.group(1) is not None:
+                h, minute, second = int(m.group(1)),int(m.group(2)),int(m.group(3))
+                if minute >= 60 or second >= 60: continue
+                seconds=h*3600+minute*60+second
+            else:
+                minute,second=int(m.group(2)),int(m.group(3))
+                if second>=60:continue
+                seconds=minute*60+second
+            if not 0 <= seconds <= 7200:continue
+            score=3 if TIMER_CONTEXT.search(line) else 0
+            if len(line)<45: score+=1
+            if m.group(1) is not None: score+=1
+            options.append((score, seconds, line[:120]))
+    options.sort(key=lambda x:(-x[0],x[1]))
+    return options
+
+def refresh_window():
+    global _event_zero_epoch
+    current=time.time()
+    if _event_zero_epoch is None:
+        put(windowActive=False, scanMode="searching_timer",
+            countdownSeconds=None, windowStartAt=None, windowEndAt=None)
+        return False
+    until=_event_zero_epoch-current
+    active= -POST_EVENT_SECONDS <= until <= PRE_EVENT_SECONDS
+    end=_event_zero_epoch+POST_EVENT_SECONDS
+    # Keep the schedule even if the overlay disappears at the moment of giveaway.
+    # Beyond the window wait for a new countdown rather than watch forever.
+    if until < -POST_EVENT_SECONDS:
+        put(windowActive=False,scanMode="waiting_next_timer",
+            countdownSeconds=0,windowStartAt=timestamp_from_epoch(_event_zero_epoch-PRE_EVENT_SECONDS),
+            windowEndAt=timestamp_from_epoch(end))
+        return False
+    mode="tracking_codes" if active else "waiting_countdown"
+    put(windowActive=active,scanMode=mode,
+        countdownSeconds=max(0,int(until)),
+        nextEventAt=timestamp_from_epoch(_event_zero_epoch),
+        windowStartAt=timestamp_from_epoch(_event_zero_epoch-PRE_EVENT_SECONDS),
+        windowEndAt=timestamp_from_epoch(end))
+    return active
+
+def timestamp_from_epoch(value):
+    return datetime.fromtimestamp(value,timezone.utc).isoformat()
+
+def update_timer(text):
+    global _event_zero_epoch,_last_countdown_candidate,_last_timer_read_at
+    current=time.time()
+    options=countdown_candidates(text)
+    _last_timer_read_at=current
+    put(timerScans=get_public()["timerScans"]+1,lastTimerAt=timestamp())
+    if not options:
+        refresh_window()
+        return
+    score, seconds, raw=options[0]
+    proposed=current+seconds
+    if _event_zero_epoch is None:
+        # Avoid locking onto an unrelated timer until 2 consistent scans, unless <=1min.
+        if seconds<=PRE_EVENT_SECONDS:
+            _event_zero_epoch=proposed
+        elif _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<35:
+            _event_zero_epoch=proposed
+        _last_countdown_candidate=proposed
+    elif abs(_event_zero_epoch-proposed)<42:
+        # Smooth OCR jitter; don't drift with every minor glitch.
+        _event_zero_epoch=0.85*_event_zero_epoch+0.15*proposed
+    else:
+        # A new countdown after a completed event; require 2 agreeing scans.
+        if _last_countdown_candidate is not None and abs(_last_countdown_candidate-proposed)<35:
+            _event_zero_epoch=proposed
+            notify({"type":"next_countdown","time":timestamp(),"seconds":seconds,"text":raw})
+        _last_countdown_candidate=proposed
+    put(countdownText=raw)
+    refresh_window()
+
 def codes_from_text(text):
     clean = text.upper().replace("—","-").replace("–","-").replace("_","-")
     # Keep line boundaries; OCR may emit chat or captions unrelated to the code.
@@ -159,6 +264,7 @@ def watcher():
             put(state="capturing",online=True,lastError=None)
             seen_mtime=0
             no_frames_at=time.time()
+            last_ocr_at=0.0
             while proc.poll() is None:
                 time.sleep(0.7)
                 try: mtime=os.path.getmtime(FRAMEFILE)
@@ -169,9 +275,21 @@ def watcher():
                     continue
                 seen_mtime=mtime; no_frames_at=time.time()
                 put(state="reading_screen",lastFrameAt=timestamp())
+                active=refresh_window()
+                scan_interval=ACTIVE_SCAN_SECONDS if active else TIMER_SCAN_SECONDS
+                if time.time()-last_ocr_at < scan_interval:
+                    continue
+                last_ocr_at=time.time()
                 try:
                     text=recognize(FRAMEFILE)
-                    process_frame(text)
+                    update_timer(text)
+                    if refresh_window():
+                        process_frame(text)
+                    else:
+                        # This still shows the timer's raw OCR, without expensive
+                        # candidate validation outside the giveaway window.
+                        put(lastOCRAt=timestamp(),lastOCRExcerpt=text[:650],
+                            state="timer_only",online=True)
                     put(state="watching",online=True)
                 except Exception as e:
                     put(lastError="OCR error: "+str(e)[:250],state="ocr_error")
