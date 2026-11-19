@@ -268,7 +268,10 @@ def watcher():
             while proc.poll() is None:
                 time.sleep(0.7)
                 try: mtime=os.path.getmtime(FRAMEFILE)
-                except OSError: continue
+                except OSError:
+                    if time.time()-no_frames_at>55:
+                        raise RuntimeError("Twitch video produced no frame in 55 seconds")
+                    continue
                 if mtime <= seen_mtime: 
                     if time.time()-no_frames_at>55:
                         raise RuntimeError("No recent video frames for 55 seconds; restarting stream")
