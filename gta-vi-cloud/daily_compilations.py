@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import httpx
 
-MAX_CLIPS=12
+MAX_CLIPS=8
 MIN_CLIPS=3
 TARGET_WIDTH=1280
 TARGET_HEIGHT=720
@@ -114,7 +114,7 @@ def render_plan(plan,folder):
    target=tmp/('part-%02d.mp4'%i)
    filtervideo=f'scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1,format=yuv420p'
    _run(['ffmpeg','-nostdin','-v','error','-y','-i',str(src),'-vf',filtervideo,
-       '-map','0:v:0','-map','0:a:0','-c:v','libx264','-preset','veryfast','-crf','22',
+       '-map','0:v:0','-map','0:a:0','-c:v','libx264','-preset','veryfast','-crf','21','-threads','2',
        '-c:a','aac','-b:a','160k','-ar','48000','-ac','2','-movflags','+faststart',str(target)],600)
    chapters.append({'startSeconds':round(elapsed,2),'creator':str(clip.get('creator') or 'Streamer'),'sourceUrl':str(clip.get('url') or '')})
    elapsed+=_duration(target)
