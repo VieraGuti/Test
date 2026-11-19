@@ -69,6 +69,10 @@ class DailyManager:
    plan=plans[0]
    self.status.update(status='rendering',title=plan['title'],clips=len(plan['clipIds']))
    meta=render_plan(plan,self.root)
+   zone,hour,minute=REGIONAL_SLOTS[lang]
+   slot=dt.datetime.combine(day,dt.time(hour,minute),tzinfo=ZoneInfo(zone))
+   meta['suggestedPublishAtUtc']=slot.astimezone(dt.timezone.utc).isoformat()
+   meta['suggestedPublishZone']=zone
    state=apply_result(self.state(),meta)
    self.save_state(state)
    token=secrets.token_urlsafe(24)
@@ -93,7 +97,8 @@ class DailyManager:
     here=now.astimezone(ZoneInfo(zone))
     local_day=str(here.date())
     last=self.state().get('languages',{}).get(lang,{}).get('createdDays',{})
-    if here.hour==hour and minute<=here.minute<minute+5 and local_day not in last and not self.job_lock.locked():
+    # Render before prime time, leaving time for verification and scheduled upload.
+    if here.hour==10 and 0<=here.minute<5 and local_day not in last and not self.job_lock.locked():
      self.run_once(lang,here.date())
    time.sleep(60)
  def bootstrap(self,languages):
