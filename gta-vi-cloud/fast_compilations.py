@@ -11,6 +11,7 @@ restarting a running legacy compilation without first preserving that job.
 """
 from __future__ import annotations
 import datetime as dt
+import os
 import json
 import logging
 import re
@@ -24,6 +25,7 @@ from daily_compilations import (
     MIN_CLIPS, RIGHTS_OK, _duration, _run, date_of, download_twitch_clip,
     fps_value, is_twitch_clip, media_spec,
 )
+from video_branding import burn_longform_credits, longform_ass, video_dimensions
 
 log=logging.getLogger('gtavi-fast-compilations')
 MIN_SECONDS=10*60
@@ -229,6 +231,27 @@ def render_fast_plan(plan,folder,progress=None):
             output.unlink(missing_ok=True)
             raise
 
+    # Prepare truthful animated name credits, one event per actual source clip.
+    # Burn in a *single* optional final pass. Unlike the fast path, burning text
+    # requires decoding/re-encoding the finished video; never re-encode 31 clips.
+    branding=os.environ.get('COMPILATION_CREATOR_LABELS','sidecar').strip().lower()
+    creator_ass=output.with_suffix('.credits.ass')
+    dims=video_dimensions(output)
+    credit_count=longform_ass(creator_ass,chapters,duration,*dims)
+    credited=False
+    if branding=='burn' and credit_count:
+        log.info('Burning %d creator credits into %s; one final encoder pass',credit_count,plan['id'])
+        max_seconds=max(180,int(os.environ.get('BRAND_LONGFORM_TIMEOUT','1000')))
+        result=burn_longform_credits(output,chapters,duration,timeout=max_seconds)
+        if not result.get('branded'):
+            raise RuntimeError('creator_branding_not_completed')
+        Path(result['outputFile']).replace(output)
+        duration=_duration(output)
+        credited=True
+        log.info('Creator credits burned: %d labels, %.1f sec, %d bytes',
+                 credit_count,duration,output.stat().st_size)
+    elif branding not in ('sidecar','off'):
+        raise ValueError('invalid_compilation_creator_labels_mode')
     meta={**{k:v for k,v in plan.items() if k not in ('clips','clipIds')},
           'clipIds':used,'chapters':chapters,'skippedClips':skipped,
           'durationSeconds':round(duration,2),'outputFile':str(output),
@@ -236,7 +259,9 @@ def render_fast_plan(plan,folder,progress=None):
           'copyrightReviewNeeded':any(str(c.get('rights') or '').lower() not in RIGHTS_OK
                                      for c in plan.get('clips',[]) if str(c.get('id')) in used),
           'contentReviewNeeded':bool(plan.get('categoryReviewNeeded')),
-          'renderMethod':'direct_hevc_h264_stream_copy',
+          'renderMethod':('fast_concat_then_single_creator_encode' if credited else 'direct_hevc_h264_stream_copy'),
+          'creatorCredits':credit_count,'creditsBurnedIn':credited,
+          'creatorCreditSidecar':str(creator_ass) if creator_ass.is_file() else None,
           'createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
     metadata_file.write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
     if progress:progress({'stage':'complete','selected':len(used),'processed':len(source_clips),'totalSources':len(source_clips),'durationSeconds':round(duration,1),'targetSeconds':TARGET_SECONDS})
