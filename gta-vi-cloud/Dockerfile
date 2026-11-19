@@ -9,12 +9,13 @@ COPY video_branding.py ./video_branding.py
 COPY shorts_title_policy.py ./shorts_title_policy.py
 COPY test_shorts_title_policy.py ./test_shorts_title_policy.py
 COPY test_worker_review.py ./test_worker_review.py
+COPY test_ai_fallback.py ./test_ai_fallback.py
 COPY daily_compilations.py ./daily_compilations.py
 COPY daily_runner.py ./daily_runner.py
 COPY youtube_long_upload.py ./youtube_long_upload.py
 COPY test_daily_compilations.py ./test_daily_compilations.py
 RUN python -m py_compile /srv/cloud.py /srv/daily_compilations.py /srv/daily_runner.py /srv/youtube_long_upload.py /srv/video_branding.py /srv/shorts_title_policy.py
-RUN python /srv/test_daily_compilations.py && python /srv/test_shorts_title_policy.py && python /srv/test_worker_review.py
+RUN python /srv/test_daily_compilations.py && python /srv/test_shorts_title_policy.py && python /srv/test_worker_review.py && python /srv/test_ai_fallback.py
 RUN useradd --create-home --uid 10001 worker
 USER worker
 CMD ["python","cloud.py"]
