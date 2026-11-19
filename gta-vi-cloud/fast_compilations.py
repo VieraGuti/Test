@@ -110,7 +110,7 @@ def _part(source,destination,key):
     _run(cmd,120)
 
 
-def render_fast_plan(plan,folder):
+def render_fast_plan(plan,folder,progress=None):
     """Create a real MP4 without CPU-heavy video encoding.
 
     Preserves source audio/video, requires a 6–12 min verified MP4, and
@@ -169,6 +169,7 @@ def render_fast_plan(plan,folder):
                 total+=measured;processed.append(destination);used.append(ident)
                 log.info('Fast montage COPIED %d clips %.1fs, newest=%s',
                          len(processed),total,ident)
+                if progress:progress({'stage':'joining_sources','selected':len(processed),'processed':index+1,'totalSources':len(source_clips),'durationSeconds':round(total,1),'targetSeconds':TARGET_SECONDS})
             except (RuntimeError,ValueError,subprocess.TimeoutExpired,OSError) as exc:
                 skipped.append({'clipId':ident,'reason':str(exc)[:110]})
                 log.warning('Fast montage ignored damaged clip %s: %s',ident,str(exc)[:110])
@@ -193,6 +194,7 @@ def render_fast_plan(plan,folder):
             finally:
                 # Never leave orphaned downloaded files after a failed probe.
                 tmp.joinpath('source-%03d.mp4'%index).unlink(missing_ok=True)
+        if progress:progress({'stage':'finalizing','selected':len(processed),'processed':len(source_clips),'totalSources':len(source_clips),'durationSeconds':round(total,1),'targetSeconds':TARGET_SECONDS})
         if len(processed)<MIN_CLIPS or total<MIN_SECONDS:
             raise RuntimeError('insufficient_matching_clips: %d sources %.1fs'%(len(processed),total))
         concat=tmp/'segments.txt'
