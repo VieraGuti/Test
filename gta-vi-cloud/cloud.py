@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os,json,time,threading,tempfile,subprocess,shutil,math,logging,re,base64
+import os,json,time,threading,tempfile,subprocess,shutil,math,logging,re,base64,hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import urlparse
@@ -252,6 +252,46 @@ def report_twitch_chat(clip,tmp):
  except Exception as exc:log.warning('Chat unavailable: %s',str(exc)[:90])
  finally:path.unlink(missing_ok=True)
 
+def submit_groq_storyboard(job,video,transcript,tmp):
+ """Review chronological samples from the exact uploaded MP4 using Groq.
+ A failed report never marks an unsafe clip public or fails an existing upload.
+ """
+ try:
+  length=duration(video)
+  if length<16 or length>45:
+   log.info('Groq final storyboard skipped: video duration %.1fs',length)
+   return False
+  pattern=tmp/'storyboard_%02d.jpg'
+  cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(video),
+    '-vf','fps=1,scale=180:-2,tile=5x3','-vsync','0',
+    '-frames:v','3','-q:v','5',str(pattern)],limit=45)
+  paths=sorted(tmp.glob('storyboard_*.jpg'))
+  if not 2<=len(paths)<=3:
+   log.warning('Groq final storyboard incomplete: %d sheets',len(paths))
+   return False
+  sheets=[]
+  for path in paths:
+   raw=path.read_bytes()
+   if not 100<=len(raw)<=550000:raise ValueError('invalid_storyboard_image')
+   sheets.append(base64.b64encode(raw).decode('ascii'))
+   path.unlink(missing_ok=True)
+  with video.open('rb') as handle:
+   digest=hashlib.file_digest(handle,'sha256').hexdigest()
+  result=api('POST','/api/shorts-groq-report',json={
+   'jobId':job['jobId'],'sha256':digest,'storyboards':sheets,
+   'creator':str(job.get('creator') or 'Streamer')[:80],
+   'sourceTitle':str(job.get('title') or '')[:160],
+   'transcript':str(transcript or '')[:3500]})
+  if not result.get('ok') or not result.get('reviewSaved'):
+   log.warning('Groq final storyboard not accepted')
+   return False
+  log.info('Groq final storyboard verified: sheets=%d confidence=%s uncertainSafety=%s',
+   result.get('storyboardCount'),result.get('confidence'),result.get('uncertainSafety'))
+  return True
+ except Exception as exc:
+  log.warning('Groq final storyboard unavailable, keeping original private review: %s',str(exc)[:160])
+  return False
+
 def upload(job,video):
  size=video.stat().st_size
  if size>120000000:raise RuntimeError('trial_file_too_big')
@@ -305,7 +345,7 @@ def run_one(kind_override=None):
    raise RuntimeError('source_title_indicates_adult_content: hold for review')
   # Generate titles after analyzing the actual footage and speech.
   with tempfile.TemporaryDirectory(prefix='gtavi-') as tmp:
-   base=Path(tmp);segments=[]
+   base=Path(tmp);segments=[];spoken_context=[]
    clips=job.get('clips') or []
    if len(clips) not in (1,2):raise ValueError('invalid_clip_count')
    for i,clip in enumerate(clips):
@@ -315,6 +355,7 @@ def run_one(kind_override=None):
     report_twitch_chat(clip,base)
     log.info('Download complete; starting FFmpeg source %d/%d',i+1,len(clips))
     transcript=transcribe_audio(raw,out)
+    if transcript and transcript.get('text'):spoken_context.append(str(transcript['text'])[:2000])
     editorial=None
     if transcript and str(transcript.get('text') or '').strip():
      try:
@@ -361,6 +402,7 @@ def run_one(kind_override=None):
     raw.unlink(missing_ok=True);segments.append(out)
    result=base/'final.mp4';merge(segments,result)
    url=upload(job,result)
+   submit_groq_storyboard(job,result,' '.join(spoken_context),base)
    state.update(status='uploaded_private',last={'jobId':job['jobId'],'watchUrl':url})
    log.info('Private upload completed: %s',job['jobId'])
  except Exception as e:
