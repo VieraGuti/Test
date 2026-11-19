@@ -5,12 +5,13 @@ Editing a compilation does not eliminate copyright or monetization risks.
 Durable state/storage and a publisher are required to fully automate distribution.
 """
 from __future__ import annotations
-import argparse, datetime as dt, json, math, os, re, subprocess, tempfile
+import argparse, datetime as dt, json, math, os, re, subprocess, tempfile, logging
 from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import urlparse
 import httpx
 
+log=logging.getLogger('gtavi-daily-render')
 MAX_CLIPS=8
 MIN_CLIPS=3
 TARGET_WIDTH=1280
@@ -106,6 +107,7 @@ def render_plan(plan,folder):
  with tempfile.TemporaryDirectory(prefix='gta6-weekly-') as tmp:
   tmp=Path(tmp);pieces=[];chapters=[];elapsed=0.0
   for i,clip in enumerate(plan['clips']):
+   log.info('Compilation %s processing clip %d/%d creator=%s',plan['id'],i+1,len(plan['clips']),str(clip.get('creator') or '')[:35])
    src=Path(clip.get('mediaPath') or '').resolve() if clip.get('mediaPath') else None
    if not src or not src.is_file():
     url=str(clip.get('url') or '')
@@ -121,6 +123,7 @@ def render_plan(plan,folder):
    chapters.append({'startSeconds':round(elapsed,2),'creator':str(clip.get('creator') or 'Streamer'),'sourceUrl':str(clip.get('url') or '')})
    elapsed+=_duration(target)
    pieces.append(target)
+   log.info('Compilation %s encoded clip %d/%d',plan['id'],i+1,len(plan['clips']))
   concat=tmp/'concat.txt'
   concat.write_text(''.join("file '"+str(x)+"'\n" for x in pieces),encoding='utf-8')
   _run(['ffmpeg','-nostdin','-v','error','-y','-f','concat','-safe','0','-i',str(concat),
