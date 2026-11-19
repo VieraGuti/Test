@@ -132,6 +132,12 @@ def stream_url():
 
 
 def countdown_gate():
+    """Emergency voice mode: capture live speech continuously, independent of OCR."""
+    if os.environ.get("FORCE_VOICE_ON", "1") == "1":
+        update(trackingEnabled=True,gateStatus="forced_live_voice",
+               gateError=None)
+        return True
+    # Otherwise keep the configurable countdown window:
     """Only activate ASR inside screen OCR's pre/post event window."""
     current=time.time()
     try:
