@@ -248,8 +248,22 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):
         pass
 
+def heartbeat():
+    while True:
+        time.sleep(30)
+        with LOCK:
+            names=[x for x,d in STATS["channels"].items() if d["chatJoined"]]
+            active=[x for x,d in STATS["channels"].items() if d["live"]=="live"]
+            msg=STATS["totalMessages"]
+            mods=STATS["officialMessages"]
+            code=STATS["officialCodeCandidates"]
+            ok=STATS["chatConnected"]
+        LOG.info("CHAT HEARTBEAT connected=%s joined=%s live=%s messages=%s official=%s codeCandidates=%s",
+                 ok,len(names),",".join(active),msg,mods,code)
+
 if __name__=="__main__":
     LOG.info("Starting Twitch multi chat radar port=%s",PORT)
     threading.Thread(target=irc_worker,daemon=True).start()
     threading.Thread(target=live_worker,daemon=True).start()
+    threading.Thread(target=heartbeat,daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0",PORT),Handler).serve_forever()
