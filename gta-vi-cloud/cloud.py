@@ -19,6 +19,8 @@ SHORT_HEIGHT=SHORT_WIDTH*16//9
 SHORT_FPS=30
 AUTO_MONITOR=os.environ.get('AUTO_MONITOR','false').lower() in ('1','true','yes')
 AUTO_PROCESS=os.environ.get('AUTO_PROCESS','false').lower() in ('1','true','yes')
+AUTO_REVIEW=os.environ.get('AUTO_REVIEW_SHORTS','true').lower() in ('1','true','yes')
+REVIEW_SECONDS=max(60,min(900,int(os.environ.get('SHORTS_REVIEW_SECONDS','120'))))
 POLL_SECONDS=max(30,int(os.environ.get('TWITCH_POLL_SECONDS','30')))
 UPLOADS_DAY_LIMIT=max(1,min(95,int(os.environ.get('UPLOADS_DAY_LIMIT','90'))))
 CHUNK=2800000
@@ -350,13 +352,28 @@ def run_one(kind_override=None):
    report_job_failure(job['jobId'],e)
 def release_once():
  try:
-  state.update(status='reviewing_private_short')
+  # Publication uses the exact existing Vercel editorial/visibility gate.
+  # Review state must never replace the rendering worker's 'working' status.
   result=api('POST','/api/shorts-release',json={})
-  state.update(status=str(result.get('action','review_done')),last={'review':result.get('action'),'videoId':result.get('videoId'),'reason':result.get('reason')})
-  log.info('Shorts review result: %s video=%s reason=%s',result.get('action'),result.get('videoId'),result.get('reason'))
+  action=str(result.get('action','review_done'))
+  previous=state.get('reviewStatus')
+  state.update(reviewStatus=action,reviewError=None,
+    lastReview={'action':action,'videoId':result.get('videoId'),'reason':result.get('reason'),'checkedAt':time.time()})
+  if action!=previous or action not in ('none','no_pending','nothing_to_review','empty','not_ready'):
+   log.info('Shorts editorial review: %s video=%s reason=%s',action,result.get('videoId'),result.get('reason'))
  except Exception as exc:
-  state.update(status='review_failed',error=str(exc)[:180])
-  log.exception('Shorts review failed')
+  state.update(reviewStatus='review_failed',reviewError=str(exc)[:180])
+  log.warning('Shorts editorial review temporarily unavailable: %s',str(exc)[:180])
+
+def review_loop():
+ # Existing Vercel 20-minute cron remains a fallback, not the only publisher.
+ # Faster polling does NOT skip editorial review, safety holds or YouTube checks.
+ state['autoReview']=True
+ log.info('Fast Shorts editorial review enabled: every %d seconds',REVIEW_SECONDS)
+ while ENABLED and AUTO_PROCESS and AUTO_REVIEW:
+  release_once()
+  time.sleep(REVIEW_SECONDS)
+ state['autoReview']=False
 
 def monitor_loop():
  state['monitoring']=True
@@ -391,15 +408,26 @@ def process_loop():
  last_day=''
  started_today=0
  runs=0
+ pause_since=None
+ last_pause_warning=0.0
  while ENABLED and AUTO_PROCESS:
+  state['lastProcessTick']=time.time()
   day=time.strftime('%Y-%m-%d',time.gmtime())
   if day!=last_day:
    last_day=day
    started_today=0
   if state.get('status')=='working' or daily_manager.job_lock.locked():
-   state['processPause']='compilation_or_short_render_busy'
+   now=time.monotonic()
+   if pause_since is None:pause_since=now
+   state['processPause']='daily_compilation_busy' if daily_manager.job_lock.locked() else 'short_render_busy'
+   state['processPausedSeconds']=round(now-pause_since)
+   if now-pause_since>=180 and now-last_pause_warning>=300:
+    last_pause_warning=now
+    log.warning('Shorts processor paused for %ds; reason=%s daily=%s',round(now-pause_since),state['processPause'],daily_manager.status.get('status'))
    time.sleep(25)
    continue
+  pause_since=None
+  state['processPausedSeconds']=0
   if started_today>=UPLOADS_DAY_LIMIT:
    state['processPause']='daily_private_upload_limit'
    time.sleep(300)
@@ -416,6 +444,7 @@ def process_loop():
   try:
    # Choose the highest-ranked eligible single or double; never stall if no double exists.
    state['processPause']=None
+   state['lastProcessAttemptAt']=time.time()
    run_one('auto')
    if state.get('status')=='uploaded_private':
     started_today+=1
@@ -441,7 +470,7 @@ class Server(BaseHTTPRequestHandler):
   self.send_response(code);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def authorized(self):return bool(TOKEN) and self.headers.get('Authorization')=='Bearer '+TOKEN
  def do_GET(self):
-  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status'],'monitoring':state.get('monitoring'),'autoProcessing':state.get('autoProcessing'),'lastPoll':state.get('lastPoll'),'pollAdded':state.get('pollAdded'),'pollError':state.get('pollError'),'uploadedToday':state.get('uploadedToday',0),'processPause':state.get('processPause'),'dailyStatus':daily_manager.status.get('status'),'dailyLanguage':daily_manager.status.get('language'),'dailyEnabled':daily_manager.enabled})
+  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status'],'monitoring':state.get('monitoring'),'autoProcessing':state.get('autoProcessing'),'autoReview':state.get('autoReview',False),'reviewStatus':state.get('reviewStatus'),'reviewError':state.get('reviewError'),'lastReview':state.get('lastReview'),'lastProcessTick':state.get('lastProcessTick'),'lastProcessAttemptAt':state.get('lastProcessAttemptAt'),'processPausedSeconds':state.get('processPausedSeconds',0),'lastPoll':state.get('lastPoll'),'pollAdded':state.get('pollAdded'),'pollError':state.get('pollError'),'uploadedToday':state.get('uploadedToday',0),'processPause':state.get('processPause'),'dailyStatus':daily_manager.status.get('status'),'dailyLanguage':daily_manager.status.get('language'),'dailyEnabled':daily_manager.enabled})
   if self.path=='/status' and self.authorized():return self.respond(200,state)
   if self.path=='/daily/status' and self.authorized():return self.respond(200,daily_manager.status)
   if self.path=='/daily/schedule':return self.respond(200,{'experimentalLocalEveningSlots':{k:{'timezone':v[0],'hour':v[1],'minute':v[2]} for k,v in REGIONAL_SLOTS.items()},'daily':daily_manager.status.get('status'),'note':'local evening test slots; not proven audience peaks by language'})
@@ -483,6 +512,7 @@ class Server(BaseHTTPRequestHandler):
 if __name__=='__main__':
  if ENABLED and AUTO_MONITOR:threading.Thread(target=monitor_loop,daemon=True,name='twitch-30s-monitor').start()
  if ENABLED and AUTO_PROCESS:threading.Thread(target=process_loop,daemon=True,name='shorts-auto-processing').start()
+ if ENABLED and AUTO_PROCESS and AUTO_REVIEW:threading.Thread(target=review_loop,daemon=True,name='shorts-fast-editorial-review').start()
  if ENABLED and os.environ.get('AUTOSTART_ONCE')=='true':threading.Thread(target=run_one,daemon=True).start()
  bootstrap=[x.strip().lower() for x in os.environ.get('AUTOSTART_COMPILATIONS_ONCE','').split(',') if x.strip()]
  if bootstrap:threading.Thread(target=daily_manager.bootstrap,args=(bootstrap,),daemon=True,name='first-compilations').start()
