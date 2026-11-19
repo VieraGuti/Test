@@ -26,6 +26,8 @@ STATE = {
     "videoAudioOpenedAt":None,"lastAudioPacketAt":None,
     "events":deque(maxlen=50),"recentTranscripts":deque(maxlen=40),
     "possibleCodes":deque(maxlen=30),
+    "lastReleaseCue":None,"lastPuzzleClue":None,"lastLetter":None,
+    "puzzleEvents":deque(maxlen=45),
     "trackingEnabled":False, "countdownSeconds":None, "nextEventAt":None,
     "windowStartAt":None, "windowEndAt":None,
     "gateStatus":"waiting_for_timer","gateError":None,
@@ -45,6 +47,16 @@ SPEECH_TO_CHAR = {
 }
 KEYWORDS = re.compile(r"\b(?:codigo|codigos|clave|playstation|psn|regalo|canjear|gta|ganar)\b",re.I)
 SPOKEN = deque(maxlen=25)
+PUZZLE_PHRASES=("adivinanza","ultima letra","letra que falta","letra final","pista","que letra","que vocal")
+RELEASE_PHRASES=("aqui teneis el codigo","aqui teneis el ultimo codigo",
+                 "aqui esta el codigo","os doy el codigo","doy el codigo",
+                 "ultimo codigo","codigo ya","este codigo","os pongo el codigo",
+                 "os dejo el codigo")
+LETTER_PATTERN=re.compile(
+    r"\bletra\s+(?:que\s+faltaba\s+)?(?:es|era|fue|seria|sera)\s+"
+    r"(?:(?:efectivamente|la|el|una|un|pues|finalmente)\s+){0,4}([a-z0-9]+)\b",
+    re.I
+)
 def ts():return datetime.now(timezone.utc).isoformat()
 def update(**kwargs):
     with LOCK: STATE.update(kwargs)
@@ -55,6 +67,7 @@ def snapshot(short=False):
     with LOCK:
         d={k:v for k,v in STATE.items() if k not in ("events","recentTranscripts","possibleCodes")}
         if not short:
+            d["puzzleEvents"]=list(STATE["puzzleEvents"])
             d["events"]=list(STATE["events"])
             d["recentTranscripts"]=list(STATE["recentTranscripts"])
             d["possibleCodes"]=list(STATE["possibleCodes"])
@@ -99,6 +112,38 @@ def handle_transcript(text,is_partial=False):
     raw=normalize(text)
     if KEYWORDS.search(raw):
         event({"type":"voice_keyword","time":t,"text":text,"channel":CHANNEL})
+    # Announce actual on-stream code display, independent of whether a
+    # complete redeem key can be reconstructed by speech recognition.
+    if "codigo" in raw and any(phrase in raw for phrase in RELEASE_PHRASES):
+        cue={"type":"code_release_cue","time":t,"channel":CHANNEL,
+             "text":text,"confidence":"spoken_release_announcement"}
+        with LOCK:
+            previous=STATE.get("lastReleaseCue")
+            prevtime=previous.get("time") if previous else None
+            if not prevtime or abs((datetime.fromisoformat(t)-datetime.fromisoformat(prevtime)).total_seconds())>40:
+                STATE["lastReleaseCue"]=cue
+                STATE["puzzleEvents"].appendleft(cue)
+                event(cue)
+    if any(phrase in raw for phrase in PUZZLE_PHRASES):
+        clue={"type":"puzzle_clue","time":t,"channel":CHANNEL,
+              "text":text,"status":"speech_clue"}
+        with LOCK:
+            STATE["lastPuzzleClue"]=clue
+            STATE["puzzleEvents"].appendleft(clue)
+        event(clue)
+    # TheGrefg may leave the final character as a riddle, and confirm
+    # the answer later. Only accept explicit "la letra era ..." statements.
+    letter_match=LETTER_PATTERN.search(raw)
+    if letter_match:
+        word=letter_match.group(1)
+        letter=SPEECH_TO_CHAR.get(word)
+        if letter and len(letter)==1 and letter.isalpha():
+            clue={"type":"final_letter_confirmed","time":t,"channel":CHANNEL,
+                  "letter":letter,"text":text,"status":"spoken_claim_not_redeemed"}
+            with LOCK:
+                STATE["lastLetter"]=clue
+                STATE["puzzleEvents"].appendleft(clue)
+            event(clue)
     # Only extract potential code when a relevant keyword was uttered recently
     # or within this segment. Never advertise uncertain transcript as a valid code.
     phrase=" ".join(msg for moment,msg in SPOKEN if time.time()-moment<22)
