@@ -7,12 +7,16 @@ from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from vosk import Model, KaldiRecognizer, SetLogLevel
+from urllib.request import Request, urlopen
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 SetLogLevel(-1)
 CHANNEL = os.environ.get("STREAM_CHANNEL", "thegrefg").lower()
 PORT = int(os.environ.get("PORT", "10000"))
 MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "/app/model/vosk-model-small-es-0.42")
+SCREEN_STATUS_URL = os.environ.get("SCREEN_STATUS_URL", "https://gta-vi-thegrefg-screen-ocr.onrender.com/status")
+GATE_POLL_SECONDS = max(3,int(os.environ.get("GATE_POLL_SECONDS","6")))
+_GATE_CACHE = {"value":False,"fetchedAt":0,"event":None}
 LOCK = threading.RLock()
 STATE = {
     "service":"gta-vi-thegrefg-voice-asr-v1",
@@ -22,6 +26,9 @@ STATE = {
     "videoAudioOpenedAt":None,"lastAudioPacketAt":None,
     "events":deque(maxlen=50),"recentTranscripts":deque(maxlen=40),
     "possibleCodes":deque(maxlen=30),
+    "trackingEnabled":False, "countdownSeconds":None, "nextEventAt":None,
+    "windowStartAt":None, "windowEndAt":None,
+    "gateStatus":"waiting_for_timer","gateError":None,
 }
 SPEECH_TO_CHAR = {
     "a":"A","be":"B","b":"B","ve":"B","ce":"C","c":"C","de":"D","d":"D",
@@ -123,6 +130,30 @@ def stream_url():
         raise RuntimeError("Twitch audio stream unavailable: "+run.stderr[-500:])
     return lines[-1]
 
+
+def countdown_gate():
+    """Only activate ASR inside screen OCR's pre/post event window."""
+    current=time.time()
+    try:
+        request=Request(SCREEN_STATUS_URL,headers={"User-Agent":"GTA-VI-CodeHunter-Voice-Gate/1.0","Accept":"application/json"})
+        with urlopen(request,timeout=5) as response:
+            data=json.load(response)
+        if data.get("channel") != CHANNEL:
+            raise RuntimeError("Unexpected countdown channel")
+        active=bool(data.get("windowActive")) and bool(data.get("online"))
+        _GATE_CACHE.update(value=active,fetchedAt=current,event=data.get("nextEventAt"))
+        update(trackingEnabled=active,countdownSeconds=data.get("countdownSeconds"),
+            nextEventAt=data.get("nextEventAt"),windowStartAt=data.get("windowStartAt"),
+            windowEndAt=data.get("windowEndAt"),gateStatus=data.get("scanMode","unknown"),
+            gateError=None)
+        return active
+    except Exception as e:
+        # A transient server-to-server request error should not immediately
+        # cut a live code read, but do not run indefinitely without a timer.
+        grace=bool(_GATE_CACHE["value"] and current-_GATE_CACHE["fetchedAt"]<15)
+        update(trackingEnabled=grace,gateStatus="countdown_unavailable",gateError=str(e)[:250])
+        return grace
+
 def monitor():
     try:
         update(state="loading_speech_model")
@@ -133,6 +164,12 @@ def monitor():
         update(state="model_error",lastError=str(e),online=False)
         return
     while True:
+        # Vosk model stays loaded locally; fetching and transcribing Twitch
+        # audio only starts from one minute before until three minutes after.
+        if not countdown_gate():
+            update(online=False,state="waiting_countdown")
+            time.sleep(GATE_POLL_SECONDS)
+            continue
         ff=None
         try:
             url=stream_url()
@@ -144,7 +181,14 @@ def monitor():
             rec.SetWords(False)
             update(state="listening",online=True,lastError=None,videoAudioOpenedAt=ts())
             logging.info("Listening to TheGrefg audio through ffmpeg")
+            last_gate_poll=0
             while ff.poll() is None:
+                if time.time()-last_gate_poll>=GATE_POLL_SECONDS:
+                    last_gate_poll=time.time()
+                    if not countdown_gate():
+                        update(state="window_closed",online=False)
+                        logging.info("Window closed; stopping audio transcription")
+                        break
                 data=ff.stdout.read(8192)
                 if not data:
                     time.sleep(.2)
@@ -158,7 +202,8 @@ def monitor():
                     partial=result.get("partial","")
                     if partial:
                         update(lastTranscript=partial)
-            raise RuntimeError("ffmpeg audio process exited")
+            if ff.poll() is not None and countdown_gate():
+                raise RuntimeError("ffmpeg audio process exited")
         except Exception as e:
             logging.warning("Audio reconnect: %s",e)
             update(state="retrying",online=False,lastError=str(e)[:700])
