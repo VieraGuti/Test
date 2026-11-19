@@ -1,13 +1,14 @@
-"""Daily, language-separated GTA VI compilations from cleared media.
+"""Daily language-specific compilation editor. Produces MP4 drafts, not YouTube posts.
 
-Run as an independent batch job after an authorized media manifest is available.
-This module only prepares MP4 drafts and metadata; it does NOT publish to YouTube.
-Persist state and MP4 files in durable storage when enabling a production scheduler.
+Source rights are recorded as provenance, not treated as automatic proof of clearance.
+Editing a compilation does not eliminate copyright or monetization risks.
+Durable state/storage and a publisher are required to fully automate distribution.
 """
 from __future__ import annotations
 import argparse, datetime as dt, json, math, os, re, subprocess, tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
+from urllib.parse import urlparse
 
 MAX_CLIPS=12
 MIN_CLIPS=3
@@ -29,6 +30,11 @@ TITLE_TEMPLATES={
 def language(code):
  raw=str(code or '').strip().lower().replace('_','-').split('-')[0]
  return LANGUAGES.get(raw)
+def is_twitch_clip(url):
+ try:
+  p=urlparse(str(url or ''))
+  return p.scheme=='https' and p.hostname in ('www.twitch.tv','twitch.tv','clips.twitch.tv') and (p.hostname=='clips.twitch.tv' or '/clip/' in p.path) and bool(p.path.strip('/'))
+ except ValueError:return False
 def date_of(item):
  raw=item.get('createdAt') or item.get('publishedAt') or item.get('uploadedAt')
  try:
@@ -41,11 +47,10 @@ def is_eligible(item,day):
  end=dt.datetime.combine(day+dt.timedelta(days=1),dt.time.min,tzinfo=dt.timezone.utc)
  if not (end-dt.timedelta(days=7) <= when < end):return False
  if language(item.get('language')) is None:return False
- if str(item.get('rights') or '').lower() not in RIGHTS_OK:return False
  if item.get('gameVerified') is not True:return False
  if item.get('ageReviewRequired') or item.get('adultPossible'):return False
- if item.get('approvedForCompilation') is not True:return False
- if not str(item.get('mediaPath') or ''):return False
+ if item.get('approvedForCompilation') is False:return False
+ if not str(item.get('mediaPath') or '') and not is_twitch_clip(item.get('url')):return False
  if not str(item.get('id') or ''):return False
  dur=float(item.get('duration') or 0)
  return 7 <= dur <= 90
@@ -79,6 +84,7 @@ def plan_by_language(items,state,day,langs=None):
   plans.append({'id':f'{lang}-{day.isoformat()}','day':day.isoformat(),'language':lang,'episode':episode,
     'title':TITLE_TEMPLATES[lang].format(n=episode),
     'clips':selected,'clipIds':[str(x['id']) for x in selected],
+    'unverifiedSources':[{'id':str(c['id']),'creator':str(c.get('creator') or ''),'rights':str(c.get('rights') or 'unverified'),'url':str(c.get('url') or '')} for c in selected if str(c.get('rights') or '').lower() not in RIGHTS_OK],
     'status':'awaiting_render_and_approval'})
  return plans
 def _run(cmd,timeout=600):
@@ -89,14 +95,19 @@ def _duration(path):
  if p.returncode:raise RuntimeError('ffprobe_error')
  return max(0,float(p.stdout.strip()))
 def render_plan(plan,folder):
- """Assemble approved local MP4s into a 720p long-form video with original audio."""
+ """Assemble referenced MP4s, downloading only known Twitch clip URLs when needed."""
  outdir=Path(folder);outdir.mkdir(parents=True,exist_ok=True)
  output=outdir/(plan['id']+'.mp4')
  with tempfile.TemporaryDirectory(prefix='gta6-weekly-') as tmp:
   tmp=Path(tmp);pieces=[];chapters=[];elapsed=0.0
   for i,clip in enumerate(plan['clips']):
-   src=Path(clip['mediaPath']).resolve()
-   if not src.is_file() or src.suffix.lower()!='.mp4':raise ValueError('authorized_local_mp4_required: '+str(clip['id']))
+   src=Path(clip.get('mediaPath') or '').resolve() if clip.get('mediaPath') else None
+   if not src or not src.is_file():
+    url=str(clip.get('url') or '')
+    if not is_twitch_clip(url):raise ValueError('supported_clip_url_or_local_mp4_required: '+str(clip['id']))
+    src=tmp/('source-%02d.mp4'%i)
+    _run(['TwitchDownloaderCLI','clipdownload','--id',url,'--output',str(src),'--collision','Overwrite'],180)
+   if src.suffix.lower()!='.mp4' or src.stat().st_size<1000:raise ValueError('unreadable_mp4: '+str(clip['id']))
    target=tmp/('part-%02d.mp4'%i)
    filtervideo=f'scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1,format=yuv420p'
    _run(['ffmpeg','-nostdin','-v','error','-y','-i',str(src),'-vf',filtervideo,
@@ -111,7 +122,8 @@ def render_plan(plan,folder):
         '-c','copy','-movflags','+faststart',str(output)],600)
  meta={**{k:v for k,v in plan.items() if k!='clips'},'chapters':chapters,
    'durationSeconds':round(_duration(output),2),'outputFile':str(output),
-   'status':'rendered_private_draft','createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
+   'status':'rendered_private_draft','copyrightReviewNeeded':bool(plan.get('unverifiedSources')),
+   'createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
  output.with_suffix('.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
  return meta
 def apply_result(state,meta):
@@ -127,7 +139,7 @@ def apply_result(state,meta):
  return state
 def main():
  p=argparse.ArgumentParser(description='Create language-specific daily GTA VI best-of video drafts')
- p.add_argument('--manifest',required=True,help='JSON manifest of cleared media records')
+ p.add_argument('--manifest',required=True,help='JSON manifest of GTA VI candidates with source URLs or MP4s')
  p.add_argument('--state',required=True,help='Durable state JSON (persist outside ephemeral Render disk)')
  p.add_argument('--day',default=dt.datetime.now(dt.timezone.utc).date().isoformat())
  p.add_argument('--out',required=True)
