@@ -11,6 +11,7 @@ import re
 import threading
 import time
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -316,6 +317,36 @@ def internet_archive(handle):
         results.append({'key': 'ia:' + ident, 'type': 'media_candidate', 'platform': 'Internet Archive', 'title': str(item.get('title') or ident)[:180], 'url': 'https://archive.org/details/' + ident, 'date': str(item.get('year') or ''), 'note': 'Archivo potencialmente relacionado. Requiere revisión manual para confirmar autoría y contenido.'})
     return results
 
+# URLs históricas extraídas de descripciones oficiales y publicaciones de 2017-2018.
+SNAPSHOT_TARGETS = [["Instagram histórico @youngclasstlc (2017)","https://www.instagram.com/youngclasstlc/","2017"],["Instagram histórico @youngclasstlc (2019)","https://www.instagram.com/youngclasstlc/","2019"],["Alias citado @youngclass_ (2018, titular sin confirmar)","https://www.instagram.com/youngclass_/","2018"],["Facebook /youngclassss (2017)","https://www.facebook.com/youngclassss/","2017"],["YouTube oficial Young Class (2017)","https://www.youtube.com/channel/UCEW_1BJjhqNSjphsyCE8I0Q","2017"],["Vídeo BADLOBA (2017)","https://www.youtube.com/watch?v=p82AhyPZd7Y","2017"],["Vídeo KELOWÁ (2017)","https://www.youtube.com/watch?v=XBeox3rLAlM","2017"],["Imagen original ALANTE, 2018","https://elgeneroplus.com/images/subir/images/15406633135utrvjo.jpg","2018"],["Imagen original ALANTE, 2018 (portada lyric)","https://elgeneroplus.com/images/subir/images/1531026190azuiu5d.jpg","2018"],["Artículo original ALANTE, 2018","https://elgeneroplus.com/versa-la-v-alante-official-video/","2018"]]
+
+def archived_exact_target(target):
+    title, original, year = target
+    url = 'https://archive.org/wayback/available?' + urlencode({'url': original, 'timestamp': year})
+    data = fetch_json(url)
+    closest = (data.get('archived_snapshots') or {}).get('closest') or {} if isinstance(data, dict) else {}
+    link = sanitize_link(closest.get('url'))
+    if not closest.get('available') or not link or not urlparse(link).hostname in ('web.archive.org', 'archive.org'):
+        return None
+    date_raw = str(closest.get('timestamp') or '')
+    captured_on = f'{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:8]}' if len(date_raw) >= 8 else ''
+    return {'key': 'exact:' + original + ':' + date_raw, 'type': 'snapshot', 'kind': 'archivo', 'platform': 'Wayback Machine', 'title': title, 'url': link, 'date': captured_on, 'note': 'La API del archivo indica una copia de esta URL histórica. Revisar manualmente si se conservó contenido multimedia y si corresponde al artista; no implica historia de Instagram recuperada.'}
+
+def inspect_exact_targets():
+    found = []
+    errors = []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        tasks = {pool.submit(archived_exact_target, t): t for t in SNAPSHOT_TARGETS}
+        for fut in as_completed(tasks):
+            try:
+                result = fut.result()
+                if result is not None:
+                    found.append(result)
+            except Exception as exc:
+                errors.append(str(exc)[:100])
+    return found, errors
+
+
 def run_scan():
     items = {e['key']: dict(e) for e in EVIDENCE}
     status = {}
@@ -332,6 +363,16 @@ def run_scan():
             with LOCK:
                 STATE['sources'] = dict(status)
                 STATE['items'] = list(items.values())
+    try:
+        snapshots, failures = inspect_exact_targets()
+        for record in snapshots:
+            items[record['key']] = record
+        status['Wayback · enlaces históricos de 2017–2018'] = {'status': 'partial' if failures else 'ok', 'count': len(snapshots), 'message': f'{len(failures)} consultas sin respuesta' if failures else ''}
+    except Exception as exc:
+        status['Wayback · enlaces históricos de 2017–2018'] = {'status': 'error', 'count': 0, 'message': str(exc)[:180]}
+    with LOCK:
+        STATE['sources'] = dict(status)
+        STATE['items'] = list(items.values())
     final = sorted(items.values(), key=lambda i: (i['type'] not in ('snapshot', 'media_candidate'), i.get('date') or '9999-99-99', i.get('title') or ''))
     with LOCK:
         STATE.update({'running': False, 'last_scan': stamp(), 'sources': status, 'items': final, 'error': None})
