@@ -6,13 +6,14 @@ has a persistent volume; caller must archive approved drafts elsewhere.
 """
 from __future__ import annotations
 import datetime as dt
-import json, os, secrets, threading, time
+import json, os, secrets, threading, time, logging
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from daily_compilations import LANGUAGES, plan_by_language, render_plan, apply_result
 
 # Initial hypotheses: evening prime time in major regions for each language.
 # Per-language audience hour data is not yet present. These are NOT measured peaks.
+log=logging.getLogger('gtavi-daily')
 REGIONAL_SLOTS={
  'es':('Europe/Madrid',19,30),
  'en':('America/New_York',19,30),
@@ -34,6 +35,7 @@ class DailyManager:
   self.job_lock=threading.Lock()
   self.status={'status':'idle','last':None,'error':None,'scheduling':'trial_only'}
   self.files={}
+  self.can_render=lambda:True
   self.enabled=os.environ.get('AUTO_DAILY_COMPILATIONS','false').lower() in ('true','yes','1')
   self.last_schedule_check=None
  def state(self):
@@ -60,14 +62,21 @@ class DailyManager:
   if lang not in LANGUAGES:raise ValueError('invalid_language')
   if not self.job_lock.acquire(blocking=False):return {'status':'busy'}
   try:
+   self.status={'status':'waiting_for_short','language':lang,'error':None}
+   for _ in range(120):
+    if self.can_render():break
+    time.sleep(10)
+   else:raise RuntimeError('short_renderer_busy: retry later')
    day=day or dt.datetime.now(ZoneInfo(REGIONAL_SLOTS[lang][0])).date()
    self.status={'status':'selecting','language':lang,'day':str(day),'last':self.status.get('last'),'error':None}
    plans=self.plans(day,[lang])
    if not plans:
+    log.info('Daily compilation skipped: lang=%s insufficient eligible clips',lang)
     self.status.update(status='not_enough_new_clips',note='Need at least 3 eligible unused clips')
     return self.status
    plan=plans[0]
    self.status.update(status='rendering',title=plan['title'],clips=len(plan['clipIds']))
+   log.info('Daily compilation start: lang=%s day=%s clips=%d title=%s',lang,day,len(plan['clipIds']),plan['title'])
    meta=render_plan(plan,self.root)
    zone,hour,minute=REGIONAL_SLOTS[lang]
    slot=dt.datetime.combine(day,dt.time(hour,minute),tzinfo=ZoneInfo(zone))
@@ -80,8 +89,10 @@ class DailyManager:
    meta['previewUrl']=self.base_url+'/daily/video/'+token if self.base_url else None
    self.status={'status':'ready_for_review','language':lang,'last':meta,
        'error':None,'scheduling':'trial_only'}
+   log.info('Daily compilation READY: lang=%s file=%s seconds=%s',lang,meta['outputFile'],meta.get('durationSeconds'))
    return self.status
   except Exception as e:
+   log.exception('Daily compilation FAILED: lang=%s',lang)
    self.status.update(status='failed',error=str(e)[:270])
    return self.status
   finally:
