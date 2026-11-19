@@ -9,6 +9,7 @@ import argparse, datetime as dt, json, math, os, re, subprocess, tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import urlparse
+import httpx
 
 MAX_CLIPS=12
 MIN_CLIPS=3
@@ -47,7 +48,8 @@ def is_eligible(item,day):
  end=dt.datetime.combine(day+dt.timedelta(days=1),dt.time.min,tzinfo=dt.timezone.utc)
  if not (end-dt.timedelta(days=7) <= when < end):return False
  if language(item.get('language')) is None:return False
- if item.get('gameVerified') is not True:return False
+ if item.get('gameVerified') is False:return False
+ if item.get('gameVerified') is not True and item.get('gameCategoryMatched') is not True:return False
  if item.get('ageReviewRequired') or item.get('adultPossible'):return False
  if item.get('approvedForCompilation') is False:return False
  if not str(item.get('mediaPath') or '') and not is_twitch_clip(item.get('url')):return False
@@ -85,6 +87,7 @@ def plan_by_language(items,state,day,langs=None):
     'title':TITLE_TEMPLATES[lang].format(n=episode),
     'clips':selected,'clipIds':[str(x['id']) for x in selected],
     'unverifiedSources':[{'id':str(c['id']),'creator':str(c.get('creator') or ''),'rights':str(c.get('rights') or 'unverified'),'url':str(c.get('url') or '')} for c in selected if str(c.get('rights') or '').lower() not in RIGHTS_OK],
+    'categoryReviewNeeded':any(x.get('gameVerified') is not True for x in selected),
     'status':'awaiting_render_and_approval'})
  return plans
 def _run(cmd,timeout=600):
@@ -123,6 +126,7 @@ def render_plan(plan,folder):
  meta={**{k:v for k,v in plan.items() if k!='clips'},'chapters':chapters,
    'durationSeconds':round(_duration(output),2),'outputFile':str(output),
    'status':'rendered_private_draft','copyrightReviewNeeded':bool(plan.get('unverifiedSources')),
+   'contentReviewNeeded':bool(plan.get('categoryReviewNeeded')),
    'createdAt':dt.datetime.now(dt.timezone.utc).isoformat()}
  output.with_suffix('.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
  return meta
@@ -139,15 +143,25 @@ def apply_result(state,meta):
  return state
 def main():
  p=argparse.ArgumentParser(description='Create language-specific daily GTA VI best-of video drafts')
- p.add_argument('--manifest',required=True,help='JSON manifest of GTA VI candidates with source URLs or MP4s')
+ p.add_argument('--manifest',help='JSON manifest of GTA VI candidates with source URLs or MP4s')
+ p.add_argument('--feed-url',help='GTA VI Viral Engine public feed URL (no credentials)')
  p.add_argument('--state',required=True,help='Durable state JSON (persist outside ephemeral Render disk)')
  p.add_argument('--day',default=dt.datetime.now(dt.timezone.utc).date().isoformat())
  p.add_argument('--out',required=True)
  p.add_argument('--languages',default='es,en,ru,pt,de,fr,it,uk,pl')
  p.add_argument('--plan-only',action='store_true')
  args=p.parse_args()
- data=json.loads(Path(args.manifest).read_text(encoding='utf-8'))
- clips=data if isinstance(data,list) else data.get('candidates',data.get('clips',[]))
+ if bool(args.manifest)==bool(args.feed_url):p.error('Pass exactly one of --manifest or --feed-url')
+ if args.feed_url:
+  parsed=urlparse(args.feed_url)
+  if parsed.scheme!='https' or parsed.hostname!='gta-vi-viral-engine.vercel.app' or parsed.path!='/api/feed':p.error('untrusted feed URL')
+  with httpx.Client(timeout=30,follow_redirects=False) as client:
+   result=client.get(args.feed_url);result.raise_for_status();data=result.json()
+  cat=any(s.get('game')=='Grand Theft Auto VI' and s.get('platform')=='twitch' for s in data.get('sources',[]))
+  clips=[{**x,'gameCategoryMatched':cat and x.get('platform')=='twitch'} for x in data.get('candidates',[])]
+ else:
+  data=json.loads(Path(args.manifest).read_text(encoding='utf-8'))
+  clips=data if isinstance(data,list) else data.get('candidates',data.get('clips',[]))
  state=json.loads(Path(args.state).read_text(encoding='utf-8')) if Path(args.state).exists() else {}
  plans=plan_by_language(clips,state,args.day,args.languages.split(','))
  if args.plan_only:
