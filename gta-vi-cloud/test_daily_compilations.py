@@ -84,4 +84,13 @@ class DigestTests(unittest.TestCase):
   p=plan_by_language(samples('ru'),{},DAY,['ru'])[0]
   state=apply_result({},p)
   with self.assertRaises(ValueError):apply_result(state,p)
+ def test_native_stream_copy_requires_matching_video_and_audio(self):
+  base={'video':'h264','audio':'aac','width':1280,'height':720,'fps':'60/1',
+       'pix_fmt':'yuv420p','sample_rate':'48000','channels':2}
+  self.assertTrue(copy_compatible(base,dict(base)))
+  self.assertFalse(copy_compatible({**base,'width':1920},base))
+  self.assertFalse(copy_compatible({**base,'audio':'opus'},base))
+  self.assertFalse(copy_compatible({**base,'fps':'30/1'},base))
+  self.assertEqual(fps_value(base),60)
+  self.assertEqual(fps_value({**base,'fps':'30000/1001'}),30)
 if __name__=='__main__':unittest.main()
