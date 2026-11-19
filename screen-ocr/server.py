@@ -3,12 +3,16 @@
 Only monitors public video content. No Twitch or PSN credentials used.
 """
 import os
+# Prevent Tesseract OpenMP from using dozens of workers on Render Free.
+os.environ["OMP_THREAD_LIMIT"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 import re
 import json
 import time
 import threading
 import subprocess
 import logging
+from urllib.request import Request, urlopen
 from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,6 +32,10 @@ TIMER_PATTERN = re.compile(r"(?<![0-9])(?:(\d{1,2})\s*:\s*)?(\d{1,2})\s*:\s*(\d{
 TIMER_CONTEXT = re.compile(r"SORTEO|REGALO|CODIG|CÓDIG|GIVEAWAY|TIMER|COUNTDOWN|PR[ÓO]XIMO|NEXT|DROP", re.I)
 
 FRAMEFILE = "/tmp/gta6_grefg_ocr.jpg"
+VOICE_STATUS_URL = os.environ.get("VOICE_STATUS_URL", "https://gta-vi-thegrefg-voice-asr.onrender.com/status")
+_voice_last_checked = 0.0
+_voice_trigger_until = 0.0
+_voice_last_cue = None
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 STATE_LOCK = threading.Lock()
@@ -40,6 +48,9 @@ STATE = {
     "lastOCRAt": None,
     "lastOCRExcerpt": "",
     "framesProcessed": 0,
+    "partialCandidates": {},
+    "voiceBoostUntil":None,
+    "lastVoiceCue":None,
     "timerScans": 0,
     "countdownSeconds": None,
     "countdownText": None,
@@ -57,6 +68,9 @@ STATE = {
 }
 CODE_SEPARATED = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{4})[\s\-:./|]+([A-Z0-9]{4})[\s\-:./|]+([A-Z0-9]{4})(?![A-Z0-9])")
 CODE_COMPACT = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{12})(?![A-Z0-9])")
+# Last character is omitted (4-4-3, 4-4-4-3), or explicitly a '?'.
+CODE_PARTIAL_12 = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{4})[\s\-:./|]+([A-Z0-9]{4})[\s\-:./|]+([A-Z0-9]{3})([?*]?)(?![A-Z0-9])")
+CODE_PARTIAL_16 = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{4})[\s\-:./|]+([A-Z0-9]{4})[\s\-:./|]+([A-Z0-9]{4})[\s\-:./|]+([A-Z0-9]{3})([?*]?)(?![A-Z0-9])")
 CONTEXT = re.compile(r"CODE|CODIGO|CÓDIGO|CLAVE|PS5|PSN|GTA|CANJEAR|REDEEM|KEY", re.I)
 def timestamp():
     return datetime.now(timezone.utc).isoformat()
@@ -73,8 +87,10 @@ def notify(event):
 
 def get_public():
     with STATE_LOCK:
-        d = {k:v for k,v in STATE.items() if k not in ("events", "candidates")}
+        d = {k:v for k,v in STATE.items() if k not in ("events", "candidates","partialCandidates")}
         d["events"] = list(STATE["events"])[:20]
+        d["partialCandidates"] = sorted((dict(c) for c in STATE["partialCandidates"].values()),
+                                          key=lambda x:x["lastSeen"],reverse=True)[:25]
         d["candidates"] = sorted((dict(c) for c in STATE["candidates"].values()), key=lambda x: x["lastSeen"], reverse=True)[:20]
         d["lastHeartbeat"] = timestamp() if time.time()-STATE["lastHeartbeat"]<30 else "stale"
         return d
@@ -234,6 +250,64 @@ def update_timer(text):
     put(countdownText=raw)
     refresh_window()
 
+
+def voice_boost():
+    """Escalate screen scanning as soon as the streamer's ASR hears a giveaway."""
+    global _voice_last_checked, _voice_trigger_until, _voice_last_cue
+    now=time.time()
+    if now-_voice_last_checked >= 7:
+        _voice_last_checked=now
+        try:
+            req=Request(VOICE_STATUS_URL,headers={"User-Agent":"CodeHunter-Screen-Burst/1.1"})
+            with urlopen(req,timeout=3) as r:
+                data=json.load(r)
+            for field in ("lastReleaseCue","lastPuzzleClue"):
+                cue=data.get(field)
+                if not isinstance(cue,dict):continue
+                when=cue.get("time")
+                if not when:continue
+                instant=datetime.fromisoformat(when.replace("Z","+00:00")).timestamp()
+                if 0<=now-instant<180:
+                    _voice_trigger_until=max(_voice_trigger_until,instant+200)
+                    if when!=_voice_last_cue:
+                        _voice_last_cue=when
+                        put(lastVoiceCue=cue)
+                        notify({"type":"voice_ocr_boost","time":timestamp(),"source":field,
+                                "text":cue.get("text","")[:200]})
+        except Exception as e:
+            if int(now)%60<9:
+                logging.info("Voice status unavailable for burst: %s",str(e)[:120])
+    if now < _voice_trigger_until:
+        put(voiceBoostUntil=timestamp_from_epoch(_voice_trigger_until))
+        return True
+    return False
+
+def partial_codes_from_text(text):
+    found=[]
+    clean=text.upper().replace("—","-").replace("–","-").replace("＊","*")
+    for line in clean.splitlines():
+        for pattern in (CODE_PARTIAL_16,CODE_PARTIAL_12):
+            for match in pattern.finditer(line):
+                parts=list(match.groups())
+                unknown=parts.pop()
+                body="".join(parts)
+                # PSN, Steam, etc. can have different lengths; never imply validity.
+                if not any(c.isdigit() for c in body) and not unknown:
+                    continue
+                masked="-".join(parts)+"?"
+                if match.group(0).strip().endswith(("*","?")):
+                    masked="-".join(parts)+"?"
+                found.append((masked,body,line[:170]))
+        # Compact unseparated codes are high-noise: require an explicit ?.
+        for match in re.finditer(r"(?<![A-Z0-9])([A-Z0-9]{10,15})[?*](?![A-Z0-9])",line):
+            raw=match.group(1)
+            if len(raw) not in (11,15) or not any(c.isdigit() for c in raw):
+                continue
+            n=4
+            formatted="-".join([raw[i:i+n] for i in range(0,len(raw),n)])+"?"
+            found.append((formatted,raw,line[:170]))
+    return list(dict(((a,b,c),None) for a,b,c in found).keys())
+
 def codes_from_text(text):
     clean = text.upper().replace("—","-").replace("–","-").replace("_","-")
     # Keep line boundaries; OCR may emit chat or captions unrelated to the code.
@@ -254,10 +328,31 @@ def codes_from_text(text):
 
 def process_frame(ocr):
     found = codes_from_text(ocr)
+    partials = partial_codes_from_text(ocr)
     current = timestamp()
     put(lastOCRAt=current,lastOCRExcerpt=ocr[:650],framesProcessed=get_public()["framesProcessed"]+1)
     if get_public()["framesProcessed"] % 20 == 0:
         logging.info("OCR heartbeat frames=%s candidates=%s", get_public()["framesProcessed"],len(get_public()["candidates"]))
+    for masked,prefix,context in partials:
+        with STATE_LOCK:
+            entries=STATE["partialCandidates"]
+            if masked not in entries:
+                entries[masked]={"code":masked,"prefix":prefix,
+                    "firstSeen":current,"lastSeen":current,"hits":0,
+                    "source":"screen_ocr_partial","context":context,
+                    "status":"missing_final_character"}
+                new=True
+            else:
+                new=False
+            entry=entries[masked]
+            entry["hits"]+=1
+            entry["lastSeen"]=current
+            if len(entries)>80:
+                for k in list(entries)[:20]:entries.pop(k,None)
+            sample=dict(entry)
+        if new:
+            notify({"type":"partial_screen_code","channel":STREAMER,
+                    "time":current,**sample})
     for code,context in found:
         new = False
         with STATE_LOCK:
@@ -304,7 +399,7 @@ def watcher():
                     continue
                 seen_mtime=mtime; no_frames_at=time.time()
                 put(state="reading_screen",lastFrameAt=timestamp())
-                active=refresh_window()
+                active=refresh_window() or voice_boost()
                 scan_interval=ACTIVE_SCAN_SECONDS if active else TIMER_SCAN_SECONDS
                 if time.time()-last_ocr_at < scan_interval:
                     continue
@@ -312,14 +407,11 @@ def watcher():
                 try:
                     text=recognize(FRAMEFILE,light=not active)
                     update_timer(text)
-                    if refresh_window():
-                        process_frame(text)
-                    else:
-                        # This still shows the timer's raw OCR, without expensive
-                        # candidate validation outside the giveaway window.
-                        put(lastOCRAt=timestamp(),lastOCRExcerpt=text[:650],
-                            state="timer_only",online=True)
-                    put(state="watching",online=True)
+                    # This used to discard all code candidates until the timer
+                    # was recognized. With a failing timer, it detected nothing.
+                    # Even in low-power mode inspect the text we already OCR'd.
+                    process_frame(text)
+                    put(state="watching",online=True,lastError=None)
                 except Exception as e:
                     put(lastError="OCR error: "+str(e)[:250],state="ocr_error")
             err=proc.stderr.read(1500).decode("utf-8","replace")[-450:] if proc.stderr else ""
