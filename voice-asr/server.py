@@ -265,8 +265,34 @@ def monitor():
                 except Exception:pass
         time.sleep(8)
 
+
+VOICE_WATCH_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10253b"><title>Code Hunter · Voz</title><style>body{background:#0a2133;color:#f1faff;font:15px/1.5 system-ui;margin:auto;max-width:750px;padding:18px}h1{font-size:25px}.panel{background:#14324a;border:1px solid #3a5d76;border-radius:12px;padding:14px;margin:13px 0}.entry{border-top:1px solid #426178;padding:9px 0}.muted{font-size:12px;color:#a5c0d0}.alert{color:#74edba;font-weight:800}a{color:#9edafc}button{background:#64e5b5;color:#08301c;font-weight:750;border:0;border-radius:9px;padding:11px}</style></head><body><h1>🎙️ TheGrefg · Voz en directo</h1><p>Transcripción completa reciente. Avisos de código y adivinanza. La voz puede confundir letras y números.</p><p><a href="https://gta-vi-code-hunter.vercel.app/">Volver a Code Hunter</a> · <a href="https://www.twitch.tv/thegrefg">Abrir el directo</a></p><button id="sound">Activar avisos</button><div class="panel"><div id="status">Conectando...</div><div id="cue" class="alert"></div><div id="clue"></div></div><div class="panel"><b>Últimas 30 frases</b><div id="lines"></div></div><p class="muted">Se actualiza cada 5 segundos mientras esta pestaña esté abierta. Sin códigos validados ni canjes automáticos.</p><script>
+(()=>{let audio=null,lastCue="";
+const $=id=>document.getElementById(id);
+const tim=s=>s?new Date(s).toLocaleTimeString("es-ES"):"—";
+function alert(){if(navigator.vibrate)navigator.vibrate([150,60,150]);if(audio){let o=audio.createOscillator(),g=audio.createGain();o.frequency.value=970;g.gain.value=.13;o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+.2)}}
+async function poll(){try{const r=await fetch("/status?ts="+Date.now(),{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);let d=await r.json();let ok=d.online&&d.lastAudioPacketAt&&Date.now()-Date.parse(d.lastAudioPacketAt)<60000;
+$("status").textContent=(ok?"● Voz recibiendo":"● Voz no confirmada")+" · "+(d.transcriptsProcessed||0)+" frases · Último audio "+tim(d.lastAudioPacketAt);
+let cue=d.lastReleaseCue;$("cue").textContent=cue?"⚡ Anuncio de código a las "+tim(cue.time)+": "+cue.text:"Sin nuevo anuncio de código";
+let clue=d.lastPuzzleClue;$("clue").textContent=clue?"PISTA: "+clue.text:"";
+const root=$("lines");root.replaceChildren();for(const x of (d.recentTranscripts||[]).slice(0,30)){let row=document.createElement("div");row.className="entry";let t=document.createElement("div");t.className="muted";t.textContent=tim(x.time);let m=document.createElement("div");m.textContent=x.text;row.append(t,m);root.append(row)}
+if(cue&&cue.time!==lastCue){lastCue=cue.time;if(Date.now()-Date.parse(cue.time)<15000)alert()}
+}catch(e){$("status").textContent="Error: "+String(e)}}
+$("sound").onclick=async()=>{try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();await audio.resume();$("sound").textContent="Avisos activos"}catch(e){$("sound").textContent="Audio bloqueado"}};
+poll();setInterval(()=>{if(!document.hidden)poll()},5000)})();
+</script></body></html>"""
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.split("?")[0] == "/watch":
+            data=VOICE_WATCH_HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type","text/html; charset=utf-8")
+            self.send_header("Cache-Control","no-store")
+            self.send_header("Content-Length",str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path.split("?")[0] not in ("/","/status","/health"):
             self.send_response(404);self.end_headers();return
         data=snapshot(short=self.path.startswith("/health"))
