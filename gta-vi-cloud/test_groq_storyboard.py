@@ -29,6 +29,14 @@ class StoryboardTests(unittest.TestCase):
    self.assertEqual(len(body['storyboards']),2)
    self.assertEqual(body['transcript'],'spoken context')
    self.assertEqual(base64.b64decode(body['storyboards'][0]),b'jpeg-'*100)
+ def test_short_15_second_video_uses_two_contact_sheets(self):
+  with tempfile.TemporaryDirectory() as d:
+   path=Path(d)
+   video=self.make_video(path)
+   with patch.object(cloud,'duration',return_value=15.9),patch.object(cloud,'cmd',side_effect=self.fake_ffmpeg) as encoder,patch.object(cloud,'api',return_value={'ok':True,'reviewSaved':True,'storyboardCount':2,'confidence':0.85,'uncertainSafety':False}) as report:
+    self.assertTrue(cloud.submit_groq_storyboard({'jobId':'c'*40},video,'',path))
+   self.assertIn('fps=1,scale=180:-2,tile=4x2',encoder.call_args.args[0])
+   self.assertEqual(len(report.call_args.kwargs['json']['storyboards']),2)
  def test_provider_failure_does_not_fail_upload(self):
   with tempfile.TemporaryDirectory() as d:
    path=Path(d)
