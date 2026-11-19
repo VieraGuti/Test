@@ -32,6 +32,7 @@ def api(method,path,**kw):
   if r.status_code>=400:raise RuntimeError('backend_'+str(r.status_code)+': '+r.text[:180])
   return r.json()
 daily_manager=DailyManager(lambda: api('GET','/api/feed'),base_url='https://gta-vi-viral-cloud-tt.onrender.com')
+daily_manager.can_render=lambda:state.get('status')!='working'
 def cmd(args,limit=240):
  p=subprocess.run(args,capture_output=True,text=True,timeout=limit)
  if p.returncode:raise RuntimeError(str(args[0])+' failed: '+(p.stderr or p.stdout)[-240:])
@@ -246,7 +247,7 @@ def upload(job,video):
  return result.get('watchUrl')
 def run_one(kind_override=None):
  with lock:
-  if state['status']=='working':return
+  if state['status']=='working' or daily_manager.job_lock.locked():return
   state.update(status='working',error=None)
  job=None
  try:
@@ -371,7 +372,8 @@ def process_loop():
   if day!=last_day:
    last_day=day
    started_today=0
-  if state.get('status')=='working':
+  if state.get('status')=='working' or daily_manager.job_lock.locked():
+   state['processPause']='compilation_or_short_render_busy'
    time.sleep(25)
    continue
   if started_today>=UPLOADS_DAY_LIMIT:
