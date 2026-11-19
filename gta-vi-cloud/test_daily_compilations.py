@@ -17,10 +17,22 @@ class DigestsTest(unittest.TestCase):
   self.assertEqual(len(ps),3)
   self.assertTrue(all(p['episode']==1 for p in ps))
   self.assertIn('Mejores clips',ps[0]['title'])
- def test_reject_unapproved_and_unverified(self):
+ def test_preserve_unverified_rights_in_private_draft(self):
   cs=[clip(i,'en') for i in range(3)]
-  cs[0]['rights']='unverified';cs[1]['gameVerified']=False
+  cs[0]['rights']='unverified';cs[0]['approvedForCompilation']=None
+  plans=plan_by_language(cs,{},DAY,['en'])
+  self.assertEqual(len(plans),1)
+  self.assertEqual(plans[0]['unverifiedSources'][0]['id'],'en-0')
+ def test_reject_mismatched_game(self):
+  cs=[clip(i,'en') for i in range(3)]
+  cs[1]['gameVerified']=False
   self.assertEqual(plan_by_language(cs,{},DAY,['en']),[])
+ def test_category_match_creates_review_flag(self):
+  cs=[clip(i,'es') for i in range(3)]
+  for c in cs:
+   c.pop('gameVerified');c['gameCategoryMatched']=True
+  plans=plan_by_language(cs,{},DAY,['es'])
+  self.assertTrue(plans[0]['categoryReviewNeeded'])
  def test_skip_same_day_and_avoid_reused_clips(self):
   cs=[clip(i,'es',creator=str(i)) for i in range(8)]
   p=plan_by_language(cs,{},DAY,['es'])[0]
