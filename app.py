@@ -15,7 +15,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, parse_qs, quote
+from yc_media_vault import vault, authorized, LIMIT
 from urllib.request import Request, urlopen
 
 APP_NAME = 'YOUNG CLASS // ARCHIVE'
@@ -425,12 +426,64 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_HEAD(self):
+        if self.path.split('?')[0] in ('/','/health','/api/state'):
+            self.send_response(200)
+            self.send_header('Content-Length','0')
+            self.end_headers()
+        else:
+            self.send_response(404)
+            self.send_header('Content-Length','0')
+            self.end_headers()
+
+    def serve_media(self, file_id, preview=False):
+        row = vault.get(file_id)
+        if not row:
+            return self.respond(404, '{"error":"archivo_no_encontrado"}')
+        try:
+            stream, length, content_range = vault.open_file(row,self.headers.get('Range'))
+            self.send_response(206 if content_range else 200)
+            self.send_header('Content-Type',row['mime'])
+            self.send_header('Content-Length',str(length))
+            self.send_header('Accept-Ranges','bytes')
+            self.send_header('X-Content-Type-Options','nosniff')
+            self.send_header('Cache-Control','private, max-age=600')
+            disposition = 'inline' if preview else 'attachment'
+            self.send_header('Content-Disposition', disposition + "; filename*=UTF-8''" + quote(row['filename']))
+            if content_range: self.send_header('Content-Range',content_range)
+            self.end_headers()
+            remaining = length
+            try:
+                with stream:
+                    while remaining > 0:
+                        data = stream.read(min(65536,remaining))
+                        if not data:break
+                        self.wfile.write(data)
+                        remaining -= len(data)
+            except (BrokenPipeError,ConnectionResetError):
+                pass
+        except (OSError,ValueError,Exception) as exc:
+            print('[VAULT] Delivery failed: '+str(exc)[:200], flush=True)
+            if not self.wfile.closed:
+                try: self.close_connection = True
+                except Exception: pass
+
     def do_GET(self):
         path = self.path.split('?')[0]
         if path == '/':
             return self.respond(200, PAGE, 'text/html; charset=utf-8')
         if path == '/health':
             return self.respond(200, '{"ok":true}')
+        if path == '/api/media':
+            try:
+                return self.respond(200, json.dumps({'items':vault.get_entries(),'count':len(vault.get_entries()),'persistent':vault.is_persistent(),'uploads_enabled':bool(os.getenv('YC_ADMIN_TOKEN'))}, ensure_ascii=False))
+            except Exception as exc:
+                return self.respond(503,json.dumps({'error':'vault_unavailable','detail':str(exc)[:150]}))
+        if path.startswith('/media/'):
+            ident = path.removeprefix('/media/')
+            query = parse_qs(urlparse(self.path).query)
+            return self.serve_media(ident,preview=query.get('preview',['0'])[0]=='1')
+
         with LOCK:
             snapshot = dict(STATE)
             snapshot['items'] = list(STATE['items'])
@@ -446,7 +499,23 @@ class Handler(BaseHTTPRequestHandler):
         return self.respond(404, '{"error":"not_found"}')
 
     def do_POST(self):
-        if self.path.split('?')[0] != '/api/scan':
+        path = self.path.split('?')[0]
+        if path == '/api/media/upload':
+            if not authorized(self.headers.get('X-Archive-Admin','')):
+                return self.respond(403, '{"error":"admin_key_required"}')
+            try:
+                q=parse_qs(urlparse(self.path).query)
+                name=(q.get('filename') or ['archivo'])[0]
+                length=int(self.headers.get('Content-Length','0'))
+                if length < 1 or length > LIMIT:
+                    return self.respond(413,'{"error":"max_160mb"}')
+                result=vault.import_stream(self.rfile,length,name)
+                print(f"[VAULT] Imported {result['imported']} file(s), rejected {result['rejected']} from {name}",flush=True)
+                return self.respond(201,json.dumps(result,ensure_ascii=False))
+            except (ValueError,OSError,Exception) as exc:
+                print("[VAULT] Import error "+str(exc)[:160],flush=True)
+                return self.respond(400,json.dumps({'error':str(exc)[:190]},ensure_ascii=False))
+        if path != '/api/scan':
             return self.respond(404, '{"error":"not_found"}')
         started = start_scan()
         return self.respond(202 if started else 409, json.dumps({'started': started}))
