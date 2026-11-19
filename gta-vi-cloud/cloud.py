@@ -6,8 +6,7 @@ from urllib.parse import urlparse
 import httpx
 from daily_runner import DailyManager,REGIONAL_SLOTS
 from PIL import Image,ImageDraw,ImageFont,ImageFilter,ImageEnhance
-from video_branding import (short_positions,short_credit_tags,short_caption_tags,
-                            clean_creator,ass_credit_style,video_dimensions)
+from video_branding import short_positions, short_caption_tags, video_dimensions
 
 API=os.environ.get('ENGINE_URL','https://gta-vi-viral-engine.vercel.app').rstrip('/')
 ADMIN=os.environ.get('VIRAL_ADMIN_KEY','')
@@ -144,7 +143,6 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Caption,DejaVu Sans,{size(34)},&H00FFFFFF,&H00FFFFFF,&H980E171F,&H990E171F,1,0,0,0,100,100,0,0,1,3,1,2,{size(44)},{size(44)},{size(140)},1
 Style: Hook,DejaVu Sans,{size(39)},&H00FFFFFF,&H00FFFFFF,&HC0000000,&H8A000000,1,0,0,0,100,100,0,0,1,3,1,8,{size(45)},{size(45)},{size(154)},1
 Style: Context,DejaVu Sans,{size(31)},&H00FFFFFF,&H00FFFFFF,&HBC000000,&H8D000000,1,0,0,0,100,100,0,0,1,3,1,8,{size(50)},{size(50)},{size(154)},1
-{ass_credit_style('Creator',size(23),size(26))}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -156,8 +154,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
    lines.append(f'Dialogue: 0,{ass_time(begin)},{ass_time(finish)},{style},,0,0,0,,{tags}{value}')
  add('Hook',0,min(1.5,max_seconds),hook)
  add('Context',min(1.85,max_seconds),min(4.65,max_seconds),context)
- if clean_creator(creator):
-  add('Creator',0,max_seconds,'@'+clean_creator(creator),short_credit_tags(position,scale))
  segments=transcript.get('segments') if isinstance(transcript,dict) else None
  for seg in (segments or [])[:48]:
   try:
