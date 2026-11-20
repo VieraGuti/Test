@@ -276,34 +276,39 @@ def irc_worker():
     while True:
         sock=None
         try:
-            sock=websocket.create_connection("wss://irc-ws.chat.twitch.tv:443",timeout=35,
+            sock=websocket.create_connection("wss://irc-ws.chat.twitch.tv:443",timeout=25,
                 sslopt={"cert_reqs":ssl.CERT_REQUIRED})
             sock.send("CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
             sock.send("NICK justinfan"+str(random.randint(10000,89999))+"\r\n")
-            joined_requested=set()
+            # Twitch allows 20 JOIN attempts per 10 seconds for regular users.
+            # Joining many channels in one burst previously caused disconnects.
+            sock.settimeout(.7)
+            requested=set()
+            next_join_at=0.0
             with LOCK:
-                wanted=list(CHANNELS)
-            for ch in wanted:
-                sock.send("JOIN #"+ch+"\r\n")
-                joined_requested.add(ch)
-                time.sleep(0.20)
-            sock.settimeout(2.5)
-            with LOCK:
-                STATS["chatConnected"]=True;STATS["lastError"]=None
+                STATS["chatConnected"]=True
+                STATS["lastError"]=None
                 for ch in CHANNELS:STATS["channels"][ch]["chatJoined"]=False
-            LOG.info("IRC connected, joined %d requested channels: %s",len(CHANNELS),", ".join(CHANNELS))
+            LOG.info("IRC connected; will gradually join %d channels",len(CHANNELS))
             backoff=1.0
             while True:
                 with LOCK:
                     pending=set(CHANNELS)
-                for ch in sorted(pending-joined_requested):
-                    sock.send("JOIN #"+ch+"\r\n")
-                    joined_requested.add(ch)
-                    time.sleep(.25)
-                for ch in sorted(joined_requested-pending):
-                    sock.send("PART #"+ch+"\r\n")
-                    joined_requested.remove(ch)
-                    time.sleep(.05)
+                now=time.monotonic()
+                if now>=next_join_at:
+                    leftovers=sorted(requested-pending)
+                    additions=sorted(pending-requested)
+                    if leftovers:
+                        ch=leftovers[0]
+                        sock.send("PART #"+ch+"\r\n")
+                        requested.remove(ch)
+                        next_join_at=now+.1
+                    elif additions:
+                        ch=additions[0]
+                        sock.send("JOIN #"+ch+"\r\n")
+                        requested.add(ch)
+                        # ~1.4 JOIN/s, safely below the 20 per 10 sec cap.
+                        next_join_at=now+.7
                 try:
                     packet=sock.recv()
                 except websocket.WebSocketTimeoutException:
@@ -312,18 +317,24 @@ def irc_worker():
                 for line in str(packet).split("\r\n"):
                     if not line:continue
                     if line.startswith("PING "):
-                        sock.send(line.replace("PING ","PONG ",1)+"\r\n");continue
-                    if " RECONNECT" in line:raise RuntimeError("IRC requested reconnect")
+                        sock.send(line.replace("PING ","PONG ",1)+"\r\n")
+                        continue
+                    if " RECONNECT" in line:
+                        raise RuntimeError("IRC requested reconnect")
                     if " ROOMSTATE #" in line:
-                        for ch in CHANNELS:
-                            if " ROOMSTATE #"+ch in line:
-                                with LOCK:STATS["channels"][ch]["chatJoined"]=True
+                        m=re.search(r" ROOMSTATE #([a-z0-9_]+)",line)
+                        if m:
+                            ch=m.group(1)
+                            with LOCK:
+                                if ch in STATS["channels"]:
+                                    STATS["channels"][ch]["chatJoined"]=True
                     parsed=parse(line)
                     if parsed:read_chat(parsed)
         except Exception as exc:
             LOG.warning("IRC reconnect %s",str(exc)[:230])
             with LOCK:
-                STATS["chatConnected"]=False;STATS["lastError"]=str(exc)[:500]
+                STATS["chatConnected"]=False
+                STATS["lastError"]=str(exc)[:500]
                 for ch in CHANNELS:STATS["channels"][ch]["chatJoined"]=False
         finally:
             if sock:
