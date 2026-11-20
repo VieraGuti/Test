@@ -22,7 +22,9 @@ AUTO_PROCESS=os.environ.get('AUTO_PROCESS','false').lower() in ('1','true','yes'
 AUTO_REVIEW=os.environ.get('AUTO_REVIEW_SHORTS','true').lower() in ('1','true','yes')
 REVIEW_SECONDS=max(60,min(900,int(os.environ.get('SHORTS_REVIEW_SECONDS','120'))))
 POLL_SECONDS=max(30,int(os.environ.get('TWITCH_POLL_SECONDS','30')))
-UPLOADS_DAY_LIMIT=max(1,min(95,int(os.environ.get('UPLOADS_DAY_LIMIT','90'))))
+UPLOADS_DAY_LIMIT=max(1,min(12,int(os.environ.get('UPLOADS_DAY_LIMIT','12'))))
+MIN_UPLOAD_GAP_SECONDS=max(900,min(21600,int(os.environ.get('MIN_UPLOAD_GAP_SECONDS','3600'))))
+SHORT_LAYOUT=os.environ.get('SHORT_LAYOUT','focus').strip().lower()
 CHUNK=2800000
 state={'status':'idle','last':None,'error':None,'pollCount':0,'pollAdded':0,'lastPoll':None,'pollError':None,'monitoring':False,'autoProcessing':False}
 lock=threading.Lock()
@@ -185,6 +187,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  path.write_text(header+'\n'.join(lines)+'\n',encoding='utf-8')
  return path
 
+
 def render(source,dest,title,creator,transcript=None,context=None):
  end=min(MAX_SECONDS,duration(source))
  if end<1:raise RuntimeError('invalid_source_duration')
@@ -192,27 +195,48 @@ def render(source,dest,title,creator,transcript=None,context=None):
  ass=dest.with_suffix('.ass')
  hook=truthful_hook(transcript,title)
  try:
-  # Generate the blurred background once. The old per-frame blur exhausted the Render timeout.
-  cmd(['ffmpeg','-nostdin','-v','error','-y','-ss','0.35','-i',str(source),
-   '-vf',f'scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase,crop={SHORT_WIDTH}:{SHORT_HEIGHT}',
-   '-frames:v','1',str(frame)],limit=35)
-  bg=Image.open(frame).convert('RGB')
-  bg=ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(round(22*SHORT_WIDTH/720)))).enhance(0.53)
-  bg.save(frame,quality=85,optimize=True)
   try:
    src_width,src_height=video_dimensions(source)
   except (RuntimeError,ValueError,IndexError,KeyError,subprocess.TimeoutExpired):
    src_width,src_height=1920,1080
-  visual_layout=short_positions(SHORT_WIDTH,SHORT_HEIGHT,src_width,src_height)
-  overlay=create_ass(ass,transcript,end,hook,context,creator,visual_layout)
-  fgheight=(round(SHORT_HEIGHT*0.75)//2)*2
-  graph=(f'[0:v]fps={SHORT_FPS},scale={SHORT_WIDTH}:{fgheight}:force_original_aspect_ratio=decrease:flags=bicubic,'
-         'setsar=1,format=yuv420p[fg];'
-         '[1:v]format=yuv420p[bg];'
-         '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[composed]')
+  # Focus plus context: the viewer sees a large central action area AND
+  # the untouched full-width stream. Do not lose the streamer facecam or HUD.
+  focus=SHORT_LAYOUT=='focus' and src_width>src_height
+  if focus:
+   focus_height=(round(SHORT_HEIGHT*.625)//2)*2
+   wide_height=SHORT_HEIGHT-focus_height
+   unit=SHORT_WIDTH/720.0
+   positions={'caption_x':SHORT_WIDTH//2,
+              'caption_y':round(SHORT_HEIGHT*.77),
+              'credit_x':round(SHORT_WIDTH-20*unit),
+              'credit_y':round(focus_height+wide_height*.80)}
+   overlay=create_ass(ass,transcript,end,hook,context,creator,positions)
+   graph=(f'[0:v]fps={SHORT_FPS},split=2[z][w];'
+          f'[z]scale={SHORT_WIDTH}:{focus_height}:force_original_aspect_ratio=increase:flags=bicubic,'
+          f'crop={SHORT_WIDTH}:{focus_height},setsar=1,format=yuv420p[zoom];'
+          f'[w]scale={SHORT_WIDTH}:{wide_height}:force_original_aspect_ratio=decrease:flags=bicubic,'
+          f'pad={SHORT_WIDTH}:{wide_height}:(ow-iw)/2:(oh-ih)/2:color=0x090d14,'
+          f'setsar=1,format=yuv420p[wide];'
+          '[zoom][wide]vstack=inputs=2[composed]')
+   inputs=['-i',str(source)]
+  else:
+   # Keep the established renderer for portrait footage or an explicit rollback.
+   cmd(['ffmpeg','-nostdin','-v','error','-y','-ss','0.35','-i',str(source),
+    '-vf',f'scale={SHORT_WIDTH}:{SHORT_HEIGHT}:force_original_aspect_ratio=increase,crop={SHORT_WIDTH}:{SHORT_HEIGHT}',
+    '-frames:v','1',str(frame)],limit=35)
+   bg=Image.open(frame).convert('RGB')
+   bg=ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(round(22*SHORT_WIDTH/720)))).enhance(0.53)
+   bg.save(frame,quality=85,optimize=True)
+   layout=short_positions(SHORT_WIDTH,SHORT_HEIGHT,src_width,src_height)
+   overlay=create_ass(ass,transcript,end,hook,context,creator,layout)
+   fgheight=(round(SHORT_HEIGHT*.75)//2)*2
+   graph=(f'[0:v]fps={SHORT_FPS},scale={SHORT_WIDTH}:{fgheight}:force_original_aspect_ratio=decrease:flags=bicubic,'
+          'setsar=1,format=yuv420p[fg];'
+          '[1:v]format=yuv420p[bg];'
+          '[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[composed]')
+   inputs=['-i',str(source),'-loop','1','-framerate',str(SHORT_FPS),'-i',str(frame)]
   graph+=(f';[composed]subtitles={overlay}[out]' if overlay else ';[composed]null[out]')
-  cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(source),
-   '-loop','1','-framerate',str(SHORT_FPS),'-i',str(frame),
+  cmd(['ffmpeg','-nostdin','-v','error','-y',*inputs,
    '-filter_complex',graph,'-map','[out]','-map','0:a?','-t',str(end),
    '-c:v','libx264','-preset','veryfast','-crf','20',
    '-maxrate',('8M' if SHORT_WIDTH==1080 else '5M'),
@@ -224,7 +248,7 @@ def render(source,dest,title,creator,transcript=None,context=None):
   frame.unlink(missing_ok=True)
   ass.unlink(missing_ok=True)
  if not dest.exists() or dest.stat().st_size<35000:raise RuntimeError('render_failed')
- log.info('Video quality: %dx%d / %dfps / H264 CRF20 / AAC160k / %.1fs',SHORT_WIDTH,SHORT_HEIGHT,SHORT_FPS,end)
+ log.info('Video quality: %dx%d / %dfps / H264 CRF20 / AAC160k / %.1fs layout=%s',SHORT_WIDTH,SHORT_HEIGHT,SHORT_FPS,end,'focus' if focus else 'legacy')
 
 def merge(parts,output):
  if len(parts)==1:shutil.copy2(parts[0],output);return
@@ -471,6 +495,7 @@ def process_loop():
  runs=0
  pause_since=None
  last_pause_warning=0.0
+ last_uploaded_at=0.0
  while ENABLED and AUTO_PROCESS:
   state['lastProcessTick']=time.time()
   day=time.strftime('%Y-%m-%d',time.gmtime())
@@ -493,6 +518,13 @@ def process_loop():
    state['processPause']='daily_private_upload_limit'
    time.sleep(300)
    continue
+  since_upload=time.monotonic()-last_uploaded_at if last_uploaded_at else MIN_UPLOAD_GAP_SECONDS
+  if since_upload<MIN_UPLOAD_GAP_SECONDS:
+   state['processPause']='quality_pacing'
+   state['nextUploadInSeconds']=round(MIN_UPLOAD_GAP_SECONDS-since_upload)
+   time.sleep(min(120,max(10,state['nextUploadInSeconds'])))
+   continue
+  state['nextUploadInSeconds']=0
   try:
    budget=api('GET','/api/upload-budget')
    if int(budget.get('remaining',0))<=0:
@@ -509,6 +541,7 @@ def process_loop():
    run_one('auto')
    if state.get('status')=='uploaded_private':
     started_today+=1
+    last_uploaded_at=time.monotonic()
     runs+=1
     state['uploadedToday']=started_today
    elif state.get('status')=='failed':
@@ -531,7 +564,7 @@ class Server(BaseHTTPRequestHandler):
   self.send_response(code);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def authorized(self):return bool(TOKEN) and self.headers.get('Authorization')=='Bearer '+TOKEN
  def do_GET(self):
-  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status'],'monitoring':state.get('monitoring'),'autoProcessing':state.get('autoProcessing'),'autoReview':state.get('autoReview',False),'reviewStatus':state.get('reviewStatus'),'reviewErrorPresent':bool(state.get('reviewError')),'lastReviewAt':(state.get('lastReview') or {}).get('checkedAt'),'lastProcessTick':state.get('lastProcessTick'),'lastProcessAttemptAt':state.get('lastProcessAttemptAt'),'processPausedSeconds':state.get('processPausedSeconds',0),'lastPoll':state.get('lastPoll'),'pollAdded':state.get('pollAdded'),'pollError':state.get('pollError'),'uploadedToday':state.get('uploadedToday',0),'processPause':state.get('processPause'),'dailyStatus':daily_manager.status.get('status'),'dailyLanguage':daily_manager.status.get('language'),'dailyEnabled':daily_manager.enabled})
+  if self.path=='/health':return self.respond(200,{'ok':True,'enabled':ENABLED,'status':state['status'],'monitoring':state.get('monitoring'),'autoProcessing':state.get('autoProcessing'),'autoReview':state.get('autoReview',False),'reviewStatus':state.get('reviewStatus'),'reviewErrorPresent':bool(state.get('reviewError')),'lastReviewAt':(state.get('lastReview') or {}).get('checkedAt'),'lastProcessTick':state.get('lastProcessTick'),'lastProcessAttemptAt':state.get('lastProcessAttemptAt'),'processPausedSeconds':state.get('processPausedSeconds',0),'lastPoll':state.get('lastPoll'),'pollAdded':state.get('pollAdded'),'pollError':state.get('pollError'),'uploadedToday':state.get('uploadedToday',0),'nextUploadInSeconds':state.get('nextUploadInSeconds',0),'shortLayout':SHORT_LAYOUT,'dailyUploadLimit':UPLOADS_DAY_LIMIT,'processPause':state.get('processPause'),'dailyStatus':daily_manager.status.get('status'),'dailyLanguage':daily_manager.status.get('language'),'dailyEnabled':daily_manager.enabled})
   if self.path=='/status' and self.authorized():return self.respond(200,state)
   if self.path=='/daily/status' and self.authorized():return self.respond(200,daily_manager.status)
   if self.path=='/daily/schedule':return self.respond(200,{'experimentalLocalEveningSlots':{k:{'timezone':v[0],'hour':v[1],'minute':v[2]} for k,v in REGIONAL_SLOTS.items()},'daily':daily_manager.status.get('status'),'note':'local evening test slots; not proven audience peaks by language'})
