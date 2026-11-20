@@ -98,28 +98,49 @@ def parse(line):
     return dict(ch=ch,user=user,typ=typ,body=body or "",mod=mod,owner=owner,announcement=announcement,tags=tags)
 
 def extract_codes(body):
-    # URLs and UUIDs are NOT PS Store vouchers.  A campaign UUID like
-    # .../4479e5e2-9a00-489e-8b0c-345834f37cc7 previously yielded a
-    # false 9A00-489E-8B0C "code" and an unnecessary user notification.
-    text=re.sub(r"[\u200b-\u200d\ufeff]","",str(body).upper()).replace("—","-").replace("–","-").replace("_","-")
+    """Conservative PlayStation 12-char candidates; never invent tokens.
+
+    Do not interpret ordinary speech, @usernames, Discord links, UUIDs,
+    promotional referral strings, or Twitch commands as redemption keys.
+    Direct standalone XXXX-XXXX-XXXX is plausible, but NEVER 'verified'.
+    Unhyphenated/spaced keys require an explicit key/redeem context.
+    """
+    text=str(body).upper()
+    text=re.sub(r"[\u200b-\u200d\ufeff]","",text).replace("\u2014","-").replace("\u2013","-")
     text=re.sub(r"(?:HTTPS?://|WWW\.)[^\s<>()\[\]]+"," ",text,flags=re.I)
     text=re.sub(r"(?<![A-Z0-9])(?:[A-F0-9]{8}-)?(?:[A-F0-9]{4}-){3}[A-F0-9]{12}(?![A-Z0-9])"," ",text)
-    clean=re.sub(r"(?:C[ÓO]DIGOS?|CODES?|CLAVE|KEY|PSN|PS5|PLAYSTATION|REDEEM|CANJEAR)\s*[:#=\-]?\s*"," ",text)
+    # No @handle or #hashtag can become a code; @leslieee1010 was a false alert.
+    text=re.sub(r"(?<![A-Z0-9])[@#][A-Z0-9_]+"," ",text)
+    # Strip IRC action commands, but keep the message for legitimate key posts.
+    text=text.replace("\x01ACTION"," ").replace("\x01"," ")
+    code_context=re.search(
+        r"\b(?:PSN|PS5|PLAYSTATION|PS\s*STORE|REDEEM|CANJEAR|"
+        r"C[ÓO]DIGO(?:S)?|CLAVE(?:S)?|VOUCHER|GAME\s*KEY|"
+        r"KEY(?:S)?|GTA\s*(?:VI|6)\s*CODE|CODE\s*(?:FOR|DE)\s*GTA)\b",text,re.I)
     codes=set()
-    for m in CODES_SEPARATED.finditer(clean):
-        candidate="-".join(m.groups())
-        # Ignore matches embedded in longer hyphenated identifiers.
-        left=clean[:m.start()].rstrip()
-        right=clean[m.end():].lstrip()
-        if (left.endswith("-") and re.search(r"[A-Z0-9]{4,8}-$",left)) or (
-            right.startswith("-") and re.match(r"-[A-Z0-9]{4,12}",right)):
+    # Require literal hyphens, not spaces in a casual sentence. Do not
+    # extract a 12-char substring from a longer dash-separated identifier.
+    hyphenated=re.compile(r"(?<![A-Z0-9_@#-])([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})(?![A-Z0-9_-])")
+    for m in hyphenated.finditer(text):
+        code="-".join(m.groups())
+        if not any(ch.isdigit() for ch in code) or not any(ch.isalpha() for ch in code):
             continue
-        if any(c.isdigit() for c in candidate) and any(c.isalpha() for c in candidate):
-            codes.add(candidate)
-    if CONTEXT.search(text):
-        for m in CODES_JOINED.finditer(clean):
+        # Standalone key format, or explicit redemption context.
+        outside=(text[:m.start()]+text[m.end():]).strip(" \t\r\n:–—-.,!?🎁🔥")
+        if code_context or not outside:
+            codes.add(code)
+    # A key with spaces or no separators is noisy and is accepted only in
+    # the same message as a strong redemption clue.
+    if code_context:
+        spaced=re.compile(r"(?<![A-Z0-9_@#-])([A-Z0-9]{4})[ \t]+([A-Z0-9]{4})[ \t]+([A-Z0-9]{4})(?![A-Z0-9_-])")
+        compact=re.compile(r"(?<![A-Z0-9_@#-])([A-Z0-9]{12})(?![A-Z0-9_-])")
+        for m in spaced.finditer(text):
+            code="-".join(m.groups())
+            if any(ch.isdigit() for ch in code) and any(ch.isalpha() for ch in code):
+                codes.add(code)
+        for m in compact.finditer(text):
             token=m.group(1)
-            if any(c.isdigit() for c in token) and any(c.isalpha() for c in token):
+            if any(ch.isdigit() for ch in token) and any(ch.isalpha() for ch in token):
                 codes.add(f"{token[:4]}-{token[4:8]}-{token[8:]}")
     return sorted(codes)
 
