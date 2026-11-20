@@ -98,16 +98,29 @@ def parse(line):
     return dict(ch=ch,user=user,typ=typ,body=body or "",mod=mod,owner=owner,announcement=announcement,tags=tags)
 
 def extract_codes(body):
-    text=re.sub(r"[\u200b-\u200d\ufeff]","",body.upper()).replace("—","-").replace("–","-").replace("_","-")
+    # URLs and UUIDs are NOT PS Store vouchers.  A campaign UUID like
+    # .../4479e5e2-9a00-489e-8b0c-345834f37cc7 previously yielded a
+    # false 9A00-489E-8B0C "code" and an unnecessary user notification.
+    text=re.sub(r"[\u200b-\u200d\ufeff]","",str(body).upper()).replace("—","-").replace("–","-").replace("_","-")
+    text=re.sub(r"(?:HTTPS?://|WWW\.)[^\s<>()\[\]]+"," ",text,flags=re.I)
+    text=re.sub(r"(?<![A-Z0-9])(?:[A-F0-9]{8}-)?(?:[A-F0-9]{4}-){3}[A-F0-9]{12}(?![A-Z0-9])"," ",text)
     clean=re.sub(r"(?:C[ÓO]DIGOS?|CODES?|CLAVE|KEY|PSN|PS5|PLAYSTATION|REDEEM|CANJEAR)\s*[:#=\-]?\s*"," ",text)
     codes=set()
     for m in CODES_SEPARATED.finditer(clean):
         candidate="-".join(m.groups())
-        if any(c.isdigit() for c in candidate):codes.add(candidate)
+        # Ignore matches embedded in longer hyphenated identifiers.
+        left=clean[:m.start()].rstrip()
+        right=clean[m.end():].lstrip()
+        if (left.endswith("-") and re.search(r"[A-Z0-9]{4,8}-$",left)) or (
+            right.startswith("-") and re.match(r"-[A-Z0-9]{4,12}",right)):
+            continue
+        if any(c.isdigit() for c in candidate) and any(c.isalpha() for c in candidate):
+            codes.add(candidate)
     if CONTEXT.search(text):
         for m in CODES_JOINED.finditer(clean):
-            s=m.group(1)
-            if any(c.isdigit() for c in s):codes.add(f"{s[:4]}-{s[4:8]}-{s[8:]}")
+            token=m.group(1)
+            if any(c.isdigit() for c in token) and any(c.isalpha() for c in token):
+                codes.add(f"{token[:4]}-{token[4:8]}-{token[8:]}")
     return sorted(codes)
 
 def read_chat(parsed):
