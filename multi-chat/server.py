@@ -261,7 +261,7 @@ def discovery_worker():
             category_complete=True
             for gameid in game_ids[:3]:
                 cursor=None
-                for page in range(20):
+                for page in range(60):
                     params={"game_id":gameid,"first":100,"type":"live"}
                     if cursor:params["after"]=cursor
                     result=twitch_json("https://api.twitch.tv/helix/streams?"+
@@ -337,7 +337,7 @@ def discovery_worker():
                   "viewers":int(v.get("viewer_count") or 0),
                   "language":v.get("language",""),
                   "monitored":v["user_login"].lower() in current
-                } for v in ranked[:2000] if v.get("user_login")]
+                } for v in ranked[:6000] if v.get("user_login")]
                 STATS["discovery"].update(
                     state="active",lastCheckedAt=now,
                     foundLive=len(by_name),totalListed=len(by_name),
