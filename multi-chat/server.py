@@ -7,6 +7,8 @@ No accounts, credentials, automation of redemption, or giveaway entry.
 """
 from __future__ import annotations
 import json, logging, os, re, subprocess, threading, time, random, ssl
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from collections import deque, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -20,10 +22,18 @@ CHANNELS=[x.strip().lower() for x in os.environ.get(
     "STREAM_CHANNELS",
     "thegrefg,rubius,ishowspeed,masxd_07,hutchmf,symfuhny,darkviperau,clix,nickmercs,penta"
 ).split(",") if re.fullmatch(r"[a-z0-9_]{2,25}",x.strip().lower())][:18]
+FIXED_CHANNELS=list(CHANNELS)
+DYNAMIC_LIMIT=max(0,min(75,int(os.environ.get("DYNAMIC_LIMIT","60"))))
+DISCOVERY_INTERVAL=max(120,int(os.environ.get("DISCOVERY_INTERVAL","180")))
+TWITCH_CLIENT_ID=os.environ.get("TWITCH_CLIENT_ID","").strip()
+TWITCH_CLIENT_SECRET=os.environ.get("TWITCH_CLIENT_SECRET","").strip()
+JOINED_REQUESTS=set()
+
 LOCK=threading.RLock()
 EVENTS=deque(maxlen=150)
 MESSAGES=deque(maxlen=100)
 CHAT_CODES=deque(maxlen=100)
+VIEWER_CODES=deque(maxlen=100)
 KNOWN={
   "thegrefg": {"reason":"Confirmado por usuario: códigos en pantalla y voz; chat por comprobar","promotion":"reported","codeInChatConfirmed":False},
   "rubius":{"reason":"FossaBot eligió ganadores; método privado en registros previos","promotion":"reported","codeInChatConfirmed":False},
@@ -40,6 +50,10 @@ STATS={
     "service":"gta-vi-multichannel-chat-radar-v1",
     "startedAt":datetime.now(timezone.utc).isoformat(),
     "chatConnected":False,"lastIRCAt":None,"totalMessages":0,
+    "discovery":{"state":"not_configured" if not (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET) else "starting",
+      "source":"twitch_helix","lastCheckedAt":None,
+      "foundLive":0,"monitoredDynamic":0,"maxDynamic":DYNAMIC_LIMIT,
+      "error":None,"requiresCredentials":not (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET)},
     "officialMessages":0,"officialCodeCandidates":0,"viewerHints":0,
     "lastError":None,
     "channels":{ch:{
@@ -134,6 +148,18 @@ def read_chat(parsed):
             record_event("official_code",ch,parsed["body"],user,{"code":code})
     elif parsed["typ"]=="PRIVMSG":
         for code in codes:
+            # A code in a viewer's chat is a *lead* only: allow users to find
+            # early public shares, but do not treat it as a verified giveaway.
+            if CONTEXT.search(parsed["body"]):
+                key=(ch,code,user)
+                if key not in SEEN_VIEWER_HINTS:
+                    with LOCK:
+                        SEEN_VIEWER_HINTS.add(key)
+                        VIEWER_CODES.appendleft({
+                          "code":code,"channel":ch,"source":"viewer_chat",
+                          "user":user,"time":now,"message":parsed["body"][:250],
+                          "confidence":"unverified_viewer"})
+            
             key=(ch,code)
             hits=RECENT_VIEWER[key]
             epoch=time.time()
@@ -146,6 +172,105 @@ def read_chat(parsed):
                 record_event("viewer_repeated_code",ch,"Code shared by >=3 different chatters",user,
                              {"code":code,"verified":False})
 
+# Twitch official Helix category discovery. Without credentials the original
+# static channels remain monitored; never claim whole-category coverage.
+def twitch_json(url,headers=None,data=None):
+    request=Request(url,data=data,headers=headers or {},method="POST" if data is not None else "GET")
+    with urlopen(request,timeout=17) as resp:
+        return json.load(resp)
+
+def discovery_worker():
+    if not (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET):
+        LOG.warning("Dynamic discovery disabled: TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET not configured")
+        return
+    oauth=None;expiry=0;game_ids=None
+    while True:
+        try:
+            if time.time() >= expiry-90:
+                form=urlencode({"client_id":TWITCH_CLIENT_ID,
+                                "client_secret":TWITCH_CLIENT_SECRET,
+                                "grant_type":"client_credentials"}).encode("ascii")
+                grant=twitch_json("https://id.twitch.tv/oauth2/token",
+                                  {"Content-Type":"application/x-www-form-urlencoded"},form)
+                oauth=grant["access_token"];expiry=time.time()+int(grant.get("expires_in",3600))
+            headers={"Authorization":"Bearer "+oauth,"Client-Id":TWITCH_CLIENT_ID}
+            if not game_ids:
+                names=["Grand Theft Auto VI","Grand Theft Auto 6"]
+                found=[]
+                for name in names:
+                    result=twitch_json("https://api.twitch.tv/helix/games?"+urlencode({"name":name}),headers)
+                    found.extend(result.get("data",[]))
+                if not found:
+                    result=twitch_json("https://api.twitch.tv/helix/search/categories?"+
+                                      urlencode({"query":"Grand Theft Auto VI","first":30}),headers)
+                    found=[x for x in result.get("data",[]) if "Grand Theft Auto VI" in x.get("name","") or "Grand Theft Auto 6" in x.get("name","")]
+                game_ids=list(dict.fromkeys(x["id"] for x in found))
+                if not game_ids:
+                    raise RuntimeError("Twitch has no GTA VI category available through API")
+            discovered=[];total=0
+            for gameid in game_ids[:3]:
+                cursor=None
+                for page in range(4):
+                    params={"game_id":gameid,"first":100,"type":"live"}
+                    if cursor:params["after"]=cursor
+                    result=twitch_json("https://api.twitch.tv/helix/streams?"+urlencode(params),headers)
+                    batch=result.get("data",[]);total+=len(batch);discovered.extend(batch)
+                    cursor=(result.get("pagination") or {}).get("cursor")
+                    if not cursor or not batch:break
+            # Additional streams in another GTA category if the TITLE explicitly
+            # contains GTA VI / GTA 6 (do not include all GTA V channels).
+            result=twitch_json("https://api.twitch.tv/helix/games?"+
+                              urlencode({"name":"Grand Theft Auto V"}),headers)
+            old=(result.get("data") or [])
+            if old:
+                page=twitch_json("https://api.twitch.tv/helix/streams?"+
+                                urlencode({"game_id":old[0]["id"],"first":100,"type":"live"}),headers)
+                secondary=[x for x in page.get("data",[]) if
+                   re.search(r"(?:GTA\s*(?:VI|6)|GRAND\s+THEFT\s+AUTO\s*(?:VI|6))\b",
+                             x.get("title",""),re.I)]
+                discovered.extend(secondary)
+            # Prefer highest-viewer live streams, but cannot follow *every* channel.
+            sorted_live=sorted(discovered,key=lambda x:int(x.get("viewer_count") or 0),reverse=True)
+            chosen={}
+            for v in sorted_live:
+                ch=(v.get("user_login") or "").lower()
+                if ch and re.fullmatch(r"[a-z0-9_]{2,25}",ch) and ch not in chosen:
+                    chosen[ch]=v
+                    if len(chosen)>=DYNAMIC_LIMIT:break
+            now=utc()
+            with LOCK:
+                previous=set(CHANNELS)
+                current=list(dict.fromkeys(FIXED_CHANNELS+list(chosen)))
+                CHANNELS[:]=current
+                for ch in current:
+                    if ch not in STATS["channels"]:
+                        STATS["channels"][ch]={
+                          "name":ch,"chatJoined":False,"live":"checking",
+                          "lastLiveCheck":None,"liveCheckError":None,
+                          "lastMessage":None,"messages":0,"officialMessages":0,
+                          "codeCandidates":0,"reason":"Hallado en categoría de GTA VI en Twitch",
+                          "promotion":"unverified","codeInChatConfirmed":False}
+                    if ch in chosen:
+                        STATS["channels"][ch].update(
+                          live="live",lastLiveCheck=now,liveCheckError=None,
+                          streamTitle=chosen[ch].get("title","")[:160],
+                          viewers=chosen[ch].get("viewer_count",0),
+                          discovery="helix_game_category")
+                for ch in previous-set(current):
+                    STATS["channels"].pop(ch,None)
+                STATS["discovery"].update(state="active",lastCheckedAt=now,
+                    foundLive=total,monitoredDynamic=len(chosen),error=None)
+            LOG.info("CATEGORY DISCOVERY live=%s dynamic=%s totalRooms=%s",
+                     total,len(chosen),len(current))
+        except Exception as exc:
+            # Never expose OAuth secrets or tokens in logs / status.
+            msg=type(exc).__name__+" (check Twitch API permissions or category)"
+            LOG.warning("CATEGORY DISCOVERY ERROR %s",msg)
+            with LOCK: STATS["discovery"].update(state="error",error=msg,lastCheckedAt=utc())
+            if "HTTPError" in type(exc).__name__:
+                oauth=None;expiry=0
+        time.sleep(DISCOVERY_INTERVAL)
+
 def irc_worker():
     backoff=1.0
     while True:
@@ -155,14 +280,34 @@ def irc_worker():
                 sslopt={"cert_reqs":ssl.CERT_REQUIRED})
             sock.send("CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
             sock.send("NICK justinfan"+str(random.randint(10000,89999))+"\r\n")
-            for ch in CHANNELS:sock.send("JOIN #"+ch+"\r\n")
+            joined_requested=set()
+            with LOCK:
+                wanted=list(CHANNELS)
+            for ch in wanted:
+                sock.send("JOIN #"+ch+"\r\n")
+                joined_requested.add(ch)
+                time.sleep(0.20)
+            sock.settimeout(2.5)
             with LOCK:
                 STATS["chatConnected"]=True;STATS["lastError"]=None
                 for ch in CHANNELS:STATS["channels"][ch]["chatJoined"]=False
             LOG.info("IRC connected, joined %d requested channels: %s",len(CHANNELS),", ".join(CHANNELS))
             backoff=1.0
             while True:
-                packet=sock.recv()
+                with LOCK:
+                    pending=set(CHANNELS)
+                for ch in sorted(pending-joined_requested):
+                    sock.send("JOIN #"+ch+"\r\n")
+                    joined_requested.add(ch)
+                    time.sleep(.25)
+                for ch in sorted(joined_requested-pending):
+                    sock.send("PART #"+ch+"\r\n")
+                    joined_requested.remove(ch)
+                    time.sleep(.05)
+                try:
+                    packet=sock.recv()
+                except websocket.WebSocketTimeoutException:
+                    continue
                 if not packet:raise RuntimeError("IRC closed websocket")
                 for line in str(packet).split("\r\n"):
                     if not line:continue
@@ -206,7 +351,9 @@ def live_worker():
     while True:
         try:
             with ThreadPoolExecutor(max_workers=2) as pool:
-                futures=[pool.submit(check_live_channel,ch) for ch in CHANNELS]
+                # Helix already verified newly discovered channels as LIVE.
+                # Avoid probing 60+ HLS playlists from Render's 0.15 CPU.
+                futures=[pool.submit(check_live_channel,ch) for ch in FIXED_CHANNELS]
                 for f in as_completed(futures):
                     ch,live,error=f.result()
                     with LOCK:
@@ -226,6 +373,7 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             state=json.loads(json.dumps(STATS))
             state["officialChatCodes"]=list(CHAT_CODES)[:55]
+            state["viewerCodeLeads"]=list(VIEWER_CODES)[:60]
             state["recentOfficialMessages"]=list(MESSAGES)[:65]
             state["events"]=list(EVENTS)[:80]
             state["lastUpdatedAt"]=utc()
@@ -265,5 +413,6 @@ if __name__=="__main__":
     LOG.info("Starting Twitch multi chat radar port=%s",PORT)
     threading.Thread(target=irc_worker,daemon=True).start()
     threading.Thread(target=live_worker,daemon=True).start()
+    threading.Thread(target=discovery_worker,daemon=True).start()
     threading.Thread(target=heartbeat,daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0",PORT),Handler).serve_forever()
