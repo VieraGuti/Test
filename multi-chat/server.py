@@ -23,11 +23,12 @@ CHANNELS=[x.strip().lower() for x in os.environ.get(
     "thegrefg,rubius,ishowspeed,masxd_07,hutchmf,symfuhny,darkviperau,clix,nickmercs,penta"
 ).split(",") if re.fullmatch(r"[a-z0-9_]{2,25}",x.strip().lower())][:18]
 FIXED_CHANNELS=list(CHANNELS)
-DYNAMIC_LIMIT=max(0,min(75,int(os.environ.get("DYNAMIC_LIMIT","60"))))
-DISCOVERY_INTERVAL=max(120,int(os.environ.get("DISCOVERY_INTERVAL","180")))
+DYNAMIC_LIMIT=max(0,min(85,int(os.environ.get("DYNAMIC_LIMIT","85"))))
+DISCOVERY_INTERVAL=max(90,int(os.environ.get("DISCOVERY_INTERVAL","120")))
 TWITCH_CLIENT_ID=os.environ.get("TWITCH_CLIENT_ID","").strip()
 TWITCH_CLIENT_SECRET=os.environ.get("TWITCH_CLIENT_SECRET","").strip()
 JOINED_REQUESTS=set()
+ROTATION_ROUND=0
 
 LOCK=threading.RLock()
 EVENTS=deque(maxlen=150)
@@ -53,7 +54,10 @@ STATS={
     "discovery":{"state":"not_configured" if not (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET) else "starting",
       "source":"twitch_helix","lastCheckedAt":None,
       "foundLive":0,"monitoredDynamic":0,"maxDynamic":DYNAMIC_LIMIT,
-      "error":None,"requiresCredentials":not (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET)},
+      "error":None,"requiresCredentials":not (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET),
+      "monitoringMode":"rotating","rotationRound":0,"rotationPool":0,"rotationSlots":0,
+      "connectedChatRooms":0,"totalListed":0,"allLiveDirectory":True},
+    "directory":[],
     "officialMessages":0,"officialCodeCandidates":0,"viewerHints":0,
     "lastError":None,
     "channels":{ch:{
@@ -214,10 +218,19 @@ def twitch_json(url,headers=None,data=None):
         return json.load(resp)
 
 def discovery_worker():
+    """List every GTA VI stream Twitch Helix makes discoverable.
+
+    We can list hundreds, but Twitch permits at most 100 concurrent IRC joins
+    per user. A set of priority streams stays connected; the remaining slots
+    rotate through the rest. We never call the directory "all chats connected".
+    """
+    global ROTATION_ROUND
     if not (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET):
         LOG.warning("Dynamic discovery disabled: TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET not configured")
         return
-    oauth=None;expiry=0;game_ids=None
+    oauth=None
+    expiry=0
+    game_ids=None
     while True:
         try:
             if time.time() >= expiry-90:
@@ -226,55 +239,80 @@ def discovery_worker():
                                 "grant_type":"client_credentials"}).encode("ascii")
                 grant=twitch_json("https://id.twitch.tv/oauth2/token",
                                   {"Content-Type":"application/x-www-form-urlencoded"},form)
-                oauth=grant["access_token"];expiry=time.time()+int(grant.get("expires_in",3600))
+                oauth=grant["access_token"]
+                expiry=time.time()+int(grant.get("expires_in",3600))
             headers={"Authorization":"Bearer "+oauth,"Client-Id":TWITCH_CLIENT_ID}
             if not game_ids:
-                names=["Grand Theft Auto VI","Grand Theft Auto 6"]
                 found=[]
-                for name in names:
-                    result=twitch_json("https://api.twitch.tv/helix/games?"+urlencode({"name":name}),headers)
+                for name in ("Grand Theft Auto VI","Grand Theft Auto 6"):
+                    result=twitch_json("https://api.twitch.tv/helix/games?"+
+                                      urlencode({"name":name}),headers)
                     found.extend(result.get("data",[]))
                 if not found:
                     result=twitch_json("https://api.twitch.tv/helix/search/categories?"+
                                       urlencode({"query":"Grand Theft Auto VI","first":30}),headers)
-                    found=[x for x in result.get("data",[]) if "Grand Theft Auto VI" in x.get("name","") or "Grand Theft Auto 6" in x.get("name","")]
+                    found=[x for x in result.get("data",[])
+                           if "Grand Theft Auto VI" in x.get("name","")
+                           or "Grand Theft Auto 6" in x.get("name","")]
                 game_ids=list(dict.fromkeys(x["id"] for x in found))
                 if not game_ids:
                     raise RuntimeError("Twitch has no GTA VI category available through API")
-            discovered=[];total=0
+            discovered=[]
+            category_complete=True
             for gameid in game_ids[:3]:
                 cursor=None
-                for page in range(4):
+                for page in range(20):
                     params={"game_id":gameid,"first":100,"type":"live"}
                     if cursor:params["after"]=cursor
-                    result=twitch_json("https://api.twitch.tv/helix/streams?"+urlencode(params),headers)
-                    batch=result.get("data",[]);total+=len(batch);discovered.extend(batch)
+                    result=twitch_json("https://api.twitch.tv/helix/streams?"+
+                                      urlencode(params),headers)
+                    batch=result.get("data",[])
+                    discovered.extend(batch)
                     cursor=(result.get("pagination") or {}).get("cursor")
                     if not cursor or not batch:break
-            # Additional streams in another GTA category if the TITLE explicitly
-            # contains GTA VI / GTA 6 (do not include all GTA V channels).
-            result=twitch_json("https://api.twitch.tv/helix/games?"+
-                              urlencode({"name":"Grand Theft Auto V"}),headers)
-            old=(result.get("data") or [])
+                else:
+                    category_complete=False
+            # Some broadcasters miscategorize GTA VI as GTA V. Inspect at
+            # most 4 pages of that category and only include GTA VI titles.
+            legacy=[]
+            old=twitch_json("https://api.twitch.tv/helix/games?"+
+                           urlencode({"name":"Grand Theft Auto V"}),headers).get("data",[])
             if old:
-                page=twitch_json("https://api.twitch.tv/helix/streams?"+
-                                urlencode({"game_id":old[0]["id"],"first":100,"type":"live"}),headers)
-                secondary=[x for x in page.get("data",[]) if
-                   re.search(r"(?:GTA\s*(?:VI|6)|GRAND\s+THEFT\s+AUTO\s*(?:VI|6))\b",
-                             x.get("title",""),re.I)]
-                discovered.extend(secondary)
-            # Prefer highest-viewer live streams, but cannot follow *every* channel.
-            sorted_live=sorted(discovered,key=lambda x:int(x.get("viewer_count") or 0),reverse=True)
-            chosen={}
-            for v in sorted_live:
-                ch=(v.get("user_login") or "").lower()
-                if ch and re.fullmatch(r"[a-z0-9_]{2,25}",ch) and ch not in chosen:
-                    chosen[ch]=v
-                    if len(chosen)>=DYNAMIC_LIMIT:break
+                cursor=None
+                for page in range(4):
+                    params={"game_id":old[0]["id"],"first":100,"type":"live"}
+                    if cursor:params["after"]=cursor
+                    data=twitch_json("https://api.twitch.tv/helix/streams?"+
+                                     urlencode(params),headers)
+                    legacy.extend(v for v in data.get("data",[])
+                                  if re.search(r"(?:GTA\s*(?:VI|6)|GRAND\s+THEFT\s+AUTO\s*(?:VI|6))\b",
+                                               v.get("title",""),re.I))
+                    cursor=(data.get("pagination") or {}).get("cursor")
+                    if not cursor:break
+            by_name={}
+            for item in discovered+legacy:
+                ch=(item.get("user_login") or "").lower()
+                if re.fullmatch(r"[a-z0-9_]{2,25}",ch):
+                    old_item=by_name.get(ch)
+                    if not old_item or int(item.get("viewer_count") or 0)>int(old_item.get("viewer_count") or 0):
+                        by_name[ch]=item
+            ranked=sorted(by_name.values(),key=lambda v:int(v.get("viewer_count") or 0),reverse=True)
+            names=[v["user_login"].lower() for v in ranked if v.get("user_login")]
+            max_slots=min(DYNAMIC_LIMIT,max(0,95-len(FIXED_CHANNELS)))
+            permanent_count=min(max_slots,45)
+            stable=names[:permanent_count]
+            rest=names[permanent_count:]
+            rotation_slots=max_slots-permanent_count
+            rotating=[]
+            if rotation_slots and rest:
+                start=(ROTATION_ROUND*rotation_slots)%len(rest)
+                rotating=[rest[(start+i)%len(rest)] for i in range(min(rotation_slots,len(rest)))]
+            selected=list(dict.fromkeys(stable+rotating))
+            next_rotation=ROTATION_ROUND+1
             now=utc()
             with LOCK:
                 previous=set(CHANNELS)
-                current=list(dict.fromkeys(FIXED_CHANNELS+list(chosen)))
+                current=list(dict.fromkeys(FIXED_CHANNELS+selected))
                 CHANNELS[:]=current
                 for ch in current:
                     if ch not in STATS["channels"]:
@@ -282,25 +320,42 @@ def discovery_worker():
                           "name":ch,"chatJoined":False,"live":"checking",
                           "lastLiveCheck":None,"liveCheckError":None,
                           "lastMessage":None,"messages":0,"officialMessages":0,
-                          "codeCandidates":0,"reason":"Hallado en categoría de GTA VI en Twitch",
+                          "codeCandidates":0,"reason":"Descubierto en Twitch GTA VI",
                           "promotion":"unverified","codeInChatConfirmed":False}
-                    if ch in chosen:
+                    if ch in by_name:
+                        item=by_name[ch]
                         STATS["channels"][ch].update(
                           live="live",lastLiveCheck=now,liveCheckError=None,
-                          streamTitle=chosen[ch].get("title","")[:160],
-                          viewers=chosen[ch].get("viewer_count",0),
+                          streamTitle=item.get("title","")[:160],
+                          viewers=item.get("viewer_count",0),
                           discovery="helix_game_category")
                 for ch in previous-set(current):
                     STATS["channels"].pop(ch,None)
-                STATS["discovery"].update(state="active",lastCheckedAt=now,
-                    foundLive=total,monitoredDynamic=len(chosen),error=None)
-            LOG.info("CATEGORY DISCOVERY live=%s dynamic=%s totalRooms=%s",
-                     total,len(chosen),len(current))
+                STATS["directory"]=[{
+                  "name":v["user_login"].lower(),
+                  "title":v.get("title","")[:160],
+                  "viewers":int(v.get("viewer_count") or 0),
+                  "language":v.get("language",""),
+                  "monitored":v["user_login"].lower() in current
+                } for v in ranked[:2000] if v.get("user_login")]
+                STATS["discovery"].update(
+                    state="active",lastCheckedAt=now,
+                    foundLive=len(by_name),totalListed=len(by_name),
+                    categoryComplete=category_complete,
+                    monitoredDynamic=len(selected),maxDynamic=DYNAMIC_LIMIT,
+                    currentRooms=len(current),
+                    rotationRound=ROTATION_ROUND,rotationPool=len(rest),
+                    rotationSlots=rotation_slots,monitoringMode="rotating" if rest else "all_listed",
+                    requiresCredentials=False,error=None)
+            LOG.info("CATEGORY DISCOVERY found=%s monitored=%s rotating=%s/%s round=%s categoryComplete=%s",
+                     len(by_name),len(current),len(rotating),len(rest),
+                     ROTATION_ROUND,category_complete)
+            ROTATION_ROUND=next_rotation
         except Exception as exc:
-            # Never expose OAuth secrets or tokens in logs / status.
             msg=type(exc).__name__+" (check Twitch API permissions or category)"
             LOG.warning("CATEGORY DISCOVERY ERROR %s",msg)
-            with LOCK: STATS["discovery"].update(state="error",error=msg,lastCheckedAt=utc())
+            with LOCK:
+                STATS["discovery"].update(state="error",error=msg,lastCheckedAt=utc())
             if "HTTPError" in type(exc).__name__:
                 oauth=None;expiry=0
         time.sleep(DISCOVERY_INTERVAL)
@@ -422,6 +477,7 @@ class Handler(BaseHTTPRequestHandler):
             state["recentOfficialMessages"]=list(MESSAGES)[:65]
             state["events"]=list(EVENTS)[:80]
             state["lastUpdatedAt"]=utc()
+            state["discovery"]["connectedChatRooms"]=sum(1 for v in STATS["channels"].values() if v["chatJoined"])
         if self.path.startswith("/health"):
             state={"service":state["service"],"chatConnected":state["chatConnected"],
                    "channels":len(CHANNELS),"messages":state["totalMessages"]}
