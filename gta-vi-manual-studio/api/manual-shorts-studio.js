@@ -27,7 +27,7 @@ p{color:#9eb5bf;line-height:1.65}
 <script defer src="/manual-short-ui.js"></script>
 </head>
 <body>
-<header><div class="logo"><div class="brand">VIRAL ENGINE<small>THE RANDOM REEL / SHORT STUDIO</small></div><a href="/">← Volver al panel</a></div></header>
+<header><div class="logo"><div class="brand">VIRAL ENGINE<small>THE RANDOM REEL / SHORT STUDIO</small></div><span style="display:flex;gap:15px;flex-wrap:wrap;align-items:center"><a href="/api/automatic-shorts-studio">▶ Ver Shorts generados automáticamente</a><a href="/">← Panel</a></span></div></header>
 <main>
 <h1>Crear y subir Shorts</h1>
 <p>Selecciona un MP4, previsualízalo y guárdalo como borrador. La subida a YouTube es privada y se solicita por separado.</p>
