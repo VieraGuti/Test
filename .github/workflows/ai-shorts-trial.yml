@@ -1,0 +1,36 @@
+name: GTA VI AI Shorts – isolated smoke test
+
+on:
+  push:
+    branches: [gta-vi-ai-shorts-trial]
+    paths:
+      - "gta-vi-cloud/experiments/ai-shorts/**"
+      - ".github/workflows/ai-shorts-trial.yml"
+  pull_request:
+    branches: [gta-vi-cloud-tt]
+    paths:
+      - "gta-vi-cloud/experiments/ai-shorts/**"
+      - ".github/workflows/ai-shorts-trial.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Clone original public generator (test only)
+        run: |
+          git clone --no-checkout --filter=blob:none https://github.com/Anil-matcha/AI-Youtube-Shorts-Generator.git gta-vi-cloud/experiments/ai-shorts/upstream
+          git -C gta-vi-cloud/experiments/ai-shorts/upstream fetch --depth 1 origin 8c9ac3103a137e53669aeebfc2af8dbdd810c35a
+          git -C gta-vi-cloud/experiments/ai-shorts/upstream checkout --detach FETCH_HEAD
+      - name: Install small upstream API dependencies only
+        run: python -m pip install -r gta-vi-cloud/experiments/ai-shorts/upstream/requirements.txt
+      - name: Run real selector with mocked LLM, no keys or publishing
+        run: python -m unittest discover -s gta-vi-cloud/experiments/ai-shorts -p 'test_adapter.py' -v
