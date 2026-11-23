@@ -1,6 +1,6 @@
 // Preserves the current control room, authentication and live metrics.
 // Adds the manual Shorts Studio only to authenticated dashboard HTML.
-import originalAdmin from './admin-base.js';
+import originalAdmin from '../lib/admin-base.js';
 
 export default function handler(req,res){
   if(req.method==='GET'&&!req.query?.view){
