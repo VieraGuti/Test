@@ -83,8 +83,10 @@ def worker():
                       "duration_seconds":round(dur,2),"resolution":f"{w}x{h}",
                       "audio_codec":audio.get("codec_name"),"video_codec":video.get("codec_name"),
                       "size_bytes":int(info["format"]["size"])})
+        print("AI_SHORTS_SMOKE_RESULT", json.dumps(STATE,ensure_ascii=False),flush=True)
     except Exception as e:
         STATE.update({"phase":"failed","error":str(e)[:1000]})
+        print("AI_SHORTS_SMOKE_RESULT", json.dumps(STATE,ensure_ascii=False),flush=True)
 
 class Handler(BaseHTTPRequestHandler):
     def send_json(self,data,status=200):
