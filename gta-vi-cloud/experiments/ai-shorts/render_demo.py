@@ -11,6 +11,7 @@ import threading
 import traceback
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import urlsplit
 
 HOME=Path(__file__).resolve().parent
 sys.path.insert(0,str(HOME/"upstream"))
@@ -112,15 +113,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
     def do_GET(self):
-        if self.path=="/health":
+        # Ignore query parameters such as ?utm_source=chatgpt.com.
+        route=urlsplit(self.path).path
+        if route=="/health":
             return self.send_json({"ok":True,"status":STATE["phase"]})
-        if self.path=="/report":
+        if route=="/report":
             return self.send_json(STATE)
-        if self.path=="/":
+        if route=="/":
             return self.send_json({"description":"AI Shorts isolated technical test",
                                    "report":"/report","preview":"/demo/short_final.mp4"})
-        if self.path.startswith("/demo/") and self.path.split("/")[-1] in ALLOWED:
-            name=self.path.split("/")[-1]
+        if route.startswith("/demo/") and route.split("/")[-1] in ALLOWED:
+            name=route.split("/")[-1]
             path=OUTPUT/name
             if not path.exists():
                 return self.send_json({"error":"not_ready","phase":STATE["phase"]},503)
