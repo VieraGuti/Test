@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "crons": [
+    {
+      "path": "/api/scan",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/compilation-daily",
+      "schedule": "0 5-13 * * *"
+    },
+    {
+      "path": "/api/worker-keepalive",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/shorts-review-cron",
+      "schedule": "*/20 * * * *"
+    }
+  ],
+  "functions": {
+    "api/compilation-daily.js": {
+      "maxDuration": 800
+    },
+    "api/worker-keepalive.js": {
+      "maxDuration": 120
+    },
+    "api/manual-shorts-publish.js": {
+      "maxDuration": 800
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/api/admin"
+    },
+    {
+      "source": "/index.html",
+      "destination": "/api/admin"
+    },
+    {
+      "source": "/studio.html",
+      "destination": "/api/admin"
+    },
+    {
+      "source": "/studio",
+      "destination": "/api/admin"
+    },
+    {
+      "source": "/growth",
+      "destination": "/growth.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        }
+      ]
+    }
+  ]
+}
