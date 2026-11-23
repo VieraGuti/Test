@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg git ca-c
 RUN git clone --depth 1 https://github.com/Anil-matcha/AI-Youtube-Shorts-Generator.git /app/upstream \
     && git -C /app/upstream checkout 8c9ac3103a137e53669aeebfc2af8dbdd810c35a
 RUN pip install --no-cache-dir 'requests>=2.31' 'python-dotenv>=1.0' 'opencv-python-headless==4.13.0.92'
-COPY adapter.py test_adapter.py quality_gate.py test_quality_gate.py render_demo.py ./
+COPY adapter.py test_adapter.py quality_gate.py test_quality_gate.py test_routes.py render_demo.py ./
 RUN python -m unittest discover -s /app -p "test_*.py" -v
 RUN useradd --create-home --uid 10001 demo && mkdir -p /app/output && chown -R demo:demo /app/output
 USER demo
