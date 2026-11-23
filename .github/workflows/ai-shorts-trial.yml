@@ -21,7 +21,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Clone original public generator (test only)
-        run: git clone --depth 1 https://github.com/Anil-matcha/AI-Youtube-Shorts-Generator.git gta-vi-cloud/experiments/ai-shorts/upstream
+        run: |
+          git clone --no-checkout --filter=blob:none https://github.com/Anil-matcha/AI-Youtube-Shorts-Generator.git gta-vi-cloud/experiments/ai-shorts/upstream
+          git -C gta-vi-cloud/experiments/ai-shorts/upstream fetch --depth 1 origin 8c9ac3103a137e53669aeebfc2af8dbdd810c35a
+          git -C gta-vi-cloud/experiments/ai-shorts/upstream checkout --detach FETCH_HEAD
       - name: Install small upstream API dependencies only
         run: python -m pip install -r gta-vi-cloud/experiments/ai-shorts/upstream/requirements.txt
       - name: Run real selector with mocked LLM, no keys or publishing
