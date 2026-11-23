@@ -16,7 +16,7 @@
       title.textContent='Sube y revisa tus propios Shorts';detail.textContent='Selecciona un MP4 · Guarda un borrador · Envíalo a YouTube privado';
       words.append(title,detail);bar.append(words,openButton());target.prepend(bar);
     }
-    addBanner(shorts);addBanner(summary);
+    if(!document.getElementById('series'))addBanner(shorts); // avoid duplicate upload banners in live dashboard
     const nav=document.querySelector('aside nav');
     if(nav&&!document.querySelector('[data-manual-shorts-link]')){const b=openButton();b.classList.add('ms-side');nav.insertAdjacentElement('afterend',b);}
     const modal=document.createElement('div');modal.className='ms-modal';modal.id='ms-modal';
