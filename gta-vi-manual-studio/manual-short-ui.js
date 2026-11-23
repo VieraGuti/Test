@@ -18,7 +18,7 @@
     }
     addBanner(shorts);addBanner(summary);
     const nav=document.querySelector('aside nav');
-    if(nav){const b=openButton();b.classList.add('ms-side');nav.insertAdjacentElement('afterend',b);}
+    if(nav&&!document.querySelector('[data-manual-shorts-link]')){const b=openButton();b.classList.add('ms-side');nav.insertAdjacentElement('afterend',b);}
     const modal=document.createElement('div');modal.className='ms-modal';modal.id='ms-modal';
     modal.innerHTML=[
       '<div class="ms-panel" role="dialog" aria-modal="true" aria-label="Subir Short">',
