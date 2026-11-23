@@ -21,7 +21,7 @@ OUTPUT=HOME/"output"
 OUTPUT.mkdir(exist_ok=True)
 STATE={"ok":False,"phase":"pending","error":None,"source":"synthetic FFmpeg test pattern (not a streamer clip)",
        "generated_mp4s":0,"published_to_youtube":False,"dependencies":"upstream original OpenCV / FFmpeg"}
-ALLOWED={"source.mp4", "short_01.mp4"}
+ALLOWED={"source.mp4", "short_01.mp4", "short_final.mp4"}
 
 def run(*args):
     result=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=160)
@@ -69,15 +69,27 @@ def worker():
         result=clips[0]
         if not result.get("clip_url"):
             raise RuntimeError("upstream_clipper_failed: "+str(result.get("error")))
-        info=media_info(OUTPUT/"short_01.mp4")
+        STATE["phase"]="final_h264_export"
+        final=OUTPUT/"short_final.mp4"
+        vf=("scale=720:1280:flags=lanczos,"
+            "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+            "text='DEMO - NOT GAMEPLAY':fontsize=33:fontcolor=white:"
+            "box=1:boxcolor=black@0.60:boxborderw=10:x=(w-text_w)/2:y=80,"
+            "fps=24,format=yuv420p")
+        run("ffmpeg","-hide_banner","-loglevel","error","-nostdin","-y",
+            "-i",str(OUTPUT/"short_01.mp4"),
+            "-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","21",
+            "-maxrate","5M","-bufsize","10M",
+            "-c:a","aac","-b:a","160k","-movflags","+faststart",str(final))
+        info=media_info(final)
         streams=info.get("streams") or []
         video=next((s for s in streams if s.get("codec_type")=="video"),None)
         audio=next((s for s in streams if s.get("codec_type")=="audio"),None)
         if not video or not audio:
             raise RuntimeError("missing_video_or_audio_track")
         w,h=video.get("width",0),video.get("height",0)
-        if w<=0 or h<=0 or abs(w/h-9/16)>0.02:
-            raise RuntimeError("not_vertical_9_16")
+        if (w,h)!=(720,1280) or video.get("codec_name")!="h264":
+            raise RuntimeError("wrong_final_format_or_codec")
         dur=float(info.get("format",{}).get("duration",0))
         if not 10<dur<14:
             raise RuntimeError("unexpected_output_duration: "+str(dur))
@@ -106,7 +118,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(STATE)
         if self.path=="/":
             return self.send_json({"description":"AI Shorts isolated technical test",
-                                   "report":"/report","preview":"/demo/short_01.mp4"})
+                                   "report":"/report","preview":"/demo/short_final.mp4"})
         if self.path.startswith("/demo/") and self.path.split("/")[-1] in ALLOWED:
             name=self.path.split("/")[-1]
             path=OUTPUT/name
