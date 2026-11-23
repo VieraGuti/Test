@@ -50,7 +50,7 @@ class PreviewTests(unittest.TestCase):
             if "Choose one: podcast" in prompt:
                 return '{"content_type":"commentary","density":"high"}'
             prompts.append(prompt)
-            marks = re.findall(r"\\[(\\d+(?:\\.\\d+)?)s\\]", prompt)
+            marks = re.findall(r"\[(\d+(?:\.\d+)?)s\]", prompt)
             self.assertTrue(marks, "Expected timestamped transcript")
             start = float(marks[0])
             self.assertLess(start, 1200, "Chunk timestamps must be local, not absolute")
