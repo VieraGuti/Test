@@ -57,8 +57,9 @@ function item({key,job={},upload={},path=null,size=null,origin='upload'}){
     youtubeUrl:idOK(videoId)?'https://www.youtube.com/watch?v='+videoId:null,
     youtubeStudioUrl:idOK(videoId)?'https://studio.youtube.com/video/'+videoId+'/edit':null,
     previewAvailable:!!path,
+    storagePath:path||null,
     previewUrl:path?'/api/automatic-shorts-video?key='+encodeURIComponent(text(key)):null,
-    mp4Size:Number.isFinite(Number(size))?Number(size):null,
+    mp4Size:size!==null&&Number.isFinite(Number(size))?Number(size):null,
     origin
   };
 }
