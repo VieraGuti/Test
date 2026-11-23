@@ -6,6 +6,11 @@ on:
     paths:
       - "gta-vi-cloud/experiments/ai-shorts/**"
       - ".github/workflows/ai-shorts-trial.yml"
+  pull_request:
+    branches: [gta-vi-cloud-tt]
+    paths:
+      - "gta-vi-cloud/experiments/ai-shorts/**"
+      - ".github/workflows/ai-shorts-trial.yml"
   workflow_dispatch:
 
 permissions:
