@@ -17,6 +17,8 @@ import re
 import subprocess
 import tempfile
 from collections import Counter
+from fractions import Fraction
+import math
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -50,6 +52,28 @@ def format_key(spec):
         spec['video'],width,height,spec['pix_fmt'],fps,
         str(spec['sample_rate']),int(spec['channels']),
     )
+
+
+def final_format_compatible(spec,reference):
+    """Verify final remux has the same codecs and stream geometry as its sources.
+
+    ffprobe's avg_frame_rate is derived from all concat packet timestamps and
+    can drift slightly after remuxing, unlike the nominal rate of each clip.
+    Only the frame-rate check allows a bounded tolerance; any codec,
+    resolution, pixel-format, sample-rate, or channel change is rejected.
+    """
+    try:
+        expected=(reference[0],reference[1],reference[2],reference[3],
+                  str(reference[5]),int(reference[6]))
+        actual=(str(spec.get('video') or ''),int(spec.get('width') or 0),
+                int(spec.get('height') or 0),str(spec.get('pix_fmt') or ''),
+                str(spec.get('sample_rate') or ''),int(spec.get('channels') or 0))
+        if spec.get('audio')!='aac' or actual!=expected:
+            return False
+        fps=float(Fraction(str(spec.get('fps') or '0/1')))
+        return math.isfinite(fps) and reference[4]*0.90<=fps<=reference[4]*1.10
+    except (TypeError,ValueError,ZeroDivisionError,OverflowError):
+        return False
 
 
 def choose_primary(specs):
@@ -223,8 +247,9 @@ def render_fast_plan(plan,folder,progress=None):
             if not MIN_SECONDS-2<=duration<=MAX_SECONDS+2:
                 raise RuntimeError('bad_final_duration_%.1fs'%duration)
             final_spec=media_spec(output)
-            if format_key(final_spec)!=reference:
-                raise RuntimeError('final_format_changed')
+            if not final_format_compatible(final_spec,reference):
+                log.error('Final stream profile differs from selected source profile: expected=%s actual=%s',reference,final_spec)
+                raise RuntimeError('final_format_changed: expected=%s got=%s'%(reference,final_spec))
         except BaseException:
             output.unlink(missing_ok=True)
             raise
