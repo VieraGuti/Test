@@ -10,7 +10,7 @@ from typing import Dict
 
 GAME = re.compile(r"\b(?:GTA\s*(?:VI|6)|Grand\s+Theft\s+Auto\s*(?:VI|6))\b", re.I)
 DANGLING = re.compile(
-    r"\b(?:in|en|de|for|with|during|into|on|at|dans|im|sur|no|na|в|на)\s*(?:\|\s*)?"
+    r"\b(?:in|en|de|for|with|during|into|on|at|dans|im|sur|no|na|в|на)\s*\|\s*"
     r"(?:GTA\s*(?:VI|6)|Grand\s+Theft\s+Auto\s*(?:VI|6))\s*$",
     re.I,
 )
