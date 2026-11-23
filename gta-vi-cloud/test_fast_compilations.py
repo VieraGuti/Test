@@ -30,6 +30,22 @@ class FastCompilationsTests(unittest.TestCase):
   self.assertIsNone(fast.format_key(sample_spec('vp9')))
   self.assertIsNone(fast.format_key(sample_spec('hevc',width=2560)))
 
+ def test_final_remux_profile_allows_small_average_fps_drift(self):
+  expected=fast.format_key(sample_spec('h264',fps='30/1'))
+  self.assertIsNotNone(expected)
+  self.assertTrue(fast.final_format_compatible(sample_spec('h264',fps='30/1'),expected))
+  self.assertTrue(fast.final_format_compatible(sample_spec('h264',fps='29/1'),expected))
+  self.assertTrue(fast.final_format_compatible(sample_spec('h264',fps='30000/1001'),expected))
+
+ def test_final_remux_still_rejects_broken_or_changed_streams(self):
+  expected=fast.format_key(sample_spec('h264',fps='30/1'))
+  self.assertFalse(fast.final_format_compatible(sample_spec('hevc',fps='30/1'),expected))
+  self.assertFalse(fast.final_format_compatible(sample_spec('h264',width=1920,fps='30/1'),expected))
+  self.assertFalse(fast.final_format_compatible(sample_spec('h264',fps='24/1'),expected))
+  self.assertFalse(fast.final_format_compatible({**sample_spec('h264',fps='30/1'),'audio':'mp3'},expected))
+  self.assertFalse(fast.final_format_compatible({**sample_spec('h264',fps='30/1'),'sample_rate':'44100'},expected))
+  self.assertFalse(fast.final_format_compatible({**sample_spec('h264',fps='30/1'),'fps':'0/0'},expected))
+
  def test_majority_wins(self):
   a=sample_spec('hevc',1920,1080)
   b=sample_spec('h264',1280,720)
