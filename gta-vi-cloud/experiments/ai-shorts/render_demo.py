@@ -63,6 +63,8 @@ def worker():
             raise RuntimeError("highlight_not_selected")
         STATE["highlights"]=selected["highlights"]
         STATE["phase"]="upstream_crop_and_audio_mux"
+        import cv2
+        print("OPENCV_DIAG", json.dumps({"file":str(getattr(cv2,"__file__",None)), "version":str(getattr(cv2,"__version__",None)), "hasCascadeClassifier":hasattr(cv2,"CascadeClassifier"), "path":str(getattr(cv2,"__path__",None)), "keys":dir(cv2)[:35]}),flush=True)
         clips=crop_highlights_local(str(src),selected["highlights"],aspect_ratio="9:16",out_dir=str(OUTPUT))
         result=clips[0]
         if not result.get("clip_url"):
