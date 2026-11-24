@@ -2,6 +2,21 @@ import {get,head,put} from '@vercel/blob';
 import {randomUUID} from 'node:crypto';
 import {authenticated,respond,safeTitle} from '../lib/manual-short-auth.js';
 
+const DEFAULT_TAGS=["gaming","GTA 6","GTA VI","GTA6","Grand Theft Auto VI","Rockstar Games","gaming shorts","videojuegos","clips GTA 6","The Random Reel"];
+export function shortTags(input){
+  const extra=Array.isArray(input)?input:typeof input==='string'?input.split(','):[];
+  const seen=new Set(),tags=[];
+  let used=0;
+  for(const raw of [...DEFAULT_TAGS,...extra]){
+    const tag=String(raw).replace(/[\u0000-\u001f\u007f<>]/g,' ').trim().replace(/^#+/,'').trim().slice(0,80);
+    if(!tag||seen.has(tag.toLowerCase()))continue;
+    const cost=tag.length+(tag.includes(' ')?2:0)+(tags.length?1:0);
+    if(used+cost>480)continue;
+    seen.add(tag.toLowerCase());tags.push(tag);used+=cost;
+  }
+  return tags;
+}
+
 const KEY='state/manual_shorts_drafts.json';
 export async function readDrafts(){
   try{
@@ -26,7 +41,7 @@ export default async function handler(req,res){
     if(req.method==='GET'){
       const rows=await readDrafts();
       return respond(res,200,{ok:true,drafts:rows.slice(0,50).map(d=>({
-        id:d.id,title:d.title,description:d.description||'',createdAt:d.createdAt,
+        id:d.id,title:d.title,description:d.description||'',tags:shortTags(d.tags),createdAt:d.createdAt,
         size:d.size,contentType:d.contentType,status:d.status,
         youtubeUrl:d.youtubeUrl||null,lastError:d.lastError||null
       }))});
@@ -48,7 +63,7 @@ export default async function handler(req,res){
     const rows=await readDrafts();
     const existing=rows.find(d=>d.pathname===pathname);
     if(existing)return respond(res,200,{ok:true,draft:existing,reused:true});
-    const d={id:randomUUID(),pathname,title,description,createdAt:new Date().toISOString(),
+    const d={id:randomUUID(),pathname,title,description,tags:shortTags(input.tags),createdAt:new Date().toISOString(),
       status:'draft',size:blob.size,contentType:blob.contentType,
       lastError:null,licenseAccepted:true};
     rows.unshift(d);
