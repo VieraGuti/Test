@@ -27,6 +27,7 @@
       '<video controls playsinline preload="metadata" class="ms-preview" id="ms-preview"></video><p class="ms-detail" id="ms-detail">Elige un archivo para ver su duración y resolución.</p></div>',
       '<div><label class="ms-field">Título del Short<input type="text" id="ms-title" maxlength="95" placeholder="Ej.: Rubius escapa de una persecución inesperada"></label>',
       '<label class="ms-field">Descripción<textarea id="ms-description" maxlength="2000" placeholder="Qué ocurre y quién es el creador original"></textarea></label>',
+      '<label class="ms-field">Etiquetas de YouTube (separadas por comas)<input id="ms-tags" type="text" maxlength="480" value="gaming, GTA 6, GTA VI, GTA6, Grand Theft Auto VI, Rockstar Games, gaming shorts, videojuegos, clips GTA 6, The Random Reel" placeholder="gaming, GTA 6, streamer"></label>',
       '<label class="ms-check"><input type="checkbox" id="ms-rights"><span>Confirmo que tengo los derechos o permisos necesarios para usar y publicar este vídeo.</span></label>',
       '<div class="ms-controls"><button class="ms-save" id="ms-save" type="button">Guardar borrador privado</button><button class="ms-secondary" id="ms-studio" type="button">Abrir YouTube Studio</button></div>',
       '<progress class="ms-progress" id="ms-progress" max="100" value="0" hidden></progress><p class="ms-msg" id="ms-msg" role="status"></p>',
@@ -99,7 +100,7 @@
           }
         });
         const result=await post('/api/manual-shorts-drafts',{
-          action:'create',pathname:blob.pathname,title,description:$('ms-description').value,licenseAccepted:true
+          action:'create',pathname:blob.pathname,title,description:$('ms-description').value,tags:$('ms-tags').value,licenseAccepted:true
         });
         message('Borrador guardado. Ahora puedes enviarlo a YouTube en privado.',false,true);
         await loadDrafts();
@@ -124,7 +125,7 @@
           preview.onclick=()=>{
             if(url){URL.revokeObjectURL(url);url=null;}
             file=null;$('ms-preview').src='/api/manual-shorts-media?id='+encodeURIComponent(d.id);
-            $('ms-title').value=d.title;$('ms-description').value=d.description||'';
+            $('ms-title').value=d.title;$('ms-description').value=d.description||'';$('ms-tags').value=(d.tags||[]).join(', ');
             message('Previsualizando borrador: '+d.title);
             $('ms-preview').play().catch(()=>{});
             modal.scrollTo({top:0,behavior:'smooth'});
