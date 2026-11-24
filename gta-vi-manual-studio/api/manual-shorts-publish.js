@@ -1,6 +1,6 @@
 import {get,head,put} from '@vercel/blob';
 import {authenticated,respond} from '../lib/manual-short-auth.js';
-import {readDrafts,writeDrafts} from './manual-shorts-drafts.js';
+import {readDrafts,writeDrafts,shortTags} from './manual-shorts-drafts.js';
 
 export const config={maxDuration:800};
 const OAUTH='oauth/youtube_channel.json';
@@ -45,7 +45,7 @@ async function sendVideo(draft){
   if(!/^video\/(mp4|webm|quicktime)$/i.test(contentType))throw new Error('unsupported_video_type');
   const access=await token();
   const meta={
-    snippet:{title:draft.title,description:draft.description||'',categoryId:'20'},
+    snippet:{title:draft.title,description:draft.description||'',categoryId:'20',tags:shortTags(draft.tags)},
     status:{privacyStatus:'private',selfDeclaredMadeForKids:false}
   };
   const start=await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{
