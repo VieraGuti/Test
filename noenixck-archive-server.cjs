@@ -22,13 +22,14 @@ async function radar(req,res){try{const refresh=new URL(req.url,'http://localhos
 
 let failures=[];
 http.createServer((req,res)=>{
+const pathname=new URL(req.url,'http://localhost').pathname;
 res.setHeader('X-Robots-Tag','noindex, nofollow');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Frame-Options','DENY');
 function show(error,status=200){res.writeHead(status,{'Content-Type':'text/html; charset=utf-8'});res.end(login.replace('ERROR',error?'<p class="error">'+error+'</p>':''))}
-if(req.url==='/health'){res.writeHead(password?200:503);return res.end(password?'ok':'Unavailable')}
-if(req.url==='/robots.txt'){res.writeHead(200,{'Content-Type':'text/plain'});return res.end('User-agent: *\nDisallow: /')}
+if(pathname==='/health'){res.writeHead(password?200:503);return res.end(password?'ok':'Unavailable')}
+if(pathname==='/robots.txt'){res.writeHead(200,{'Content-Type':'text/plain'});return res.end('User-agent: *\nDisallow: /')}
 if(!password){res.writeHead(503);return res.end('Archive unavailable')}
-if(req.url==='/logout'&&req.method==='POST'){res.writeHead(303,{'Set-Cookie':'archive_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0','Location':'/'});return res.end()}
-if(req.url==='/login'&&req.method==='POST'){
+if(pathname==='/logout'&&req.method==='POST'){res.writeHead(303,{'Set-Cookie':'archive_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0','Location':'/'});return res.end()}
+if(pathname==='/login'&&req.method==='POST'){
 failures=failures.filter(t=>Date.now()-t<60000);
 if(failures.length>=15)return show('Demasiados intentos. Inténtalo de nuevo en un minuto.',429);
 let body='';req.on('data',chunk=>{body+=chunk;if(body.length>4096)req.destroy()});req.on('end',()=>{
@@ -36,8 +37,8 @@ const candidate=new URLSearchParams(body).get('password')||'';
 if(!equal(candidate,password)){failures.push(Date.now());return show('Contraseña incorrecta.',401)}
 const expiry=String(Date.now()+ttl);res.writeHead(303,{'Set-Cookie':'archive_session='+expiry+'.'+sign(expiry)+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=43200','Location':'/'});res.end()
 });return}
-if(req.url.startsWith('/api/')){if(!authenticated(req)){res.writeHead(401);return res.end('Unauthorized')}const p=new URL(req.url,'http://localhost').pathname;if(p==='/api/ortho')return void ortho(req,res);if(p==='/api/research')return void radar(req,res);res.writeHead(404);return res.end('Not found')}
-if(req.url!=='/'&&req.url!=='/index.html'){res.writeHead(404);return res.end('Not found')}
+if(pathname.startsWith('/api/')){if(!authenticated(req)){res.writeHead(401);return res.end('Unauthorized')}const p=new URL(req.url,'http://localhost').pathname;if(p==='/api/ortho')return void ortho(req,res);if(p==='/api/research')return void radar(req,res);res.writeHead(404);return res.end('Not found')}
+if(pathname!=='/'&&pathname!=='/index.html'){res.writeHead(404);return res.end('Not found')}
 if(!authenticated(req))return show('');
 res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(page.replace('</nav>','<form method="post" action="/logout" style="display:inline"><button style="background:transparent;border:0;color:inherit;cursor:pointer;font:inherit;padding:0">Cerrar sesión</button></form></nav>'));
 }).listen(Number(process.env.PORT)||10000,'0.0.0.0');
