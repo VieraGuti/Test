@@ -140,7 +140,7 @@ async function updateLeaderboard(){
   const channelId=channelRoutes.leaderboard,channel=await eventChannel(channelId);
   const data=await call('leaderboard',{channelId});
   const rows=Array.isArray(data.rows)?data.rows:[];
-  const clean=(v:unknown)=>String(v).replace(/[\\`*_~|<>\[\]]/g,'\\const setupCommand=new discord.SlashCommandBuilder()').slice(0,90);
+  const clean=(v:unknown)=>String(v).replace(/[\\`*_~|<>\[\]]/g,m=>'\\'+m).slice(0,90);
   const description=rows.length?rows.map((r:any,i:number)=>'**'+(i+1)+'.** '+clean(r.name)+' — '+Number(r.kills)+' K / '+Number(r.deaths)+' D · K/D '+(Number(r.kills)/Math.max(1,Number(r.deaths))).toFixed(2)).join('\n'):'No PvP kills have been recorded since tracking started.';
   const payload={embeds:[{title:'WIPESIDE · PvP leaderboard',description:description+'\n\nObserved PvP kills and deaths only. Updates every 5 minutes.',color:0xf2ad73,timestamp:new Date().toISOString(),...discordMedia(snapshot.bot.config.embedMedia,'default')}],allowedMentions:{parse:[]}};
   let message:any;if(data.messageId){try{message=await channel.messages.fetch(data.messageId);}catch(e){if(Number((e as any)?.code)!==10008)throw e;}}
