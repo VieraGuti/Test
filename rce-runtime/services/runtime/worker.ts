@@ -1,5 +1,5 @@
 import {discordMedia,type EmbedScope} from '../../core/embed-media.ts';
-import {readRoutes,resolveRoute} from './channel-routing.ts';
+import {readRoutes,resolveRoute,CHANNEL_CATALOG,SETUP_GROUPS,routeName} from './channel-routing.ts';
 import {describeKill} from './killfeed.ts';
 import {randomInt} from 'node:crypto';
 import {registrationSettings,quickChatAction,emoteLabel,safeSay} from '../../core/participation.ts';
@@ -99,9 +99,43 @@ rce.manager.on('playerSuicide',async(data:any)=>{const p=current?.engine.players
 rce.manager.on('playerLeft',async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(p){p.online=false;await checkpoint(current!.engine).catch(()=>{paused=true;});}});
 for(const event of ['playerJoined','playerRespawned'])rce.manager.on(event,async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(!p)return;p.online=true;if(event==='playerRespawned'){const active=current?.engine.status==='RUNNING'&&!!p.origin&&!p.returned;if(!active||current?.definition.spatial?.respawn.mode!=='disabled'&&current?.definition.spatial?.respawn.mode!==undefined){p.alive=true;if(active&&current)await respawnPlayer(current.definition,current.engine,adapter,p).catch(()=>{paused=true;});}else if(current?.definition.spatial?.spectatorOnRespawn){await respawnPlayer(current.definition,current.engine,adapter,p).catch(()=>{paused=true;});}}if(p.pendingReturn&&['NEEDS_REVIEW','CANCELLED','COMPLETED'].includes(current!.engine.status))await restoreEligible().catch(()=>{});});
 rce.manager.on('error',()=>{rconConnected=false;});
+let channelSetupBusy=false;
+async function saveRoute(type:string,id:string,actor:string){await eventChannel(id);const result=await call('channel',{actor,guildId:config.guildId,type,channelId:id});channelRoutes=readRoutes(result.channels);}
+async function createChannels(actor:string){
+ if(channelSetupBusy)throw Error('A channel setup is already running.');channelSetupBusy=true;
+ const results:{type:string;status:string}[]=[];
+ try{
+  if(!snapshot.entitled||actor!==snapshot.ownerDiscordId||quitting)throw Error('Owner and active hosting required.');
+  const guild=await client.guilds.fetch(config.guildId);const me=await guild.members.fetchMe();
+  if(!me.permissions.has(discord.PermissionFlagsBits.ManageChannels))throw Error('Bot needs Manage Channels.');
+  const channels=await guild.channels.fetch();
+  for(const group of SETUP_GROUPS){const staff=group.name.endsWith('STAFF');let category:any;
+   for(const key of group.keys){try{
+    if(quitting)throw Error('Bot stopping');
+    const saved=channelRoutes[key];
+    if(saved){const existing=await eventChannel(saved);if(staff&&existing.permissionsFor(guild.roles.everyone)?.has(discord.PermissionFlagsBits.ViewChannel))throw Error('Staff channel is public');results.push({type:key,status:'kept'});continue;}
+    if(!category){const matches=channels.filter((c:any)=>c?.type===discord.ChannelType.GuildCategory&&c.name===group.name);if(matches.size>1)throw Error('Ambiguous category');category=matches.first();if(!category){category=await guild.channels.create({name:group.name,type:discord.ChannelType.GuildCategory,reason:'Wipeside setup',...(staff?{permissionOverwrites:[{id:guild.id,deny:[discord.PermissionFlagsBits.ViewChannel]},{id:me.id,allow:[discord.PermissionFlagsBits.ViewChannel,discord.PermissionFlagsBits.SendMessages,discord.PermissionFlagsBits.EmbedLinks]}]}:{})});channels.set(category.id,category);}
+    }
+    if(staff&&category.permissionsFor(guild.roles.everyone)?.has(discord.PermissionFlagsBits.ViewChannel))throw Error('Existing staff category is public');
+    const matches=channels.filter((c:any)=>c?.type===discord.ChannelType.GuildText&&c.parentId===category.id&&c.name===routeName(key));if(matches.size>1)throw Error('Ambiguous channel');let channel:any=matches.first();const reused=!!channel;
+    if(!channel){channel=await guild.channels.create({name:routeName(key),type:discord.ChannelType.GuildText,parent:category.id,topic:'WIPESIDE module: '+key,reason:'Confirmed Wipeside setup',...(staff?{permissionOverwrites:[{id:guild.id,deny:[discord.PermissionFlagsBits.ViewChannel]},{id:me.id,allow:[discord.PermissionFlagsBits.ViewChannel,discord.PermissionFlagsBits.SendMessages,discord.PermissionFlagsBits.EmbedLinks]}]}:{})});channels.set(channel.id,channel);}
+    if(staff&&channel.permissionsFor(guild.roles.everyone)?.has(discord.PermissionFlagsBits.ViewChannel))throw Error('Staff channel is public');
+    await saveRoute(key,channel.id,actor);results.push({type:key,status:reused?'reused':'created'});
+   }catch{results.push({type:key,status:'needs review'});}}
+  }
+  return results;
+ }finally{channelSetupBusy=false;}
+}
+async function processChannelJob(job:any){if(channelSetupBusy||!job||!['PENDING','RUNNING'].includes(job.status))return;
+ await call('channel-job',{jobId:job.id,status:'RUNNING'});
+ try{let result;if(job.kind==='setup')result=await createChannels(job.actor);else{await saveRoute(job.type,job.channelId,job.actor);result=[{type:job.type,status:'saved'}];}
+ await call('channel-job',{jobId:job.id,status:result.some(x=>x.status==='needs review')?'PARTIAL':'COMPLETED',result});
+ }catch{await call('channel-job',{jobId:job.id,status:'FAILED',result:[]}).catch(()=>{});}
+}
+const setupCommand=new discord.SlashCommandBuilder().setName('setup').setDescription('Create the Wipeside channel structure').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageChannels);
 const botCommand=new discord.SlashCommandBuilder().setName('bot').setDescription('Hosted bot controls').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
 for(const name of ['status','restart','reconnect','panel','modules'])botCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name==='status'?'Show connection status':name+' the hosted bot'));
-botCommand.addSubcommand((s:any)=>s.setName('channel').setDescription('Configure a module channel').addStringOption((o:any)=>o.setName('module').setDescription('Choose an active module').setRequired(true).addChoices({name:'Killfeed',value:'kills'},{name:'Events',value:'events'})).addChannelOption((o:any)=>o.setName('channel').setDescription('Select a text channel in this server').setRequired(true).addChannelTypes(discord.ChannelType.GuildText,discord.ChannelType.GuildAnnouncement)));
+botCommand.addSubcommand((s:any)=>s.setName('channel').setDescription('Configure a module channel').addStringOption((o:any)=>o.setName('module').setDescription('Choose an active module').setRequired(true).setAutocomplete(true)).addChannelOption((o:any)=>o.setName('channel').setDescription('Select a text channel in this server').setRequired(true).addChannelTypes(discord.ChannelType.GuildText,discord.ChannelType.GuildAnnouncement)));
 botCommand.addSubcommand((s:any)=>s.setName('channels').setDescription('Show configured module channels'));
 const eventCommand=new discord.SlashCommandBuilder().setName('event').setDescription('Manage community events').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
 for(const name of ['list','status','participants','stop','pause','resume'])eventCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name+' event'));
@@ -128,6 +162,7 @@ async function startPublished(i:any,id:string){
 }
 client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config.guildId)return;try{
  if(i.isAutocomplete()){
+  if(i.commandName==='bot'){if(i.user.id!==snapshot.ownerDiscordId){await i.respond([]);return;}const q=String(i.options.getFocused()||'').toLowerCase();await i.respond(CHANNEL_CATALOG.filter(([k,n])=>(k+' '+n).toLowerCase().includes(q)).slice(0,25).map(([value,name])=>({name,value})));return;}
   if(i.commandName!=='event')return;
   if(!safeAdmin(i.user.id,i.guildId,{guildId:config.guildId,ownerDiscordId:snapshot.ownerDiscordId,staffIds:snapshot.bot.config.staffIds||[]})){await i.respond([]);return;}
   await i.respond(publishedChoices(String(i.options.getFocused()||'')));return;
@@ -138,6 +173,7 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
   await i.update({content:'Start **'+selected.definition.name+'** (v'+selected.version+') in the configured announcement channel?',components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('event-launch:'+i.user.id+':'+selected.id).setLabel('Start event').setStyle(discord.ButtonStyle.Success))]});return;
  }
  if(i.isButton()){
+  if(i.customId.startsWith('ws-setup:')){await authorized(i);if(i.user.id!==snapshot.ownerDiscordId||i.customId.split(':')[1]!==i.user.id)throw Error('Owner confirmation required.');await i.deferUpdate();await i.editReply({content:'Creating channel structure…',components:[]});try{const rows=await createChannels(i.user.id);await i.editReply({content:rows.map(x=>x.type+': '+x.status).join('\n').slice(0,1900),components:[]});}catch{await i.editReply({content:'Setup could not complete. Check bot Manage Channels permission and active hosting.',components:[]});}return;}
   if(i.customId.startsWith('event-launch:')){const [,actor,id]=i.customId.split(':');if(actor!==i.user.id)throw new Error('This confirmation belongs to another administrator.');await authorized(i);await i.deferUpdate();await startPublished(i,id);return;}
   if(i.customId.startsWith('module:')){await authorized(i);await i.deferReply({flags:64});const module=i.customId.slice(7);if(!['registration','accountLinking','killfeed','positionTracking','entitySpawning'].includes(module))throw new Error('Unknown module.');const result=await call('module',{actor:i.user.id,guildId:i.guildId,module,enabled:!snapshot.modules[module]});snapshot.modules=result.modules;await i.editReply(module+' is now '+(snapshot.modules[module]?'enabled':'disabled')+'.');return;}
  if(i.customId.startsWith('confirm-restart:')){await authorized(i);if(i.customId.split(':')[1]!==i.user.id)throw new Error('This confirmation belongs to another administrator.');await i.update({content:'Restart accepted. The supervisor owns the lifecycle operation.',components:[]});await call('action',{actor:i.user.id,guildId:i.guildId,action:'restart'});return;}
@@ -152,7 +188,7 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
   // This is an administrative self-link, not a proof of ownership for other users.
   if(i.user.id===snapshot.ownerDiscordId){await authorized(i);await call('link',{discordId:i.user.id,ign:name});await audit('player.owner_self_linked','Platform owner saved a self-declared Rust identity without a note challenge.');await i.editReply('Linked to '+name+'. No note required and you can link while offline. Join an event when your Rust character is connected; the bot must confirm your position before any teleport.');return;}
   if(challenges.has(name)&&challenges.get(name)!.expires>Date.now())throw new Error('A verification challenge already exists for this name.');const code='RCE-'+randomInt(100000,999999);challenges.set(name,{discordId:i.user.id,code,expires:Date.now()+300000});await i.editReply(`Edit an in-game note to contain exactly: ${code}\nThe challenge expires in five minutes. No Discord user token is needed.`);return;}
- await authorized(i);const sub=i.options.getSubcommand();
+ await authorized(i);if(i.commandName==='setup'){if(i.user.id!==snapshot.ownerDiscordId)throw Error('Owner required.');await i.editReply({content:'Create or reuse '+CHANNEL_CATALOG.length+' channels in WIPESIDE categories? Existing channels are not deleted or moved. Planned modules will not be activated.',components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('ws-setup:'+i.user.id).setLabel('Create channels').setStyle(discord.ButtonStyle.Success))]});return;}const sub=i.options.getSubcommand();
  if(i.commandName==='bot'){
   if(sub==='channels'){const kill=resolveRoute(channelRoutes,'kills',snapshot.bot.config.killfeedChannelId||snapshot.bot.config.announcementChannelId);const events=resolveRoute(channelRoutes,'events',snapshot.bot.config.announcementChannelId);await i.editReply({embeds:[{...discordMedia(snapshot.bot.config.embedMedia,'bot-channels'),title:'WIPESIDE · Channel routing',description:'Killfeed: '+(kill?'<#'+kill+'>':'Not configured')+'\nEvents: '+(events?'<#'+events+'>':'Command channel')+'\n\nUse /bot channel to change a destination.',color:0xf2ad73}],allowedMentions:{parse:[]}});return;}
   if(sub==='channel'){if(i.user.id!==snapshot.ownerDiscordId)throw new Error('Only the workspace owner can change channel routing.');const type=i.options.getString('module',true);const channel=i.options.getChannel('channel',true);await eventChannel(channel.id);const result=await call('channel',{actor:i.user.id,guildId:i.guildId,type,channelId:channel.id});channelRoutes=readRoutes(result.channels);await i.editReply({content:'Saved '+type+' → <#'+channel.id+'> for this bot.',allowedMentions:{parse:[]}});return;}
@@ -171,9 +207,9 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
   if(sub==='stop'){paused=false;quitting=true;await i.editReply('Stopping workflow actions. Eligible returns are being recovered.');while(engineRunning)await new Promise(r=>setTimeout(r,100));quitting=false;current.engine.status='CANCELLED';await restoreEligible();await checkpoint(current.engine);await audit('event.cancelled','Owner cancelled event; return records retained.');return;}
  }
  }catch(e){const safe=e instanceof Error?e.message:'Operation failed.';if(i.deferred||i.replied)await i.editReply({content:safe.slice(0,1800),components:[]}).catch(()=>{});else await i.reply({content:safe.slice(0,1800),flags:64}).catch(()=>{});}});
-client.once('clientReady',async()=>{try{await client.application.commands.set([botCommand.toJSON(),eventCommand.toJSON(),linkCommand.toJSON()],config.guildId);await audit('runtime.started','Discord Gateway connected. Application commands registered.');if(current&&['RUNNING','READY'].includes(current.engine.status)){current.engine.status='NEEDS_REVIEW';log(current.engine,'recovery','Restart loaded persisted state. Live workflow awaits manual reconciliation.','warning');await checkpoint(current.engine);await restoreEligible();}}catch{console.error(JSON.stringify({event:'runtime_initialization_failed',botId}));}});
+client.once('clientReady',async()=>{try{await client.application.commands.set([botCommand.toJSON(),eventCommand.toJSON(),linkCommand.toJSON(),setupCommand.toJSON()],config.guildId);await audit('runtime.started','Discord Gateway connected. Application commands registered.');if(current&&['RUNNING','READY'].includes(current.engine.status)){current.engine.status='NEEDS_REVIEW';log(current.engine,'recovery','Restart loaded persisted state. Live workflow awaits manual reconciliation.','warning');await checkpoint(current.engine);await restoreEligible();}}catch{console.error(JSON.stringify({event:'runtime_initialization_failed',botId}));}});
 await client.login(boot.secrets.discordToken);
-let polling=false;const heartbeat=setInterval(async()=>{if(polling||quitting)return;polling=true;try{try{verifiedInfo=await rce.info();rconConnected=true;}catch{rconConnected=false;}const response=await call('heartbeat',{status:client.isReady()&&rconConnected?'ONLINE':'DEGRADED',discordStatus:client.isReady()?'CONNECTED':'DISCONNECTED',rconStatus:rconConnected?'CONNECTED':'DISCONNECTED'});snapshot=response.snapshot;channelRoutes=readRoutes(response.channels);if(!snapshot.entitled){quitting=true;await shutdown('SUSPENDED');return;}if(response.action==='reconnect'){// Restart the process through the supervisor; no additional RCON sessions.
+let polling=false;const heartbeat=setInterval(async()=>{if(polling||quitting)return;polling=true;try{try{verifiedInfo=await rce.info();rconConnected=true;}catch{rconConnected=false;}const response=await call('heartbeat',{status:client.isReady()&&rconConnected?'ONLINE':'DEGRADED',discordStatus:client.isReady()?'CONNECTED':'DISCONNECTED',rconStatus:rconConnected?'CONNECTED':'DISCONNECTED'});snapshot=response.snapshot;channelRoutes=readRoutes(response.channels);if(!snapshot.entitled){quitting=true;await shutdown('SUSPENDED');return;}if(response.channelJob)await processChannelJob(response.channelJob);if(response.action==='reconnect'){// Restart the process through the supervisor; no additional RCON sessions.
  await call('action',{actor:snapshot.ownerDiscordId,guildId:config.guildId,action:'restart'});
  }if(current&&snapshot.modules.positionTracking){for(const p of current.engine.players.filter(p=>p.online&&p.alive).slice(0,20)){try{const pos=await adapter.readPosition(p);p.trail.push(p.position);p.trail=p.trail.slice(-60);p.position=pos;}catch{}}await checkpoint(current.engine);}
  }catch{rconConnected=false;}finally{polling=false;}},15000);
