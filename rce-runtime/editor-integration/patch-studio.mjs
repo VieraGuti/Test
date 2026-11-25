@@ -2,7 +2,7 @@ import fs from 'node:fs';
 const edit=(file,change)=>{const before=fs.readFileSync(file,'utf8'),after=change(before);if(before===after)throw Error('No change: '+file);fs.writeFileSync(file,after);console.log('PATCH_OK '+file);};
 const replace=(s,a,b)=>{if(!s.includes(a))throw Error('Missing expected source anchor: '+a.slice(0,100));return s.replace(a,b);};
 edit('core/catalog.ts',s=>{s="import {DEFAULT_REGISTRATION} from './participation.ts';\n"+s;return replace(s,"params:{seconds:30}","params:{...DEFAULT_REGISTRATION,seconds:30}");});
-edit('core/validation.ts',s=>{s="import {validateRegistration} from './participation.ts';\n"+s;const a="if(n.kind==='registration.open'||n.kind==='timer.wait')num('seconds',1,3600);";return replace(s,a,a+"\n if(n.kind==='registration.open')errors.push(...validateRegistration(n.params));");});
+edit('core/validation.ts',s=>{s="import {validateRegistration} from './participation.ts';\n"+s;const a="errors.push(...validateSpatial(d));";return replace(s,a,a+"\n for(const n of d.nodes)if(n.kind==='registration.open'&&n.params&&typeof n.params==='object')errors.push(...validateRegistration(n.params));");});
 edit('components/studio.tsx',s=>{
  s=replace(s,"import SpawnEditor from './spawn-editor';","import SpawnEditor from './spawn-editor';\nimport {NodeLibrary} from './node-library';\nimport {presetNode} from '@/core/node-library';");
  const start=s.indexOf('{palette&&<>');const stop=s.indexOf('</>}</aside>',start);if(start<0||stop<0)throw Error('Original palette boundaries missing.');
