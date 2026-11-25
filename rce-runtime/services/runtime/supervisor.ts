@@ -81,6 +81,13 @@ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','applica
 async function recover(){
  const result=await pool.query("SELECT * FROM runtime_bots WHERE desired_running=true AND tenant_id=$1 ORDER BY updated_at DESC LIMIT 1",[ownerTenant]);
  const row=result.rows[0];if(!row||children.size||shuttingDown)return;
+ const previous=row.state?.engine;
+ if(previous?.status==='NEEDS_REVIEW'){
+ const last=previous.logs?.filter((l:any)=>l.level==='error').at(-1);
+ const message=String(last?.message||'');
+ const reason=/Missing Permissions|50013|missing channel permissions/i.test(message)?'discord_missing_permissions':/Missing Access|Unknown Channel|50001|10003/i.test(message)?'discord_channel_unavailable':/Invalid Form Body|50035/i.test(message)?'discord_invalid_payload':/checkpoint|persistence/i.test(message)?'persistence_error':/without participants/i.test(message)?'no_participants':'other';
+ console.log(JSON.stringify({event:'saved_event_diagnostic',status:previous.status,node:previous.pending?.kind||null,reason,commands:previous.commands,participants:previous.players?.length,pendingReturns:previous.players?.filter((p:any)=>p.pendingReturn).length}));
+ }
  const snapshot=await plane(row.tenant_id,row.id,'snapshot');
  if(!snapshot.entitled||!snapshot.ownerDiscordId){await pool.query("UPDATE runtime_bots SET desired_running=false,status='SUSPENDED' WHERE id=$1",[row.id]);return;}
  const token=randomBytes(32).toString('hex'),epoch=randomUUID();
