@@ -1,3 +1,4 @@
+import {shopCall} from './shop-runtime.ts';
 import {readRoutes,validateRoute} from './channel-routing.ts';
 import {createServer} from 'node:http';
 import {spawn,type ChildProcess} from 'node:child_process';
@@ -66,6 +67,7 @@ async function control(tenantId:string,action:string,p:any){const{id}=botIdentit
  if(p.jobId)await client.query('INSERT INTO runtime_jobs(id,tenant_id,bot_id,action,status) VALUES($1,$2,$3,$4,$5)',[p.jobId,tenantId,id,action,'ACCEPTED']);await client.query('COMMIT');if(launchAfterCommit)launch(id,launchAfterCommit.epoch,launchAfterCommit.token);return{status:action==='stop'?'STOPPED':action==='refresh'||action==='reconnect'?row.status:'STARTING'};
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
 async function workerCall(path:string,token:string,b:any){if(!/^[-a-f0-9]{36}$/.test(b.botId||'')||!token)throw new Error('Invalid worker identity.');const row=(await pool.query('SELECT * FROM runtime_bots WHERE id=$1 AND worker_token_hash=$2 AND lease_epoch=$3',[b.botId,hash(token),b.epoch])).rows[0];if(!row)throw new Error('Worker lease is invalid or revoked.');
+ if(path==='/v1/runtime/shop'){const snapshot=await plane(row.tenant_id,row.id,'snapshot');return shopCall(pool,row,b,String(b.action),snapshot);}
  if(path==='/v1/runtime/bootstrap'){const secrets=JSON.parse(await decrypt(row.encrypted_secrets,secretKey,`${row.tenant_id}:${row.id}`));return {config:row.config,secrets,state:row.state,revision:Number(row.revision),snapshot:await plane(row.tenant_id,row.id,'snapshot')};}
  if(path==='/v1/runtime/checkpoint'){
   const client=await pool.connect();try{await client.query('BEGIN');const result=await client.query('UPDATE runtime_bots SET state=$4,revision=revision+1,updated_at=now() WHERE id=$1 AND lease_epoch=$2 AND revision=$3 RETURNING revision',[row.id,b.epoch,b.revision,b.state]);if(!result.rows.length)throw new Error('Checkpoint revision conflict.');for(const p of b.state?.engine?.players||[])if(p.origin)await client.query('INSERT INTO runtime_returns(bot_id,run_id,player_id,tenant_id,position,status,destination) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(bot_id,run_id,player_id) DO UPDATE SET status=$6,destination=$7',[row.id,b.state.engine.runId,p.id,row.tenant_id,p.origin,p.returned?'RETURNED':'PENDING',p.exitGate||p.origin]);await client.query('COMMIT');return{revision:Number(result.rows[0].revision)};}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
