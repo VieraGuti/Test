@@ -1,9 +1,10 @@
+import type {EventArtwork} from './embed-media.ts';
 import type {Spatial} from './spatial.ts';
 export type Vec3 = {x:number;y:number;z:number};
 export type ActionKind = 'event.started'|'registration.open'|'positions.save'|'players.teleport'|'kits.give'|'zone.create'|'entity.spawn'|'timer.wait'|'logic.remaining'|'score.add'|'discord.send'|'winner.announce'|'players.return'|'event.end';
 export type WorkflowNode = {id:string;kind:ActionKind;label:string;position:{x:number;y:number};params:Record<string,string|number|boolean>};
 export type WorkflowEdge = {id:string;source:string;target:string;branch?:'yes'|'no'};
-export type Definition = {schemaVersion:1;name:string;description:string;category:string;maxPlayers:number;spatial?:Spatial;arena:Vec3;nodes:WorkflowNode[];edges:WorkflowEdge[];embed:{title:string;description:string;color:string;footer:string;image:string;thumbnail:string}};
+export type Definition = {schemaVersion:1;name:string;description:string;category:string;maxPlayers:number;spatial?:Spatial;arena:Vec3;nodes:WorkflowNode[];edges:WorkflowEdge[];embed:{title:string;description:string;color:string;footer:string}&EventArtwork};
 export type Player={id:string;name:string;team:number;position:Vec3;origin?:Vec3;entryGate?:Vec3;respawnGate?:Vec3;exitGate?:Vec3;spectatorGate?:Vec3;spectating?:boolean;recoveryPending?:boolean;online:boolean;alive:boolean;score:number;kit?:string;returned:boolean;pendingReturn:boolean;trail:Vec3[]};
 export type Entity={id:string;kind:string;position:Vec3};
 export type LogEntry={seq:number;time:number;nodeId:string;level:'info'|'success'|'warning'|'error';message:string;command?:string};
