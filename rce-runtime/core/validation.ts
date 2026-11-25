@@ -1,3 +1,4 @@
+import {validateRegistration} from './participation.ts';
 import {validateSpatial,spawnLayout} from './spatial.ts';
 import {ACTIONS,ENTITIES} from './catalog.ts';
 import type {Definition,WorkflowNode} from './types.ts';
@@ -24,6 +25,7 @@ export function validateDefinition(d:Definition):string[] {
  if(n.kind==='entity.spawn'){if(!ENTITIES.includes(String(n.params.entity)))errors.push('Entity is not in the verified capability registry.');num('count',1,500);if(!Number.isInteger(n.params.count))errors.push('Spawn count must be an integer.');}
  if(n.kind==='entity.spawn'){if(n.params.layout!==undefined&&!['ring','point','big-node'].includes(String(n.params.layout)))errors.push('Invalid spawn layout.');if(n.params.radius!==undefined)num('radius',0,500);if(n.params.useArena===false)for(const axis of ['x','y','z'])num(axis,-10000,10000);if(n.params.layout==='big-node'){for(const key of ['stone','sulfur','metal']){num(key,0,500);if(!Number.isInteger(n.params[key]))errors.push('Resource counts must be integers.');}const total=Number(n.params.stone)+Number(n.params.sulfur)+Number(n.params.metal);if(total<1||total>500)errors.push('Big Node requires 1–500 resource entities.');}}
  if(n.kind==='registration.open'||n.kind==='timer.wait')num('seconds',1,3600);
+ if(n.kind==='registration.open')errors.push(...validateRegistration(n.params));
  if(n.kind==='zone.create'){num('radius',5,500);num('radiation',0,100);}
  if(n.kind==='score.add')num('points',1,10000);
  if(n.kind==='logic.remaining')num('maximum',0,1000);
