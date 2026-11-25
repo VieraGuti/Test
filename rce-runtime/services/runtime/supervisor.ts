@@ -76,6 +76,20 @@ async function workerCall(path:string,token:string,b:any){if(!/^[-a-f0-9]{36}$/.
  }
  if(path==='/v1/runtime/link'){if(!/^\d{17,20}$/.test(b.discordId)||typeof b.ign!=='string'||b.ign.length>64)throw new Error('Invalid identity link.');await pool.query('INSERT INTO runtime_links(bot_id,discord_id,ign) VALUES($1,$2,$3) ON CONFLICT(bot_id,discord_id) DO UPDATE SET ign=$3,verified_at=now()',[row.id,b.discordId,b.ign]);return{ok:true};}
  if(path==='/v1/runtime/links'){return{links:(await pool.query('SELECT discord_id,ign FROM runtime_links WHERE bot_id=$1',[row.id])).rows};}
+ if(['/v1/runtime/pvp-kill','/v1/runtime/leaderboard','/v1/runtime/leaderboard-message'].includes(path)){
+  const scope=[row.id,row.tenant_id,row.config.serverKey];
+  if(path==='/v1/runtime/pvp-kill'){
+   if(typeof b.eventId!=='string'||!/^[-a-f0-9]{36}$/.test(b.eventId)||![b.killer,b.victim].every(v=>typeof v==='string'&&v.length>0&&v.length<=100)||b.killer===b.victim)throw Error('Invalid PvP event.');
+   await pool.query('INSERT INTO runtime_pvp_kills(bot_id,tenant_id,server_key,event_id,killer,victim) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING',[...scope,b.eventId,b.killer,b.victim]);return {ok:true};
+  }
+  const channel=readRoutes(row.config.channels).leaderboard;if(!channel||b.channelId!==channel)throw Error('Leaderboard channel is not configured.');
+  if(path==='/v1/runtime/leaderboard-message'){
+   if(typeof b.messageId!=='string'||!/^\d{17,20}$/.test(b.messageId))throw Error('Invalid message ID.');
+   await pool.query('INSERT INTO runtime_leaderboard_messages(bot_id,tenant_id,server_key,channel_id,message_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(bot_id,server_key,channel_id) DO UPDATE SET message_id=excluded.message_id WHERE runtime_leaderboard_messages.tenant_id=excluded.tenant_id',[...scope,channel,b.messageId]);return {ok:true};
+  }
+  const result=await pool.query("WITH counts AS (SELECT killer AS name,count(*) AS kills,0::bigint AS deaths FROM runtime_pvp_kills WHERE bot_id=$1 AND tenant_id=$2 AND server_key=$3 GROUP BY killer UNION ALL SELECT victim AS name,0::bigint AS kills,count(*) AS deaths FROM runtime_pvp_kills WHERE bot_id=$1 AND tenant_id=$2 AND server_key=$3 GROUP BY victim) SELECT name,sum(kills)::text AS kills,sum(deaths)::text AS deaths FROM counts GROUP BY name ORDER BY sum(kills) DESC,sum(deaths),name LIMIT 10",scope);
+  const saved=await pool.query('SELECT message_id FROM runtime_leaderboard_messages WHERE bot_id=$1 AND tenant_id=$2 AND server_key=$3 AND channel_id=$4',[...scope,channel]);return {rows:result.rows,messageId:saved.rows[0]?.message_id||null};
+ }
  if(path==='/v1/runtime/channel-job'){
   const job=row.config.channelJob;if(!job||job.id!==b.jobId||!['RUNNING','COMPLETED','PARTIAL','FAILED'].includes(b.status))throw Error('Unknown channel job.');
   const snapshot=await plane(row.tenant_id,row.id,'snapshot');if(!snapshot.entitled||job.actor!==snapshot.ownerDiscordId)throw Error('Entitlement or owner changed.');
