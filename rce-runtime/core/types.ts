@@ -1,0 +1,12 @@
+import type {Spatial} from './spatial.ts';
+export type Vec3 = {x:number;y:number;z:number};
+export type ActionKind = 'event.started'|'registration.open'|'positions.save'|'players.teleport'|'kits.give'|'zone.create'|'entity.spawn'|'timer.wait'|'logic.remaining'|'score.add'|'discord.send'|'winner.announce'|'players.return'|'event.end';
+export type WorkflowNode = {id:string;kind:ActionKind;label:string;position:{x:number;y:number};params:Record<string,string|number|boolean>};
+export type WorkflowEdge = {id:string;source:string;target:string;branch?:'yes'|'no'};
+export type Definition = {schemaVersion:1;name:string;description:string;category:string;maxPlayers:number;spatial?:Spatial;arena:Vec3;nodes:WorkflowNode[];edges:WorkflowEdge[];embed:{title:string;description:string;color:string;footer:string;image:string;thumbnail:string}};
+export type Player={id:string;name:string;team:number;position:Vec3;origin?:Vec3;entryGate?:Vec3;respawnGate?:Vec3;exitGate?:Vec3;spectatorGate?:Vec3;spectating?:boolean;recoveryPending?:boolean;online:boolean;alive:boolean;score:number;kit?:string;returned:boolean;pendingReturn:boolean;trail:Vec3[]};
+export type Entity={id:string;kind:string;position:Vec3};
+export type LogEntry={seq:number;time:number;nodeId:string;level:'info'|'success'|'warning'|'error';message:string;command?:string};
+export type EngineState={mode:'simulation'|'live';runId:string;now:number;status:'READY'|'RUNNING'|'COMPLETED'|'NEEDS_REVIEW'|'CANCELLED';current:string|null;completed:string[];pending?:{nodeId:string;kind:ActionKind};players:Player[];entities:Entity[];zones:{name:string;position:Vec3;radius:number;radiation:number}[];logs:LogEntry[];winner?:string;rng:number;registrationOpen:boolean;failure:string;failureUsed:boolean;commands:number};
+export type Frame={time:number;nodeId:string|null;status:string;players:Player[];entities:Entity[];zones:EngineState['zones'];logCount:number};
+export type SimulationResult={seed:number;definition:Definition;frames:Frame[];state:EngineState;report:{passed:boolean;errors:string[];warnings:string[];returned:number;pending:number;commands:number;duration:number}};
