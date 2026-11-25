@@ -240,7 +240,7 @@
         "kind": "registration.open",
         "label": "Open registration",
         "params": {
-          "seconds": 90
+          "seconds": 120
         },
         "id": "n2",
         "position": {
@@ -249,9 +249,11 @@
         }
       },
       {
-        "kind": "positions.save",
-        "label": "Save original positions",
-        "params": {},
+        "kind": "discord.send",
+        "label": "Registration closed",
+        "params": {
+          "message": "🔒 Registration closed: {event.players}/{event.max_players}. Checking original positions. Stay connected."
+        },
         "id": "n3",
         "position": {
           "x": 720,
@@ -259,12 +261,34 @@
         }
       },
       {
-        "kind": "players.teleport",
-        "label": "Teleport to entry gates",
+        "kind": "positions.save",
+        "label": "Save original positions",
         "params": {},
         "id": "n4",
         "position": {
           "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Prepare transfer",
+        "params": {
+          "message": "📍 Preparing transfer. Original locations saved. Event kits may change inventory; store valuables before joining."
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n6",
+        "position": {
+          "x": 720,
           "y": 250
         }
       },
@@ -274,32 +298,6 @@
         "params": {
           "kit": "arena"
         },
-        "id": "n5",
-        "position": {
-          "x": 410,
-          "y": 250
-        }
-      },
-      {
-        "kind": "zone.create",
-        "label": "Create arena zone",
-        "params": {
-          "radius": 100,
-          "radiation": 0,
-          "pvp": true
-        },
-        "id": "n6",
-        "position": {
-          "x": 720,
-          "y": 250
-        }
-      },
-      {
-        "kind": "discord.send",
-        "label": "Send Discord message",
-        "params": {
-          "message": "⚔️ {event.name} — five minutes. Last survivor wins."
-        },
         "id": "n7",
         "position": {
           "x": 100,
@@ -307,10 +305,10 @@
         }
       },
       {
-        "kind": "timer.wait",
-        "label": "Wait / countdown",
+        "kind": "discord.send",
+        "label": "Ready check",
         "params": {
-          "seconds": 300
+          "message": "🎒 Kit delivery verified. Prepare for the next phase."
         },
         "id": "n8",
         "position": {
@@ -319,9 +317,11 @@
         }
       },
       {
-        "kind": "winner.announce",
-        "label": "Announce results",
-        "params": {},
+        "kind": "discord.send",
+        "label": "Preparation",
+        "params": {
+          "message": "⚔️ Combat starts in 10 seconds. No event respawns."
+        },
         "id": "n9",
         "position": {
           "x": 720,
@@ -329,9 +329,11 @@
         }
       },
       {
-        "kind": "players.return",
-        "label": "Restore players",
-        "params": {},
+        "kind": "timer.wait",
+        "label": "Preparation countdown",
+        "params": {
+          "seconds": 10
+        },
         "id": "n10",
         "position": {
           "x": 100,
@@ -339,13 +341,251 @@
         }
       },
       {
-        "kind": "event.end",
-        "label": "End & clean up",
-        "params": {},
+        "kind": "zone.create",
+        "label": "Activate event zone",
+        "params": {
+          "radius": 100,
+          "radiation": 0,
+          "pvp": true
+        },
         "id": "n11",
         "position": {
           "x": 410,
           "y": 590
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Fight",
+        "params": {
+          "message": "👑 FIGHT! Last survivor wins. Five minutes maximum."
+        },
+        "id": "n12",
+        "position": {
+          "x": 720,
+          "y": 590
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Minute 1",
+        "params": {
+          "seconds": 60
+        },
+        "id": "n13",
+        "position": {
+          "x": 100,
+          "y": 760
+        }
+      },
+      {
+        "kind": "logic.remaining",
+        "label": "One survivor remaining?",
+        "params": {
+          "maximum": 1
+        },
+        "id": "n14",
+        "position": {
+          "x": 410,
+          "y": 760
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Time reminder",
+        "params": {
+          "message": "⏱️ 4 minute(s) remaining."
+        },
+        "id": "n15",
+        "position": {
+          "x": 720,
+          "y": 760
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Minute 2",
+        "params": {
+          "seconds": 60
+        },
+        "id": "n16",
+        "position": {
+          "x": 100,
+          "y": 930
+        }
+      },
+      {
+        "kind": "logic.remaining",
+        "label": "One survivor remaining?",
+        "params": {
+          "maximum": 1
+        },
+        "id": "n17",
+        "position": {
+          "x": 410,
+          "y": 930
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Time reminder",
+        "params": {
+          "message": "⏱️ 3 minute(s) remaining."
+        },
+        "id": "n18",
+        "position": {
+          "x": 720,
+          "y": 930
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Minute 3",
+        "params": {
+          "seconds": 60
+        },
+        "id": "n19",
+        "position": {
+          "x": 100,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "logic.remaining",
+        "label": "One survivor remaining?",
+        "params": {
+          "maximum": 1
+        },
+        "id": "n20",
+        "position": {
+          "x": 410,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Time reminder",
+        "params": {
+          "message": "⏱️ 2 minute(s) remaining."
+        },
+        "id": "n21",
+        "position": {
+          "x": 720,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Minute 4",
+        "params": {
+          "seconds": 60
+        },
+        "id": "n22",
+        "position": {
+          "x": 100,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "logic.remaining",
+        "label": "One survivor remaining?",
+        "params": {
+          "maximum": 1
+        },
+        "id": "n23",
+        "position": {
+          "x": 410,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Time reminder",
+        "params": {
+          "message": "⏱️ 1 minute(s) remaining."
+        },
+        "id": "n24",
+        "position": {
+          "x": 720,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Final phase",
+        "params": {
+          "seconds": 50
+        },
+        "id": "n25",
+        "position": {
+          "x": 100,
+          "y": 1440
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final ten",
+        "params": {
+          "message": "⏳ 10 seconds remaining!"
+        },
+        "id": "n26",
+        "position": {
+          "x": 410,
+          "y": 1440
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Final countdown",
+        "params": {
+          "seconds": 10
+        },
+        "id": "n27",
+        "position": {
+          "x": 720,
+          "y": 1440
+        }
+      },
+      {
+        "kind": "winner.announce",
+        "label": "Announce survivor result",
+        "params": {},
+        "id": "n28",
+        "position": {
+          "x": 100,
+          "y": 1610
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Return notice",
+        "params": {
+          "message": "🏁 Event finished. Returning eligible players to saved locations. Offline or dead players may require recovery."
+        },
+        "id": "n29",
+        "position": {
+          "x": 410,
+          "y": 1610
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n30",
+        "position": {
+          "x": 720,
+          "y": 1610
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n31",
+        "position": {
+          "x": 100,
+          "y": 1780
         }
       }
     ],
@@ -399,11 +639,139 @@
         "id": "e9",
         "source": "n10",
         "target": "n11"
+      },
+      {
+        "id": "e10",
+        "source": "n11",
+        "target": "n12"
+      },
+      {
+        "id": "e11",
+        "source": "n12",
+        "target": "n13"
+      },
+      {
+        "id": "e12",
+        "source": "n13",
+        "target": "n14"
+      },
+      {
+        "id": "yes13",
+        "source": "n14",
+        "target": "n28",
+        "branch": "yes"
+      },
+      {
+        "id": "no13",
+        "source": "n14",
+        "target": "n15",
+        "branch": "no"
+      },
+      {
+        "id": "e14",
+        "source": "n15",
+        "target": "n16"
+      },
+      {
+        "id": "e15",
+        "source": "n16",
+        "target": "n17"
+      },
+      {
+        "id": "yes16",
+        "source": "n17",
+        "target": "n28",
+        "branch": "yes"
+      },
+      {
+        "id": "no16",
+        "source": "n17",
+        "target": "n18",
+        "branch": "no"
+      },
+      {
+        "id": "e17",
+        "source": "n18",
+        "target": "n19"
+      },
+      {
+        "id": "e18",
+        "source": "n19",
+        "target": "n20"
+      },
+      {
+        "id": "yes19",
+        "source": "n20",
+        "target": "n28",
+        "branch": "yes"
+      },
+      {
+        "id": "no19",
+        "source": "n20",
+        "target": "n21",
+        "branch": "no"
+      },
+      {
+        "id": "e20",
+        "source": "n21",
+        "target": "n22"
+      },
+      {
+        "id": "e21",
+        "source": "n22",
+        "target": "n23"
+      },
+      {
+        "id": "yes22",
+        "source": "n23",
+        "target": "n28",
+        "branch": "yes"
+      },
+      {
+        "id": "no22",
+        "source": "n23",
+        "target": "n24",
+        "branch": "no"
+      },
+      {
+        "id": "e23",
+        "source": "n24",
+        "target": "n25"
+      },
+      {
+        "id": "e24",
+        "source": "n25",
+        "target": "n26"
+      },
+      {
+        "id": "e25",
+        "source": "n26",
+        "target": "n27"
+      },
+      {
+        "id": "e26",
+        "source": "n27",
+        "target": "n28"
+      },
+      {
+        "id": "e27",
+        "source": "n28",
+        "target": "n29"
+      },
+      {
+        "id": "e28",
+        "source": "n29",
+        "target": "n30"
+      },
+      {
+        "id": "e29",
+        "source": "n30",
+        "target": "n31"
       }
     ],
     "embed": {
       "title": "👑 KING OF THE ARENA",
-      "description": "Last survivor wins after 5 minutes. No respawn. Set the arena and verify the arena kit before publishing.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "description": "Last survivor wins after 5 minutes. No respawn. Set the arena and verify the arena kit before publishing.\n\n**Registration:** {event.players}/{event.max_players}\nUse /link before joining. Store valuables before entering.",
       "color": "#e6a63b",
       "footer": "RCE EVENT CLOUD • Your server. Your rules.",
       "image": "",
@@ -415,7 +783,7 @@
     "name": "BIG NODE MADNESS",
     "category": "Farming",
     "maxPlayers": 20,
-    "description": "Three minutes of peaceful farming. Starter load: 20 sulfur, 10 metal, 10 stone nodes. Scale only after live spawn tests; resources may remain.",
+    "description": "Two waves of 20 resources each, spread across ground-level rings. Three minutes of farming, preparation, reminders and recovery. Configure arena and farmer kit.",
     "arena": {
       "x": 0,
       "y": 20,
@@ -651,7 +1019,7 @@
         "kind": "registration.open",
         "label": "Open registration",
         "params": {
-          "seconds": 90
+          "seconds": 120
         },
         "id": "n2",
         "position": {
@@ -660,9 +1028,11 @@
         }
       },
       {
-        "kind": "positions.save",
-        "label": "Save original positions",
-        "params": {},
+        "kind": "discord.send",
+        "label": "Registration closed",
+        "params": {
+          "message": "🔒 Registration closed: {event.players}/{event.max_players}. Checking original positions. Stay connected."
+        },
         "id": "n3",
         "position": {
           "x": 720,
@@ -670,12 +1040,34 @@
         }
       },
       {
-        "kind": "players.teleport",
-        "label": "Teleport to entry gates",
+        "kind": "positions.save",
+        "label": "Save original positions",
         "params": {},
         "id": "n4",
         "position": {
           "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Prepare transfer",
+        "params": {
+          "message": "📍 Preparing transfer. Original locations saved. Event kits may change inventory; store valuables before joining."
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n6",
+        "position": {
+          "x": 720,
           "y": 250
         }
       },
@@ -685,42 +1077,6 @@
         "params": {
           "kit": "farmer"
         },
-        "id": "n5",
-        "position": {
-          "x": 410,
-          "y": 250
-        }
-      },
-      {
-        "kind": "zone.create",
-        "label": "Create arena zone",
-        "params": {
-          "radius": 80,
-          "radiation": 0,
-          "pvp": false
-        },
-        "id": "n6",
-        "position": {
-          "x": 720,
-          "y": 250
-        }
-      },
-      {
-        "kind": "entity.spawn",
-        "label": "Spawn sulfur-ore",
-        "params": {
-          "entity": "sulfur-ore",
-          "count": 40,
-          "layout": "big-node",
-          "useArena": true,
-          "x": 0,
-          "y": 20,
-          "z": 0,
-          "radius": 12,
-          "stone": 10,
-          "sulfur": 20,
-          "metal": 10
-        },
         "id": "n7",
         "position": {
           "x": 100,
@@ -729,9 +1085,9 @@
       },
       {
         "kind": "discord.send",
-        "label": "Send Discord message",
+        "label": "Ready check",
         "params": {
-          "message": "⛏️ Farm for three minutes. Keep what you collect, subject to server inventory rules."
+          "message": "🎒 Kit delivery verified. Prepare for the next phase."
         },
         "id": "n8",
         "position": {
@@ -740,10 +1096,12 @@
         }
       },
       {
-        "kind": "timer.wait",
-        "label": "Wait / countdown",
+        "kind": "zone.create",
+        "label": "Activate event zone",
         "params": {
-          "seconds": 180
+          "radius": 80,
+          "radiation": 0,
+          "pvp": false
         },
         "id": "n9",
         "position": {
@@ -753,9 +1111,9 @@
       },
       {
         "kind": "discord.send",
-        "label": "Send Discord message",
+        "label": "Rules",
         "params": {
-          "message": "Time is up! Returning all participants."
+          "message": "⛏️ Three minutes of farming. No event PvP. Resources arrive in waves."
         },
         "id": "n10",
         "position": {
@@ -764,9 +1122,11 @@
         }
       },
       {
-        "kind": "players.return",
-        "label": "Restore players",
-        "params": {},
+        "kind": "timer.wait",
+        "label": "Preparation countdown",
+        "params": {
+          "seconds": 10
+        },
         "id": "n11",
         "position": {
           "x": 410,
@@ -774,13 +1134,263 @@
         }
       },
       {
-        "kind": "event.end",
-        "label": "End & clean up",
-        "params": {},
+        "kind": "entity.spawn",
+        "label": "Spawn sulfur-ore",
+        "params": {
+          "entity": "sulfur-ore",
+          "count": 10,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 18,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
         "id": "n12",
         "position": {
           "x": 720,
           "y": 590
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn metal-ore",
+        "params": {
+          "entity": "metal-ore",
+          "count": 5,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 28,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n13",
+        "position": {
+          "x": 100,
+          "y": 760
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn stone-ore",
+        "params": {
+          "entity": "stone-ore",
+          "count": 5,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 38,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n14",
+        "position": {
+          "x": 410,
+          "y": 760
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Wave one",
+        "params": {
+          "message": "🪨 Wave 1: 10 sulfur, 5 metal and 5 stone nodes."
+        },
+        "id": "n15",
+        "position": {
+          "x": 720,
+          "y": 760
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "First farming wave",
+        "params": {
+          "seconds": 90
+        },
+        "id": "n16",
+        "position": {
+          "x": 100,
+          "y": 930
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn sulfur-ore",
+        "params": {
+          "entity": "sulfur-ore",
+          "count": 10,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 24,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n17",
+        "position": {
+          "x": 410,
+          "y": 930
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn metal-ore",
+        "params": {
+          "entity": "metal-ore",
+          "count": 5,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 34,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n18",
+        "position": {
+          "x": 720,
+          "y": 930
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn stone-ore",
+        "params": {
+          "entity": "stone-ore",
+          "count": 5,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 44,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n19",
+        "position": {
+          "x": 100,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Wave two",
+        "params": {
+          "message": "✨ Wave 2 is ready. 90 seconds left."
+        },
+        "id": "n20",
+        "position": {
+          "x": 410,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Second farming wave",
+        "params": {
+          "seconds": 60
+        },
+        "id": "n21",
+        "position": {
+          "x": 720,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final thirty",
+        "params": {
+          "message": "⏱️ 30 seconds left."
+        },
+        "id": "n22",
+        "position": {
+          "x": 100,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Final farming phase",
+        "params": {
+          "seconds": 20
+        },
+        "id": "n23",
+        "position": {
+          "x": 410,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final ten",
+        "params": {
+          "message": "⏳ 10 seconds left."
+        },
+        "id": "n24",
+        "position": {
+          "x": 720,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Return countdown",
+        "params": {
+          "seconds": 10
+        },
+        "id": "n25",
+        "position": {
+          "x": 100,
+          "y": 1440
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Return notice",
+        "params": {
+          "message": "🏁 Event finished. Returning eligible players to saved locations. Offline or dead players may require recovery."
+        },
+        "id": "n26",
+        "position": {
+          "x": 410,
+          "y": 1440
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n27",
+        "position": {
+          "x": 720,
+          "y": 1440
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n28",
+        "position": {
+          "x": 100,
+          "y": 1610
         }
       }
     ],
@@ -839,11 +1449,91 @@
         "id": "e10",
         "source": "n11",
         "target": "n12"
+      },
+      {
+        "id": "e11",
+        "source": "n12",
+        "target": "n13"
+      },
+      {
+        "id": "e12",
+        "source": "n13",
+        "target": "n14"
+      },
+      {
+        "id": "e13",
+        "source": "n14",
+        "target": "n15"
+      },
+      {
+        "id": "e14",
+        "source": "n15",
+        "target": "n16"
+      },
+      {
+        "id": "e15",
+        "source": "n16",
+        "target": "n17"
+      },
+      {
+        "id": "e16",
+        "source": "n17",
+        "target": "n18"
+      },
+      {
+        "id": "e17",
+        "source": "n18",
+        "target": "n19"
+      },
+      {
+        "id": "e18",
+        "source": "n19",
+        "target": "n20"
+      },
+      {
+        "id": "e19",
+        "source": "n20",
+        "target": "n21"
+      },
+      {
+        "id": "e20",
+        "source": "n21",
+        "target": "n22"
+      },
+      {
+        "id": "e21",
+        "source": "n22",
+        "target": "n23"
+      },
+      {
+        "id": "e22",
+        "source": "n23",
+        "target": "n24"
+      },
+      {
+        "id": "e23",
+        "source": "n24",
+        "target": "n25"
+      },
+      {
+        "id": "e24",
+        "source": "n25",
+        "target": "n26"
+      },
+      {
+        "id": "e25",
+        "source": "n26",
+        "target": "n27"
+      },
+      {
+        "id": "e26",
+        "source": "n27",
+        "target": "n28"
       }
     ],
     "embed": {
       "title": "⛏️ BIG NODE MADNESS",
-      "description": "Three minutes of peaceful farming. Starter load: 20 sulfur, 10 metal, 10 stone nodes. Scale only after live spawn tests; resources may remain.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "description": "Two waves of 20 resources each, spread across ground-level rings. Three minutes of farming, preparation, reminders and recovery. Configure arena and farmer kit.\n\n**Registration:** {event.players}/{event.max_players}\nUse /link before joining. Store valuables before entering.",
       "color": "#eab308",
       "footer": "RCE EVENT CLOUD • Your server. Your rules.",
       "image": "",
@@ -1091,7 +1781,7 @@
         "kind": "registration.open",
         "label": "Open registration",
         "params": {
-          "seconds": 90
+          "seconds": 120
         },
         "id": "n2",
         "position": {
@@ -1100,9 +1790,11 @@
         }
       },
       {
-        "kind": "positions.save",
-        "label": "Save original positions",
-        "params": {},
+        "kind": "discord.send",
+        "label": "Registration closed",
+        "params": {
+          "message": "🔒 Registration closed: {event.players}/{event.max_players}. Checking original positions. Stay connected."
+        },
         "id": "n3",
         "position": {
           "x": 720,
@@ -1110,12 +1802,34 @@
         }
       },
       {
-        "kind": "players.teleport",
-        "label": "Teleport to entry gates",
+        "kind": "positions.save",
+        "label": "Save original positions",
         "params": {},
         "id": "n4",
         "position": {
           "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Prepare transfer",
+        "params": {
+          "message": "📍 Preparing transfer. Original locations saved. Event kits may change inventory; store valuables before joining."
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n6",
+        "position": {
+          "x": 720,
           "y": 250
         }
       },
@@ -1125,24 +1839,60 @@
         "params": {
           "kit": "medic"
         },
-        "id": "n5",
+        "id": "n7",
+        "position": {
+          "x": 100,
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Ready check",
+        "params": {
+          "message": "🎒 Kit delivery verified. Prepare for the next phase."
+        },
+        "id": "n8",
         "position": {
           "x": 410,
-          "y": 250
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Radiation warning",
+        "params": {
+          "message": "☣️ Radiation activates in 10 seconds. Use medical supplies wisely."
+        },
+        "id": "n9",
+        "position": {
+          "x": 720,
+          "y": 420
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Preparation countdown",
+        "params": {
+          "seconds": 10
+        },
+        "id": "n10",
+        "position": {
+          "x": 100,
+          "y": 590
         }
       },
       {
         "kind": "zone.create",
-        "label": "Create arena zone",
+        "label": "Activate event zone",
         "params": {
           "radius": 65,
           "radiation": 20,
           "pvp": false
         },
-        "id": "n6",
+        "id": "n11",
         "position": {
-          "x": 720,
-          "y": 250
+          "x": 410,
+          "y": 590
         }
       },
       {
@@ -1150,7 +1900,7 @@
         "label": "Spawn wolf",
         "params": {
           "entity": "wolf",
-          "count": 6,
+          "count": 3,
           "layout": "ring",
           "useArena": true,
           "x": 0,
@@ -1161,10 +1911,104 @@
           "sulfur": 0,
           "metal": 0
         },
-        "id": "n7",
+        "id": "n12",
+        "position": {
+          "x": 720,
+          "y": 590
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Wave one",
+        "params": {
+          "message": "🐺 Wave 1: three wolves."
+        },
+        "id": "n13",
         "position": {
           "x": 100,
-          "y": 420
+          "y": 760
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "First survival wave",
+        "params": {
+          "seconds": 40
+        },
+        "id": "n14",
+        "position": {
+          "x": 410,
+          "y": 760
+        }
+      },
+      {
+        "kind": "logic.remaining",
+        "label": "One survivor remaining?",
+        "params": {
+          "maximum": 1
+        },
+        "id": "n15",
+        "position": {
+          "x": 720,
+          "y": 760
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn wolf",
+        "params": {
+          "entity": "wolf",
+          "count": 3,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 45,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n16",
+        "position": {
+          "x": 100,
+          "y": 930
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Wave two",
+        "params": {
+          "message": "🐺 Wave 2: three more wolves. 80 seconds left."
+        },
+        "id": "n17",
+        "position": {
+          "x": 410,
+          "y": 930
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Second survival wave",
+        "params": {
+          "seconds": 40
+        },
+        "id": "n18",
+        "position": {
+          "x": 720,
+          "y": 930
+        }
+      },
+      {
+        "kind": "logic.remaining",
+        "label": "One survivor remaining?",
+        "params": {
+          "maximum": 1
+        },
+        "id": "n19",
+        "position": {
+          "x": 100,
+          "y": 1100
         }
       },
       {
@@ -1183,64 +2027,100 @@
           "sulfur": 0,
           "metal": 0
         },
-        "id": "n8",
+        "id": "n20",
         "position": {
           "x": 410,
-          "y": 420
+          "y": 1100
         }
       },
       {
         "kind": "discord.send",
-        "label": "Send Discord message",
+        "label": "Final wave",
         "params": {
-          "message": "☣️ Survive the radiation and animals for two minutes."
+          "message": "🐻 Final wave: two bears. 40 seconds left."
         },
-        "id": "n9",
+        "id": "n21",
         "position": {
           "x": 720,
-          "y": 420
+          "y": 1100
         }
       },
       {
         "kind": "timer.wait",
-        "label": "Wait / countdown",
+        "label": "Final survival wave",
         "params": {
-          "seconds": 120
+          "seconds": 30
         },
-        "id": "n10",
+        "id": "n22",
         "position": {
           "x": 100,
-          "y": 590
+          "y": 1270
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final ten",
+        "params": {
+          "message": "⏳ 10 seconds left."
+        },
+        "id": "n23",
+        "position": {
+          "x": 410,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Survival countdown",
+        "params": {
+          "seconds": 10
+        },
+        "id": "n24",
+        "position": {
+          "x": 720,
+          "y": 1270
         }
       },
       {
         "kind": "winner.announce",
-        "label": "Announce results",
+        "label": "Announce survivor result",
         "params": {},
-        "id": "n11",
+        "id": "n25",
+        "position": {
+          "x": 100,
+          "y": 1440
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Return notice",
+        "params": {
+          "message": "🏁 Event finished. Returning eligible players to saved locations. Offline or dead players may require recovery."
+        },
+        "id": "n26",
         "position": {
           "x": 410,
-          "y": 590
+          "y": 1440
         }
       },
       {
         "kind": "players.return",
         "label": "Restore players",
         "params": {},
-        "id": "n12",
+        "id": "n27",
         "position": {
           "x": 720,
-          "y": 590
+          "y": 1440
         }
       },
       {
         "kind": "event.end",
         "label": "End & clean up",
         "params": {},
-        "id": "n13",
+        "id": "n28",
         "position": {
           "x": 100,
-          "y": 760
+          "y": 1610
         }
       }
     ],
@@ -1304,11 +2184,100 @@
         "id": "e11",
         "source": "n12",
         "target": "n13"
+      },
+      {
+        "id": "e12",
+        "source": "n13",
+        "target": "n14"
+      },
+      {
+        "id": "e13",
+        "source": "n14",
+        "target": "n15"
+      },
+      {
+        "id": "yes14",
+        "source": "n15",
+        "target": "n25",
+        "branch": "yes"
+      },
+      {
+        "id": "no14",
+        "source": "n15",
+        "target": "n16",
+        "branch": "no"
+      },
+      {
+        "id": "e15",
+        "source": "n16",
+        "target": "n17"
+      },
+      {
+        "id": "e16",
+        "source": "n17",
+        "target": "n18"
+      },
+      {
+        "id": "e17",
+        "source": "n18",
+        "target": "n19"
+      },
+      {
+        "id": "yes18",
+        "source": "n19",
+        "target": "n25",
+        "branch": "yes"
+      },
+      {
+        "id": "no18",
+        "source": "n19",
+        "target": "n20",
+        "branch": "no"
+      },
+      {
+        "id": "e19",
+        "source": "n20",
+        "target": "n21"
+      },
+      {
+        "id": "e20",
+        "source": "n21",
+        "target": "n22"
+      },
+      {
+        "id": "e21",
+        "source": "n22",
+        "target": "n23"
+      },
+      {
+        "id": "e22",
+        "source": "n23",
+        "target": "n24"
+      },
+      {
+        "id": "e23",
+        "source": "n24",
+        "target": "n25"
+      },
+      {
+        "id": "e24",
+        "source": "n25",
+        "target": "n26"
+      },
+      {
+        "id": "e25",
+        "source": "n26",
+        "target": "n27"
+      },
+      {
+        "id": "e26",
+        "source": "n27",
+        "target": "n28"
       }
     ],
     "embed": {
       "title": "☣️ TOXIC NIGHTMARE",
-      "description": "Survive 120 seconds in radiation with a limited medical kit, six wolves and two bears. No respawns.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "description": "Survive 120 seconds in radiation with a limited medical kit, six wolves and two bears. No respawns.\n\n**Registration:** {event.players}/{event.max_players}\nUse /link before joining. Store valuables before entering.",
       "color": "#84cc16",
       "footer": "RCE EVENT CLOUD • Your server. Your rules.",
       "image": "",
@@ -1556,7 +2525,7 @@
         "kind": "registration.open",
         "label": "Open registration",
         "params": {
-          "seconds": 90
+          "seconds": 120
         },
         "id": "n2",
         "position": {
@@ -1565,9 +2534,11 @@
         }
       },
       {
-        "kind": "positions.save",
-        "label": "Save original positions",
-        "params": {},
+        "kind": "discord.send",
+        "label": "Registration closed",
+        "params": {
+          "message": "🔒 Registration closed: {event.players}/{event.max_players}. Checking original positions. Stay connected."
+        },
         "id": "n3",
         "position": {
           "x": 720,
@@ -1575,12 +2546,34 @@
         }
       },
       {
-        "kind": "players.teleport",
-        "label": "Teleport to entry gates",
+        "kind": "positions.save",
+        "label": "Save original positions",
         "params": {},
         "id": "n4",
         "position": {
           "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Prepare transfer",
+        "params": {
+          "message": "📍 Preparing transfer. Original locations saved. Event kits may change inventory; store valuables before joining."
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n6",
+        "position": {
+          "x": 720,
           "y": 250
         }
       },
@@ -1590,24 +2583,60 @@
         "params": {
           "kit": "loot"
         },
-        "id": "n5",
+        "id": "n7",
+        "position": {
+          "x": 100,
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Ready check",
+        "params": {
+          "message": "🎒 Kit delivery verified. Prepare for the next phase."
+        },
+        "id": "n8",
         "position": {
           "x": 410,
-          "y": 250
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Rules",
+        "params": {
+          "message": "💰 Collect loot and survive. PvP during the event; no automatic loot scoring."
+        },
+        "id": "n9",
+        "position": {
+          "x": 720,
+          "y": 420
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Preparation countdown",
+        "params": {
+          "seconds": 10
+        },
+        "id": "n10",
+        "position": {
+          "x": 100,
+          "y": 590
         }
       },
       {
         "kind": "zone.create",
-        "label": "Create arena zone",
+        "label": "Activate event zone",
         "params": {
           "radius": 90,
           "radiation": 0,
           "pvp": true
         },
-        "id": "n6",
+        "id": "n11",
         "position": {
-          "x": 720,
-          "y": 250
+          "x": 410,
+          "y": 590
         }
       },
       {
@@ -1626,32 +2655,10 @@
           "sulfur": 0,
           "metal": 0
         },
-        "id": "n7",
+        "id": "n12",
         "position": {
-          "x": 100,
-          "y": 420
-        }
-      },
-      {
-        "kind": "entity.spawn",
-        "label": "Spawn crate_elite",
-        "params": {
-          "entity": "crate_elite",
-          "count": 4,
-          "layout": "ring",
-          "useArena": true,
-          "x": 0,
-          "y": 20,
-          "z": 0,
-          "radius": 12,
-          "stone": 0,
-          "sulfur": 0,
-          "metal": 0
-        },
-        "id": "n8",
-        "position": {
-          "x": 410,
-          "y": 420
+          "x": 720,
+          "y": 590
         }
       },
       {
@@ -1670,52 +2677,6 @@
           "sulfur": 0,
           "metal": 0
         },
-        "id": "n9",
-        "position": {
-          "x": 720,
-          "y": 420
-        }
-      },
-      {
-        "kind": "discord.send",
-        "label": "Send Discord message",
-        "params": {
-          "message": "💰 Collect loot and survive for 90 seconds. No loot ranking."
-        },
-        "id": "n10",
-        "position": {
-          "x": 100,
-          "y": 590
-        }
-      },
-      {
-        "kind": "timer.wait",
-        "label": "Wait / countdown",
-        "params": {
-          "seconds": 90
-        },
-        "id": "n11",
-        "position": {
-          "x": 410,
-          "y": 590
-        }
-      },
-      {
-        "kind": "discord.send",
-        "label": "Send Discord message",
-        "params": {
-          "message": "Loot Rush has ended. Returning players."
-        },
-        "id": "n12",
-        "position": {
-          "x": 720,
-          "y": 590
-        }
-      },
-      {
-        "kind": "players.return",
-        "label": "Restore players",
-        "params": {},
         "id": "n13",
         "position": {
           "x": 100,
@@ -1723,13 +2684,153 @@
         }
       },
       {
-        "kind": "event.end",
-        "label": "End & clean up",
-        "params": {},
+        "kind": "discord.send",
+        "label": "Loot wave one",
+        "params": {
+          "message": "📦 Basic and medical crates are ready. 90 seconds remaining."
+        },
         "id": "n14",
         "position": {
           "x": 410,
           "y": 760
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Opening loot rush",
+        "params": {
+          "seconds": 30
+        },
+        "id": "n15",
+        "position": {
+          "x": 720,
+          "y": 760
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn crate_elite",
+        "params": {
+          "entity": "crate_elite",
+          "count": 4,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 12,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n16",
+        "position": {
+          "x": 100,
+          "y": 930
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Elite drop",
+        "params": {
+          "message": "💎 Elite crates now available near the center. 60 seconds left."
+        },
+        "id": "n17",
+        "position": {
+          "x": 410,
+          "y": 930
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Contest elite loot",
+        "params": {
+          "seconds": 30
+        },
+        "id": "n18",
+        "position": {
+          "x": 720,
+          "y": 930
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final thirty",
+        "params": {
+          "message": "⏱️ Final 30 seconds."
+        },
+        "id": "n19",
+        "position": {
+          "x": 100,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Final loot phase",
+        "params": {
+          "seconds": 20
+        },
+        "id": "n20",
+        "position": {
+          "x": 410,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final ten",
+        "params": {
+          "message": "⏳ 10 seconds until return."
+        },
+        "id": "n21",
+        "position": {
+          "x": 720,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Return countdown",
+        "params": {
+          "seconds": 10
+        },
+        "id": "n22",
+        "position": {
+          "x": 100,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Return notice",
+        "params": {
+          "message": "🏁 Event finished. Returning eligible players to saved locations. Offline or dead players may require recovery."
+        },
+        "id": "n23",
+        "position": {
+          "x": 410,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n24",
+        "position": {
+          "x": 720,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n25",
+        "position": {
+          "x": 100,
+          "y": 1440
         }
       }
     ],
@@ -1798,11 +2899,66 @@
         "id": "e12",
         "source": "n13",
         "target": "n14"
+      },
+      {
+        "id": "e13",
+        "source": "n14",
+        "target": "n15"
+      },
+      {
+        "id": "e14",
+        "source": "n15",
+        "target": "n16"
+      },
+      {
+        "id": "e15",
+        "source": "n16",
+        "target": "n17"
+      },
+      {
+        "id": "e16",
+        "source": "n17",
+        "target": "n18"
+      },
+      {
+        "id": "e17",
+        "source": "n18",
+        "target": "n19"
+      },
+      {
+        "id": "e18",
+        "source": "n19",
+        "target": "n20"
+      },
+      {
+        "id": "e19",
+        "source": "n20",
+        "target": "n21"
+      },
+      {
+        "id": "e20",
+        "source": "n21",
+        "target": "n22"
+      },
+      {
+        "id": "e21",
+        "source": "n22",
+        "target": "n23"
+      },
+      {
+        "id": "e22",
+        "source": "n23",
+        "target": "n24"
+      },
+      {
+        "id": "e23",
+        "source": "n24",
+        "target": "n25"
       }
     ],
     "embed": {
       "title": "💰 LOOT RUSH",
-      "description": "90-second loot rush with PvP. No automatic loot-value ranking; return participants when time expires. Verify crate prefab names and inventory rules.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "description": "90-second loot rush with PvP. No automatic loot-value ranking; return participants when time expires. Verify crate prefab names and inventory rules.\n\n**Registration:** {event.players}/{event.max_players}\nUse /link before joining. Store valuables before entering.",
       "color": "#38bdf8",
       "footer": "RCE EVENT CLOUD • Your server. Your rules.",
       "image": "",
@@ -1870,7 +3026,7 @@
         "kind": "registration.open",
         "label": "Open registration",
         "params": {
-          "seconds": 90
+          "seconds": 120
         },
         "id": "n2",
         "position": {
@@ -1879,9 +3035,11 @@
         }
       },
       {
-        "kind": "positions.save",
-        "label": "Save original positions",
-        "params": {},
+        "kind": "discord.send",
+        "label": "Registration closed",
+        "params": {
+          "message": "🔒 Registration closed: {event.players}/{event.max_players}. Checking original positions. Stay connected."
+        },
         "id": "n3",
         "position": {
           "x": 720,
@@ -1889,12 +3047,34 @@
         }
       },
       {
-        "kind": "players.teleport",
-        "label": "Teleport to entry gates",
+        "kind": "positions.save",
+        "label": "Save original positions",
         "params": {},
         "id": "n4",
         "position": {
           "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Prepare transfer",
+        "params": {
+          "message": "📍 Preparing transfer. Original locations saved. Event kits may change inventory; store valuables before joining."
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n6",
+        "position": {
+          "x": 720,
           "y": 250
         }
       },
@@ -1904,32 +3084,6 @@
         "params": {
           "kit": "team"
         },
-        "id": "n5",
-        "position": {
-          "x": 410,
-          "y": 250
-        }
-      },
-      {
-        "kind": "zone.create",
-        "label": "Create arena zone",
-        "params": {
-          "radius": 120,
-          "radiation": 0,
-          "pvp": true
-        },
-        "id": "n6",
-        "position": {
-          "x": 720,
-          "y": 250
-        }
-      },
-      {
-        "kind": "discord.send",
-        "label": "Send Discord message",
-        "params": {
-          "message": "🔴 RED VS BLUE 🔵 — five-minute team battle. Team result is determined manually."
-        },
         "id": "n7",
         "position": {
           "x": 100,
@@ -1937,10 +3091,10 @@
         }
       },
       {
-        "kind": "timer.wait",
-        "label": "Wait / countdown",
+        "kind": "discord.send",
+        "label": "Ready check",
         "params": {
-          "seconds": 300
+          "message": "🎒 Kit delivery verified. Prepare for the next phase."
         },
         "id": "n8",
         "position": {
@@ -1950,9 +3104,9 @@
       },
       {
         "kind": "discord.send",
-        "label": "Send Discord message",
+        "label": "Team preparation",
         "params": {
-          "message": "Match finished. Staff confirm the team result; returning participants."
+          "message": "🔴 RED vs 🔵 BLUE. Same kit for both teams; respawns use team entry gates."
         },
         "id": "n9",
         "position": {
@@ -1961,9 +3115,11 @@
         }
       },
       {
-        "kind": "players.return",
-        "label": "Restore players",
-        "params": {},
+        "kind": "timer.wait",
+        "label": "Team preparation countdown",
+        "params": {
+          "seconds": 15
+        },
         "id": "n10",
         "position": {
           "x": 100,
@@ -1971,13 +3127,157 @@
         }
       },
       {
-        "kind": "event.end",
-        "label": "End & clean up",
-        "params": {},
+        "kind": "zone.create",
+        "label": "Activate event zone",
+        "params": {
+          "radius": 120,
+          "radiation": 0,
+          "pvp": true
+        },
         "id": "n11",
         "position": {
           "x": 410,
           "y": 590
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Match start",
+        "params": {
+          "message": "⚔️ Team battle begins! Five minutes. Staff confirm results; automatic kill-score winner not supported yet."
+        },
+        "id": "n12",
+        "position": {
+          "x": 720,
+          "y": 590
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Opening match",
+        "params": {
+          "seconds": 120
+        },
+        "id": "n13",
+        "position": {
+          "x": 100,
+          "y": 760
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Three minutes left",
+        "params": {
+          "message": "⏱️ 3 minutes left."
+        },
+        "id": "n14",
+        "position": {
+          "x": 410,
+          "y": 760
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Mid match",
+        "params": {
+          "seconds": 120
+        },
+        "id": "n15",
+        "position": {
+          "x": 720,
+          "y": 760
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final minute",
+        "params": {
+          "message": "🔥 Final minute."
+        },
+        "id": "n16",
+        "position": {
+          "x": 100,
+          "y": 930
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Final team phase",
+        "params": {
+          "seconds": 50
+        },
+        "id": "n17",
+        "position": {
+          "x": 410,
+          "y": 930
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Final ten",
+        "params": {
+          "message": "⏳ 10 seconds left."
+        },
+        "id": "n18",
+        "position": {
+          "x": 720,
+          "y": 930
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Final countdown",
+        "params": {
+          "seconds": 10
+        },
+        "id": "n19",
+        "position": {
+          "x": 100,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Match result",
+        "params": {
+          "message": "🏆 Time is up. Staff confirm the result in Discord."
+        },
+        "id": "n20",
+        "position": {
+          "x": 410,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Return notice",
+        "params": {
+          "message": "🏁 Event finished. Returning eligible players to saved locations. Offline or dead players may require recovery."
+        },
+        "id": "n21",
+        "position": {
+          "x": 720,
+          "y": 1100
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n22",
+        "position": {
+          "x": 100,
+          "y": 1270
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n23",
+        "position": {
+          "x": 410,
+          "y": 1270
         }
       }
     ],
@@ -2031,11 +3331,71 @@
         "id": "e9",
         "source": "n10",
         "target": "n11"
+      },
+      {
+        "id": "e10",
+        "source": "n11",
+        "target": "n12"
+      },
+      {
+        "id": "e11",
+        "source": "n12",
+        "target": "n13"
+      },
+      {
+        "id": "e12",
+        "source": "n13",
+        "target": "n14"
+      },
+      {
+        "id": "e13",
+        "source": "n14",
+        "target": "n15"
+      },
+      {
+        "id": "e14",
+        "source": "n15",
+        "target": "n16"
+      },
+      {
+        "id": "e15",
+        "source": "n16",
+        "target": "n17"
+      },
+      {
+        "id": "e16",
+        "source": "n17",
+        "target": "n18"
+      },
+      {
+        "id": "e17",
+        "source": "n18",
+        "target": "n19"
+      },
+      {
+        "id": "e18",
+        "source": "n19",
+        "target": "n20"
+      },
+      {
+        "id": "e19",
+        "source": "n20",
+        "target": "n21"
+      },
+      {
+        "id": "e20",
+        "source": "n21",
+        "target": "n22"
+      },
+      {
+        "id": "e21",
+        "source": "n22",
+        "target": "n23"
       }
     ],
     "embed": {
       "title": "🔴 RED VS BLUE",
-      "description": "Two teams of ten, independent entry gates, team respawns and identical kit. Five-minute timed match. Team score and automatic winner not yet supported; no false winner.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "description": "Two teams of ten, independent entry gates, team respawns and identical kit. Five-minute timed match. Team score and automatic winner not yet supported; no false winner.\n\n**Registration:** {event.players}/{event.max_players}\nUse /link before joining. Store valuables before entering.",
       "color": "#6366f1",
       "footer": "RCE EVENT CLOUD • Your server. Your rules.",
       "image": "",
