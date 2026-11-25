@@ -1,3 +1,4 @@
+import {readRoutes,validateRoute} from './channel-routing.ts';
 import {createServer} from 'node:http';
 import {spawn,type ChildProcess} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -45,7 +46,7 @@ async function control(tenantId:string,action:string,p:any){const{id}=botIdentit
  if(action==='stop'||action==='restart'){if(!row)throw new Error('Bot is not provisioned.');await stopChild(id);}
  if(action==='start'||action==='restart'){
   const snapshot=await plane(tenantId,id,'snapshot');if(!snapshot.entitled||!snapshot.ownerDiscordId)throw new Error('Active entitlement and Discord ownership are required.');
-  const token=randomBytes(32).toString('hex'),epoch=randomUUID();const host=await resolveGameHost(p.host);const credentials=await encrypt(JSON.stringify({discordToken:p.discordToken,password:p.password}),secretKey,`${tenantId}:${id}`);const config={id,tenantId,host,port:Number(p.port),applicationId:p.applicationId,guildId:p.guildId,serverKey:hash(host+':'+p.port)};
+  const token=randomBytes(32).toString('hex'),epoch=randomUUID();const host=await resolveGameHost(p.host);const credentials=await encrypt(JSON.stringify({discordToken:p.discordToken,password:p.password}),secretKey,`${tenantId}:${id}`);const config={id,tenantId,host,port:Number(p.port),applicationId:p.applicationId,guildId:p.guildId,serverKey:hash(host+':'+p.port),channels:row?.config?.guildId===p.guildId&&row?.config?.serverKey===hash(host+':'+p.port)?readRoutes(row.config.channels):{}};
   // Commit the lease before a subprocess can bootstrap. Never run two bots on the free service.
    if(children.size)throw new Error('Free runtime already has an active bot.');
    if(!Number.isInteger(config.port)||config.port<1||config.port>65535||typeof p.discordToken!=='string'||typeof p.password!=='string'||!p.discordToken||!p.password)throw new Error('Invalid bot credentials.');
@@ -62,10 +63,19 @@ async function workerCall(path:string,token:string,b:any){if(!/^[-a-f0-9]{36}$/.
  }
  if(path==='/v1/runtime/rate'){await reserve(row.config.serverKey);return{ok:true};}
  if(path==='/v1/runtime/heartbeat'){
-  const snapshot=await plane(row.tenant_id,row.id,'snapshot');await plane(row.tenant_id,row.id,'heartbeat',{status:b.status,discordStatus:b.discordStatus,rconStatus:b.rconStatus});await pool.query("UPDATE runtime_bots SET heartbeat=now(),status=$2,discord_status=$3,rcon_status=$4,desired_running=CASE WHEN $2='SUSPENDED' THEN false ELSE desired_running END WHERE id=$1 AND lease_epoch=$5",[row.id,b.status,b.discordStatus,b.rconStatus,b.epoch]);const action=row.config.requestedAction;await pool.query("UPDATE runtime_bots SET config=config-'requestedAction' WHERE id=$1 AND lease_epoch=$2",[row.id,b.epoch]);return{snapshot,action};
+  const snapshot=await plane(row.tenant_id,row.id,'snapshot');await plane(row.tenant_id,row.id,'heartbeat',{status:b.status,discordStatus:b.discordStatus,rconStatus:b.rconStatus});await pool.query("UPDATE runtime_bots SET heartbeat=now(),status=$2,discord_status=$3,rcon_status=$4,desired_running=CASE WHEN $2='SUSPENDED' THEN false ELSE desired_running END WHERE id=$1 AND lease_epoch=$5",[row.id,b.status,b.discordStatus,b.rconStatus,b.epoch]);const action=row.config.requestedAction;await pool.query("UPDATE runtime_bots SET config=config-'requestedAction' WHERE id=$1 AND lease_epoch=$2",[row.id,b.epoch]);return{snapshot,action,channels:readRoutes(row.config.channels)};
  }
  if(path==='/v1/runtime/link'){if(!/^\d{17,20}$/.test(b.discordId)||typeof b.ign!=='string'||b.ign.length>64)throw new Error('Invalid identity link.');await pool.query('INSERT INTO runtime_links(bot_id,discord_id,ign) VALUES($1,$2,$3) ON CONFLICT(bot_id,discord_id) DO UPDATE SET ign=$3,verified_at=now()',[row.id,b.discordId,b.ign]);return{ok:true};}
  if(path==='/v1/runtime/links'){return{links:(await pool.query('SELECT discord_id,ign FROM runtime_links WHERE bot_id=$1',[row.id])).rows};}
+ if(path==='/v1/runtime/channel'){
+  const snapshot=await plane(row.tenant_id,row.id,'snapshot');
+  if(!snapshot.entitled||b.actor!==snapshot.ownerDiscordId||b.guildId!==row.config.guildId)throw new Error('Owner authorization required.');
+  if(!validateRoute(b.type,b.channelId))throw new Error('Invalid or unsupported channel route.');
+  const result=await pool.query("UPDATE runtime_bots SET config=jsonb_set(config,'{channels}',COALESCE(config->'channels','{}'::jsonb)||jsonb_build_object($3::text,$4::text),true),updated_at=now() WHERE id=$1 AND tenant_id=$2 AND lease_epoch=$5 RETURNING config",[row.id,row.tenant_id,b.type,b.channelId,b.epoch]);
+  if(!result.rows.length)throw new Error('Worker lease changed.');
+  await plane(row.tenant_id,row.id,'audit',{type:'channel.updated',detail:'Configured '+b.type+' channel.'}).catch(()=>{});
+  return {channels:readRoutes(result.rows[0].config.channels)};
+ }
  if(path==='/v1/runtime/module')return plane(row.tenant_id,row.id,'module',{actor:b.actor,guildId:b.guildId,module:b.module,enabled:b.enabled});
  if(path==='/v1/runtime/audit'){await plane(row.tenant_id,row.id,'audit',{type:b.type,detail:b.detail});return{ok:true};}
  if(path==='/v1/runtime/action'){const snapshot=await plane(row.tenant_id,row.id,'snapshot');if(b.actor!==snapshot.ownerDiscordId||b.guildId!==row.config.guildId)throw new Error('Owner authorization required.');if(!['restart','stop','reconnect','refresh'].includes(b.action))throw new Error('Invalid administration action.');const secret=JSON.parse(await decrypt(row.encrypted_secrets,secretKey,`${row.tenant_id}:${row.id}`));setTimeout(()=>control(row.tenant_id,b.action,{...row.config,...secret,jobId:randomUUID()}).catch(()=>console.error(JSON.stringify({event:'lifecycle_failed',botId:row.id}))),1500);return{accepted:true};}
