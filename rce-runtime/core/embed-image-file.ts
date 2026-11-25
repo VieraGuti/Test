@@ -1,0 +1,2 @@
+export const EMBED_IMAGE_LIMIT=3*1024*1024;
+export function imageMime(bytes:Uint8Array):{mime:string;ext:string}|null{if(bytes.length<12)return null;const eq=(a:number[],off=0)=>a.every((v,i)=>bytes[off+i]===v);if(eq([137,80,78,71,13,10,26,10]))return {mime:'image/png',ext:'png'};if(eq([255,216,255]))return {mime:'image/jpeg',ext:'jpg'};if(eq([71,73,70,56,55,97])||eq([71,73,70,56,57,97]))return {mime:'image/gif',ext:'gif'};if(eq([82,73,70,70])&&eq([87,69,66,80],8))return {mime:'image/webp',ext:'webp'};return null;}
