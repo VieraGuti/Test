@@ -126,7 +126,7 @@ def visual_story(source,job,transcript,workdir):
   frames=[]
   for idx,sec in enumerate(seconds):
    image=workdir/f'frame_{idx}.jpg'
-   cmd(['ffmpeg','-nostdin','-v','error','-y','-ss',str(round(sec,2)),'-i',str(source),'-vf','scale=320:-2','-frames:v','1','-q:v','6',str(image)],limit=22)
+   cmd(['ffmpeg','-nostdin','-v','error','-y','-threads','1','-filter_threads','1','-ss',str(round(sec,2)),'-i',str(source),'-vf','scale=320:-2','-frames:v','1','-q:v','6','-threads','1',str(image)],limit=90)
    if not image.exists() or image.stat().st_size<300:continue
    frames.append(base64.b64encode(image.read_bytes()).decode('ascii'))
    image.unlink(missing_ok=True)
@@ -324,8 +324,8 @@ def submit_groq_storyboard(job,video,transcript,tmp):
   pattern=tmp/'storyboard_%02d.jpg'
   tile='5x3' if length>=16 else '4x2'
   cmd(['ffmpeg','-nostdin','-v','error','-y','-i',str(video),
-    '-vf','fps=1,scale=180:-2,tile='+tile,'-vsync','0',
-    '-frames:v','3','-q:v','5',str(pattern)],limit=45)
+    '-filter_threads','1','-vf','fps=1,scale=180:-2,tile='+tile,'-vsync','0',
+    '-frames:v','3','-q:v','5','-threads','1',str(pattern)],limit=120)
   paths=sorted(tmp.glob('storyboard_*.jpg'))
   if not 2<=len(paths)<=3:
    log.warning('Groq final storyboard incomplete: %d sheets',len(paths))
