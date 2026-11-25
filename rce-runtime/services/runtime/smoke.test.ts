@@ -1,0 +1,12 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createHmac,randomUUID,randomBytes} from 'node:crypto';
+import {verifySignature,botIdentity,isPublicIPv4} from './guards.ts';
+import {encrypt,decrypt} from '../../server/security.ts';
+import {commands,parsePosition} from '../../core/commands.ts';
+import {simulate} from '../../core/engine.ts';
+test('service signatures and UUID identity',()=>{const key='test-only';const stamp=String(Date.now()),nonce=randomUUID(),body='{}';const signature=createHmac('sha256',key).update(stamp+'.'+nonce+'.'+body).digest('hex');assert(verifySignature(key,stamp,nonce,body,signature));assert(!verifySignature(key,stamp,nonce,'altered',signature));assert(!verifySignature(key,stamp,nonce,body,'x'.repeat(64)));const id=randomUUID(),tenant=randomUUID();assert.deepEqual(botIdentity(tenant,id),{tenantId:tenant,id});assert.throws(()=>botIdentity('invalid',id));});
+test('private addresses rejected',()=>{for(const ip of ['127.0.0.1','10.1.2.3','192.168.0.1','169.254.169.254','100.64.0.1'])assert(!isPublicIPv4(ip));assert(isPublicIPv4('8.8.8.8'));});
+test('authenticated encryption',async()=>{const key=randomBytes(32).toString('base64');const encrypted=await encrypt('test secret',key,'tenant:bot');assert.equal(await decrypt(encrypted,key,'tenant:bot'),'test secret');await assert.rejects(decrypt(encrypted,key,'other:bot'));});
+test('RCON command arguments and positions',()=>{assert.throws(()=>commands.position('a";quit'));assert.deepEqual(parsePosition('Player1: (1,2,3)','Player1'),{x:1,y:2,z:3});assert.throws(()=>parsePosition('Player2: (1,2,3)','Player1'));});
+test('event engine completes a bounded safe simulation',async()=>{const d={schemaVersion:1,name:'Smoke',description:'Smoke',category:'Test',maxPlayers:2,arena:{x:0,y:20,z:0},nodes:[{id:'start',kind:'event.started',label:'Start',position:{x:0,y:0},params:{}},{id:'end',kind:'event.end',label:'End',position:{x:1,y:0},params:{}}],edges:[{id:'e',source:'start',target:'end'}],embed:{title:'Smoke',description:'Smoke',color:'#112233',footer:'',image:'',thumbnail:''}};const result=await simulate(d,{seed:42,players:2});assert.equal(result.report.passed,true);});
