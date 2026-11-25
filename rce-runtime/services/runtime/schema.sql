@@ -8,3 +8,6 @@ CREATE TABLE IF NOT EXISTS runtime_links (bot_id UUID NOT NULL,discord_id TEXT N
 CREATE TABLE IF NOT EXISTS rcon_slots (server_key TEXT PRIMARY KEY,next_at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS runtime_audit (id BIGSERIAL PRIMARY KEY,tenant_id TEXT NOT NULL,bot_id UUID,action TEXT NOT NULL,detail TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 ALTER TABLE runtime_returns ADD COLUMN IF NOT EXISTS destination JSONB;
+CREATE TABLE IF NOT EXISTS runtime_pvp_kills (bot_id UUID NOT NULL,tenant_id TEXT NOT NULL,server_key TEXT NOT NULL,event_id UUID NOT NULL,killer TEXT NOT NULL,victim TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,server_key,event_id));
+CREATE INDEX IF NOT EXISTS runtime_pvp_scope_idx ON runtime_pvp_kills(bot_id,tenant_id,server_key);
+CREATE TABLE IF NOT EXISTS runtime_leaderboard_messages (bot_id UUID NOT NULL,tenant_id TEXT NOT NULL,server_key TEXT NOT NULL,channel_id TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(bot_id,server_key,channel_id));
