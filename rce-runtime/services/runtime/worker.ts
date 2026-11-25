@@ -1,0 +1,105 @@
+import {randomInt} from 'node:crypto';
+import {initialState,stepEngine,restorePlayers,respawnPlayer,log,renderVariables} from '../../core/engine.ts';
+import type {Adapter} from '../../core/engine.ts';
+import type {Definition,EngineState,WorkflowNode,Player} from '../../core/types.ts';
+import {commands,parsePosition} from '../../core/commands.ts';
+import {validateDefinition} from '../../core/validation.ts';
+import {SerialQueue,safeAdmin} from './guards.ts';
+import {connectRce} from './rce.ts';
+const botId=process.env.BOT_ID!,epoch=process.env.LEASE_EPOCH!,workerToken=process.env.WORKER_TOKEN!,supervisor=process.env.SUPERVISOR_INTERNAL_URL!;
+if(!botId||!epoch||!workerToken||!supervisor)throw new Error('Runtime identity is not configured.');
+async function call(path:string,data:Record<string,unknown>={}){const response=await fetch(supervisor+'/v1/runtime/'+path,{method:'POST',headers:{Authorization:'Bearer '+workerToken,'Content-Type':'application/json'},body:JSON.stringify({botId,epoch,...data}),signal:AbortSignal.timeout(25000)});if(!response.ok)throw new Error('Runtime persistence or authorization failed.');return response.json() as Promise<any>;}
+let boot:any;for(let i=0;i<10;i++){try{boot=await call('bootstrap');break;}catch{await new Promise(r=>setTimeout(r,1000));}}if(!boot)throw new Error('Runtime bootstrap unavailable.');
+const config=boot.config;let snapshot=boot.snapshot,revision:number=boot.revision;
+let current:{definition:Definition;engine:EngineState;channelId:string;eventId:string;version:number}|null=boot.state;
+const checkpointQueue=new SerialQueue();let quitting=false,engineRunning=false,paused=false,rconConnected=false;
+const discordModule='discord.js';const discord=await import(discordModule);
+const client=new discord.Client({intents:[discord.GatewayIntentBits.Guilds],allowedMentions:{parse:[]}});
+const rce=await connectRce({...config,password:boot.secrets.password},async()=>{await call('rate');});
+let verifiedInfo=await rce.info();rconConnected=true;
+const audit=async(type:string,detail:string)=>call('audit',{type,detail:detail.slice(0,400)});
+async function checkpoint(s:EngineState){if(!current)throw new Error('No event context.');const serialized=structuredClone({...current,engine:s});await checkpointQueue.run(async()=>{const r=await call('checkpoint',{revision,state:serialized});revision=r.revision;});}
+function expectedKit(player:Player,kit:string){let handler:(data:any)=>void;let timer:ReturnType<typeof setTimeout>;const promise=new Promise<void>((resolve,reject)=>{handler=(data:any)=>{if(data.server.identifier===config.id&&data.player?.ign===player.name&&data.kit===kit){clearTimeout(timer);rce.manager.off('kitSpawn',handler);resolve();}};rce.manager.on('kitSpawn',handler);timer=setTimeout(()=>{rce.manager.off('kitSpawn',handler);reject(new Error('Kit delivery acknowledgement missing. Do not retry automatically.'));},12000);});void promise.catch(()=>{});return {promise,cancel(){clearTimeout(timer);rce.manager.off('kitSpawn',handler);}};}
+function eventEmbed(d:Definition,s:EngineState){return {title:renderVariables(d.embed.title,d,s).slice(0,256),description:renderVariables(d.embed.description,d,s).slice(0,4000),color:parseInt(d.embed.color.slice(1),16),footer:{text:renderVariables(d.embed.footer,d,s).slice(0,512)},...(d.embed.image?{image:{url:d.embed.image}}:{}),...(d.embed.thumbnail?{thumbnail:{url:d.embed.thumbnail}}:{})};}
+const adapter:Adapter={
+ checkpoint,
+ async readPosition(p){const raw=await rce.request(commands.position(p.name));return parsePosition(raw,p.name);},
+ async command(cmd,ctx){
+  if(quitting&&ctx.kind!=='players.return'&&ctx.kind!=='event.end')throw new Error('Shutdown requested.');
+  if(!rconConnected)throw new Error('RCON disconnected.');
+  if(ctx.kind==='kits.give'&&ctx.player){const kit=ctx.kit||current!.definition.nodes.find(n=>n.id===current!.engine.current)!.params.kit as string;const receipt=expectedKit(ctx.player,kit);try{const raw=await rce.request(cmd);if(/\b(error|invalid|unknown|not found)\b/i.test(raw)){receipt.cancel();throw new Error('Server rejected the kit operation.');}await receipt.promise;}catch(e){receipt.cancel();throw e;}return;}
+  const raw=await rce.request(cmd);if(/\b(error|invalid|unknown command|not found|denied|failed)\b/i.test(raw))throw new Error('Server rejected the requested operation.');
+  if(ctx.player&&['players.teleport','players.return'].includes(ctx.kind)){
+   const pos=parsePosition(await rce.request(commands.position(ctx.player.name)),ctx.player.name);const expected=ctx.destination||(ctx.kind==='players.return'?(ctx.player.exitGate||ctx.player.origin!):(ctx.player.entryGate||current!.definition.arena));
+   if(Math.hypot(pos.x-expected.x,pos.y-expected.y,pos.z-expected.z)>5)throw new Error('Teleport destination could not be confirmed.');return;
+  }
+  // Mutations without a verified target-server acknowledgement fail closed. No optimistic success.
+  if(ctx.kind==='entity.spawn'&&!/^spawned\b/i.test(raw.trim()))throw new Error('Spawn acknowledgement format requires target-server verification. Entity may exist; do not repeat.');
+  if(ctx.kind==='zone.create'&&!/\b(created|added)\b/i.test(raw))throw new Error('Zone creation acknowledgement is ambiguous. Reconcile the event-owned zone.');
+  if(ctx.kind==='event.end'&&!/\b(deleted|removed)\b/i.test(raw))throw new Error('Zone deletion acknowledgement is ambiguous.');
+ },
+ async announce(message,d,s){if(!current?.channelId)throw new Error('No event channel.');const channel=await client.channels.fetch(current.channelId);if(!channel?.isTextBased())throw new Error('Event channel is unavailable.');const permissions=channel.permissionsFor(client.user);if(!permissions?.has([discord.PermissionFlagsBits.ViewChannel,discord.PermissionFlagsBits.SendMessages,discord.PermissionFlagsBits.EmbedLinks]))throw new Error('Missing channel permissions.');await channel.send({content:message.slice(0,1900),allowedMentions:{parse:[]},embeds:[eventEmbed(d,s)]});},
+ async wait(seconds,s,node){
+  if(node.kind==='registration.open'){
+   const channel=await client.channels.fetch(current!.channelId);await channel.send({content:`Registration open for ${seconds}s. Use /link before joining.`,embeds:[eventEmbed(current!.definition,s)],components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('join:'+s.runId).setLabel('Join event').setStyle(discord.ButtonStyle.Success),new discord.ButtonBuilder().setCustomId('leave:'+s.runId).setLabel('Leave').setStyle(discord.ButtonStyle.Secondary))],allowedMentions:{parse:[]}});
+  }
+  for(let i=0;i<seconds;i++){if(quitting)throw new Error('Shutdown during wait.');while(paused&&!quitting)await new Promise(r=>setTimeout(r,1000));await new Promise(r=>setTimeout(r,1000));s.now++;if(i%10===0)await checkpoint(s);}
+ }
+};
+async function restoreEligible(){if(!current)return;const node:WorkflowNode={id:'recovery',kind:'players.return',label:'Recovery',position:{x:0,y:0},params:{}};await restorePlayers(adapter,current.engine,node);}
+async function run(){if(engineRunning||!current)return;engineRunning=true;try{while(current&&current.engine.current&&!quitting&&!['NEEDS_REVIEW','COMPLETED','CANCELLED'].includes(current.engine.status)){while(paused&&!quitting)await new Promise(r=>setTimeout(r,1000));await stepEngine(current.definition,current.engine,adapter);}if(current?.engine.status==='NEEDS_REVIEW'){await restoreEligible();await audit('event.needs_review','Interrupted event requires reconciliation. Saved return records retained.');}else await audit('event.completed','Workflow finished.');}catch{if(current){current.engine.status='NEEDS_REVIEW';await checkpoint(current.engine).catch(()=>{});}}finally{engineRunning=false;}}
+const challenges=new Map<string,{discordId:string;code:string;expires:number}>();
+rce.manager.on('noteEdit',async(data:any)=>{const pending=challenges.get(data.player?.ign);if(!pending||pending.expires<Date.now()||data.newContent?.trim()!==pending.code)return;try{await call('link',{discordId:pending.discordId,ign:data.player.ign});challenges.delete(data.player.ign);await audit('player.linked','An in-game identity challenge was verified.');}catch{}});
+rce.manager.on('playerKill',async(data:any)=>{
+ if(snapshot.modules.killfeed&&snapshot.bot.config.announcementChannelId){try{const channel=await client.channels.fetch(snapshot.bot.config.announcementChannelId);if(channel?.isTextBased())await channel.send({content:`${data.victim?.name||'Player'} was eliminated by ${data.killer?.name||'Unknown'}.`,allowedMentions:{parse:[]}});}catch{}}
+ if(!current)return;const p=current.engine.players.find(p=>p.name===data.victim?.name);if(!p||!p.alive)return;p.alive=false;log(current.engine,'game-event',`${p.name} eliminated.`);try{await checkpoint(current.engine);}catch{paused=true;}});
+rce.manager.on('playerSuicide',async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(!p||!p.alive)return;p.alive=false;await checkpoint(current!.engine).catch(()=>{paused=true;});});
+rce.manager.on('playerLeft',async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(p){p.online=false;await checkpoint(current!.engine).catch(()=>{paused=true;});}});
+for(const event of ['playerJoined','playerRespawned'])rce.manager.on(event,async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(!p)return;p.online=true;if(event==='playerRespawned'){p.alive=true;if(current)await respawnPlayer(current.definition,current.engine,adapter,p).catch(()=>{paused=true;});}if(p.pendingReturn&&['NEEDS_REVIEW','CANCELLED','COMPLETED'].includes(current!.engine.status))await restoreEligible().catch(()=>{});});
+rce.manager.on('error',()=>{rconConnected=false;});
+const botCommand=new discord.SlashCommandBuilder().setName('bot').setDescription('Hosted bot controls').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
+for(const name of ['status','restart','reconnect','panel','modules'])botCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name==='status'?'Show connection status':name+' the hosted bot'));
+const eventCommand=new discord.SlashCommandBuilder().setName('event').setDescription('Manage community events').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
+for(const name of ['list','status','participants','stop','pause','resume'])eventCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name+' event'));
+eventCommand.addSubcommand((s:any)=>s.setName('start').setDescription('Start a published event').addStringOption((o:any)=>o.setName('id').setDescription('Published event ID from /event list').setRequired(true)));
+const linkCommand=new discord.SlashCommandBuilder().setName('link').setDescription('Verify your in-game identity').addStringOption((o:any)=>o.setName('name').setDescription('Your exact in-game name').setRequired(true));
+async function authorized(i:any){if(!safeAdmin(i.user.id,i.guildId,{guildId:config.guildId,ownerDiscordId:snapshot.ownerDiscordId,staffIds:snapshot.bot.config.staffIds||[]}))throw new Error('Workspace owner or authorized staff required.');const member=await i.guild.members.fetch(i.user.id);if(!member.permissions.has(discord.PermissionFlagsBits.ManageGuild)&&i.user.id!==snapshot.ownerDiscordId)throw new Error('Manage Server permission required.');}
+client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config.guildId)return;try{
+ if(i.isButton()){
+  if(i.customId.startsWith('module:')){await authorized(i);await i.deferReply({flags:64});const module=i.customId.slice(7);if(!['registration','accountLinking','killfeed','positionTracking','entitySpawning'].includes(module))throw new Error('Unknown module.');const result=await call('module',{actor:i.user.id,guildId:i.guildId,module,enabled:!snapshot.modules[module]});snapshot.modules=result.modules;await i.editReply(module+' is now '+(snapshot.modules[module]?'enabled':'disabled')+'.');return;}
+ if(i.customId.startsWith('confirm-restart:')){await authorized(i);if(i.customId.split(':')[1]!==i.user.id)throw new Error('This confirmation belongs to another administrator.');await i.update({content:'Restart accepted. The supervisor owns the lifecycle operation.',components:[]});await call('action',{actor:i.user.id,guildId:i.guildId,action:'restart'});return;}
+  const [kind,runId]=i.customId.split(':');if(!['join','leave'].includes(kind))return;await i.deferReply({flags:64});if(!current||current.engine.runId!==runId||!current.engine.registrationOpen||!snapshot.modules.registration)throw new Error('Registration is closed.');const s=current.engine;
+  if(kind==='leave'){s.players=s.players.filter(p=>p.id!==i.user.id);await checkpoint(s);await i.editReply('You left the event.');return;}
+  if(s.players.some(p=>p.id===i.user.id)){await i.editReply('You are already registered.');return;}if(s.players.length>=current.definition.maxPlayers)throw new Error('This event is full.');const links=await call('links');const linked=links.links.find((x:any)=>x.discord_id===i.user.id);if(!linked)throw new Error('Use /link to verify your in-game identity first.');
+  const p:Player={id:i.user.id,name:linked.ign,team:s.players.length%(current.definition.spatial?.teams||2),position:{x:0,y:0,z:0},online:true,alive:true,score:0,returned:false,pendingReturn:false,trail:[]};p.position=await adapter.readPosition(p);if(!s.registrationOpen)throw new Error('Registration closed during verification.');s.players.push(p);await checkpoint(s);await i.editReply(`Joined ${current.definition.name}. Your return position will be saved before teleport.`);return;
+ }
+ if(!i.isChatInputCommand())return;await i.deferReply({flags:64});
+ if(i.commandName==='link'){if(!snapshot.modules.accountLinking)throw new Error('Account linking is disabled.');const name=i.options.getString('name',true);commands.position(name);if(challenges.has(name)&&challenges.get(name)!.expires>Date.now())throw new Error('A verification challenge already exists for this name.');const code='RCE-'+randomInt(100000,999999);challenges.set(name,{discordId:i.user.id,code,expires:Date.now()+300000});await i.editReply(`Edit an in-game note to contain exactly: ${code}\nThe challenge expires in five minutes. No Discord user token is needed.`);return;}
+ await authorized(i);const sub=i.options.getSubcommand();
+ if(i.commandName==='bot'){
+  if(sub==='modules'){await i.editReply({content:'Modules are saved in your workspace. Toggle a module below.',components:[new discord.ActionRowBuilder().addComponents(...['registration','accountLinking','killfeed','positionTracking','entitySpawning'].map(module=>new discord.ButtonBuilder().setCustomId('module:'+module).setLabel(module+': '+(snapshot.modules[module]?'ON':'OFF')).setStyle(snapshot.modules[module]?discord.ButtonStyle.Success:discord.ButtonStyle.Secondary)))]});return;}
+  if(sub==='status'||sub==='panel'){await i.editReply({embeds:[{title:'RCE Event Cloud',description:`Discord: ${client.isReady()?'CONNECTED':'DISCONNECTED'}\nRCON: ${rconConnected?'CONNECTED':'DISCONNECTED'}\nEvent: ${current?.engine.status||'None'}\nPlayers: ${verifiedInfo.Players}/${verifiedInfo.MaxPlayers}`,color:0xb79af7}]});return;}
+  if(sub==='restart'){await i.editReply({content:'Restart this hosted bot? In-flight actions will require reconciliation.',components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('confirm-restart:'+i.user.id).setLabel('Confirm restart').setStyle(discord.ButtonStyle.Danger))]});return;}
+  if(sub==='reconnect'){await call('action',{actor:i.user.id,guildId:i.guildId,action:'reconnect'});await i.editReply('Reconnect requested through the supervisor.');return;}
+ }
+ if(i.commandName==='event'){
+  if(sub==='list'){await i.editReply(snapshot.events.map((e:any)=>`${e.definition.name} · v${e.version}\n${e.id}`).join('\n\n').slice(0,1900)||'No published events. Publish a successful simulated version in Event Studio.');return;}
+  if(sub==='status'||sub==='participants'){await i.editReply(current?`${current.definition.name} · ${current.engine.status}\n`+current.engine.players.map(p=>`${p.name}: ${p.returned?'returned':p.pendingReturn?'return pending':p.alive?'alive':'eliminated'}`).join('\n').slice(0,1700):'No active event.');return;}
+  if(sub==='start'){
+   if(!snapshot.entitled)throw new Error('An active hosting entitlement is required.');if(current&&(engineRunning||current.engine.players.some(p=>p.pendingReturn)))throw new Error('Finish the active event and recover pending returns first.');const e=snapshot.events.find((e:any)=>e.id===i.options.getString('id'));if(!e)throw new Error('Published event not found.');const errors=validateDefinition(e.definition);if(errors.length)throw new Error('Published workflow is invalid.');if(e.definition.nodes.some((n:WorkflowNode)=>n.kind==='entity.spawn')&&!snapshot.modules.entitySpawning)throw new Error('Enable the entity spawning module before starting this workflow.');
+   current={definition:structuredClone(e.definition),engine:initialState(e.definition,'live'),channelId:i.channelId,eventId:e.id,version:e.version};await checkpoint(current.engine);await i.editReply('Event accepted. Opening registration using the published version.');void run();return;
+  }
+  if(!current)throw new Error('No event is active.');
+  if(sub==='pause'){paused=true;await i.editReply('Workflow execution paused. The Rust game world continues.');return;}
+  if(sub==='resume'){if(current.engine.status==='NEEDS_REVIEW')throw new Error('Reconcile interrupted operations before resuming.');paused=false;await i.editReply('Workflow execution resumed.');return;}
+  if(sub==='stop'){paused=false;quitting=true;await i.editReply('Stopping workflow actions. Eligible returns are being recovered.');while(engineRunning)await new Promise(r=>setTimeout(r,100));quitting=false;current.engine.status='CANCELLED';await restoreEligible();await checkpoint(current.engine);await audit('event.cancelled','Owner cancelled event; return records retained.');return;}
+ }
+ }catch(e){const safe=e instanceof Error?e.message:'Operation failed.';if(i.deferred||i.replied)await i.editReply({content:safe.slice(0,1800),components:[]}).catch(()=>{});else await i.reply({content:safe.slice(0,1800),flags:64}).catch(()=>{});}});
+client.once('clientReady',async()=>{try{await client.application.commands.set([botCommand.toJSON(),eventCommand.toJSON(),linkCommand.toJSON()],config.guildId);await audit('runtime.started','Discord Gateway connected. Application commands registered.');if(current&&['RUNNING','READY'].includes(current.engine.status)){current.engine.status='NEEDS_REVIEW';log(current.engine,'recovery','Restart loaded persisted state. Live workflow awaits manual reconciliation.','warning');await checkpoint(current.engine);await restoreEligible();}}catch{console.error(JSON.stringify({event:'runtime_initialization_failed',botId}));}});
+await client.login(boot.secrets.discordToken);
+let polling=false;const heartbeat=setInterval(async()=>{if(polling||quitting)return;polling=true;try{try{verifiedInfo=await rce.info();rconConnected=true;}catch{rconConnected=false;}const response=await call('heartbeat',{status:client.isReady()&&rconConnected?'ONLINE':'DEGRADED',discordStatus:client.isReady()?'CONNECTED':'DISCONNECTED',rconStatus:rconConnected?'CONNECTED':'DISCONNECTED'});snapshot=response.snapshot;if(!snapshot.entitled){quitting=true;await shutdown('SUSPENDED');return;}if(response.action==='reconnect'){// Restart the process through the supervisor; no additional RCON sessions.
+ await call('action',{actor:snapshot.ownerDiscordId,guildId:config.guildId,action:'restart'});
+ }if(current&&snapshot.modules.positionTracking){for(const p of current.engine.players.filter(p=>p.online&&p.alive).slice(0,20)){try{const pos=await adapter.readPosition(p);p.trail.push(p.position);p.trail=p.trail.slice(-60);p.position=pos;}catch{}}await checkpoint(current.engine);}
+ }catch{rconConnected=false;}finally{polling=false;}},15000);
+async function shutdown(status='STOPPED'){quitting=true;clearInterval(heartbeat);try{if(current){current.engine.status='NEEDS_REVIEW';await restoreEligible();await checkpoint(current.engine);}await call('heartbeat',{status,discordStatus:'DISCONNECTED',rconStatus:'DISCONNECTED'});}catch{}client.destroy();rce.close();process.exit(0);}
+process.on('SIGTERM',()=>void shutdown());process.on('SIGINT',()=>void shutdown());
