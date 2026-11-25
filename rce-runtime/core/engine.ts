@@ -1,6 +1,6 @@
 import type {Definition, EngineState, Frame, Player, SimulationResult, Vec3, WorkflowNode} from './types.ts';
 import {assertDefinition} from './validation.ts';
-import {commands} from './commands.ts';
+import {commands,coords} from './commands.ts';
 import {assignDestinations,spawnLayout} from './spatial.ts';
 export interface Adapter {
  checkpoint(state:EngineState):Promise<void>;
@@ -14,7 +14,7 @@ export function rng(state:EngineState){state.rng=(Math.imul(1664525,state.rng)+1
 export function initialState(d:Definition,mode:'simulation'|'live',players:Player[]=[],seed=42):EngineState {assertDefinition(d);return {mode,runId:mode==='simulation'?`sim-${seed}`:crypto.randomUUID(),now:0,status:'READY',current:d.nodes.find(n=>n.kind==='event.started')!.id,completed:[],players,entities:[],zones:[],logs:[],rng:seed>>>0||42,registrationOpen:false,failure:'none',failureUsed:false,commands:0};}
 export function renderVariables(text:string,d:Definition,s:EngineState){const vars:Record<string,string>={'event.name':d.name,'event.players':String(s.players.length),'event.max_players':String(d.maxPlayers),'event.status':s.status,'event.winner':s.winner||'No sole winner','event.time_left':'—','player.name':s.players[0]?.name||'','player.kills':String(s.players[0]?.score||0),'team.score':String(s.players.reduce((n,p)=>n+p.score,0))};return text.replace(/\{([a-z._]+)\}/g,(full,key)=>vars[key]??full);}
 async function command(a:Adapter,s:EngineState,n:WorkflowNode,cmd:string,player?:Player,destination?:Vec3){s.commands++;await a.checkpoint(s);await a.command(cmd,{kind:n.kind,player,destination});log(s,n.id,cmd,'info',cmd);}
-export async function restorePlayers(a:Adapter,s:EngineState,n:WorkflowNode){for(const p of s.players){if(!p.origin||p.returned)continue;p.pendingReturn=true;await a.checkpoint(s);if(!p.online||!p.alive){log(s,n.id,`${p.name}: return saved for reconnect / respawn.`,'warning');continue;}await command(a,s,n,commands.teleport(p.name,p.exitGate||p.origin),p,p.exitGate||p.origin);p.position={...(p.exitGate||p.origin)};p.returned=true;p.pendingReturn=false;await a.checkpoint(s);log(s,n.id,`${p.name} returned to saved position.`,'success');}}
+export async function restorePlayers(a:Adapter,s:EngineState,n:WorkflowNode){for(const p of s.players){if(!p.origin||p.returned)continue;p.pendingReturn=true;await a.checkpoint(s);if(!p.online||!p.alive){log(s,n.id,`${p.name}: return saved for reconnect / respawn.`,'warning');continue;}await command(a,s,n,commands.teleport(p.name,p.exitGate||p.origin),p,p.exitGate||p.origin);p.position={...(p.exitGate||p.origin)};p.returned=true;p.pendingReturn=false;await a.checkpoint(s);log(s,n.id,`${p.name} returned to ${p.exitGate&&coords(p.exitGate)!==coords(p.origin)?'configured exit gate':'saved original position'} ${coords(p.position)}.`,'success');await a.checkpoint(s);}}
 export async function respawnPlayer(d:Definition,s:EngineState,a:Adapter,p:Player){
  if(!p.origin||p.returned||p.recoveryPending||!['RUNNING'].includes(s.status)||!d.spatial||d.spatial.respawn.mode==='disabled'&&!d.spatial.spectatorOnRespawn)return;
  assignDestinations(d,p,s.players);const spectate=d.spatial.respawn.mode==='disabled';const target=spectate?p.spectatorGate:p.respawnGate;if(!target)return;p.recoveryPending=true;p.pendingReturn=true;await a.checkpoint(s);
@@ -30,7 +30,7 @@ export async function stepEngine(d:Definition,s:EngineState,a:Adapter):Promise<b
   switch(n.kind){
    case 'event.started': log(s,n.id,`${d.name} started.`,'success'); break;
    case 'registration.open': s.registrationOpen=true;log(s,n.id,'Registration opened.');await a.wait(Number(n.params.seconds),s,n);s.registrationOpen=false;log(s,n.id,`Registration closed · ${s.players.length} participants.`);break;
-   case 'positions.save': for(const p of s.players.filter(p=>p.online)){if(!p.origin){p.origin=await a.readPosition(p);await a.checkpoint(s);log(s,n.id,`Original position persisted for ${p.name}.`);}}break;
+   case 'positions.save': for(const p of s.players.filter(p=>p.online)){if(!p.origin){const cmd=commands.position(p.name);s.commands++;log(s,n.id,cmd,'info',cmd);await a.checkpoint(s);const origin=await a.readPosition(p);coords(origin);p.origin={...origin};await a.checkpoint(s);log(s,n.id,`${p.name}: original position saved ${coords(p.origin)}.`,'success');await a.checkpoint(s);}}break;
    case 'players.teleport': for(const p of s.players.filter(p=>p.online&&p.alive)){if(!p.origin)throw new Error(`No return position for ${p.name}.`);assignDestinations(d,p,s.players);p.pendingReturn=true;p.returned=false;await a.checkpoint(s);await command(a,s,n,commands.teleport(p.name,p.entryGate!),p,p.entryGate);p.position={...p.entryGate!};await a.checkpoint(s);}break;
    case 'kits.give': for(const p of s.players.filter(p=>p.online&&p.alive)){await command(a,s,n,commands.kit(p.name,String(n.params.kit)),p);p.kit=String(n.params.kit);}break;
    case 'zone.create': {const zone={name:`rcec_${s.runId.slice(0,24)}_${n.id}`,position:{...d.arena},radius:Number(n.params.radius),radiation:Number(n.params.radiation)};s.zones.push(zone);await a.checkpoint(s);await command(a,s,n,commands.zone(zone.name,zone.position,zone.radius,zone.radiation,!!n.params.pvp));break;}
@@ -59,7 +59,7 @@ export async function simulate(definition:Definition,options:{seed:number;player
  const inject=(kind:string)=>{if(s.failureUsed)return;const errors:Record<string,string>={rcon_timeout:'positions.save',teleport_failed:'players.teleport',missing_kit:'kits.give',invalid_zone:'zone.create',spawn_failed:'entity.spawn'};if(errors[s.failure]===kind){s.failureUsed=true;throw new Error(`Injected scenario: ${s.failure.replaceAll('_',' ')}. Outcome not assumed; manual reconciliation required.`);}};
  const adapter:Adapter={
   async checkpoint(state){if(s.failure==='bot_restart')saved=structuredClone(state);},
-  async readPosition(p){inject('positions.save');s.commands++;return {...p.position};},
+  async readPosition(p){inject('positions.save');return {...p.position};},
   async command(_cmd,context){inject(context.kind);},
   async announce(message){log(s,s.current!,'Simulated Discord: '+message);},
   async wait(seconds,state,node){
