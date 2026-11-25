@@ -1,3 +1,4 @@
+import {describeKill} from './killfeed.ts';
 import {randomInt} from 'node:crypto';
 import {registrationSettings,quickChatAction,emoteLabel,safeSay} from '../../core/participation.ts';
 import {initialState,stepEngine,restorePlayers,respawnPlayer,log,renderVariables} from '../../core/engine.ts';
@@ -79,9 +80,19 @@ rce.manager.on('quickChat',async(data:any)=>{
  }catch{await audit('player.game_join_failed','Quick Chat registration failed; player position or persistence could not be confirmed.').catch(()=>{});}
 });
 rce.manager.on('noteEdit',async(data:any)=>{const pending=challenges.get(data.player?.ign);if(!pending||pending.expires<Date.now()||data.newContent?.trim()!==pending.code)return;try{await call('link',{discordId:pending.discordId,ign:data.player.ign});challenges.delete(data.player.ign);await audit('player.linked','An in-game identity challenge was verified.');}catch{}});
+let lastKillfeedError=0;
 rce.manager.on('playerKill',async(data:any)=>{
- if(snapshot.modules.killfeed&&snapshot.bot.config.announcementChannelId){try{const channel=await client.channels.fetch(snapshot.bot.config.announcementChannelId);if(channel?.isTextBased())await channel.send({content:`${data.victim?.name||'Player'} was eliminated by ${data.killer?.name||'Unknown'}.`,allowedMentions:{parse:[]}});}catch{}}
- if(!current)return;const p=current.engine.players.find(p=>p.name===data.victim?.name);if(!p||!p.alive)return;p.alive=false;log(current.engine,'game-event',`${p.name} eliminated.`);try{await checkpoint(current.engine);}catch{paused=true;}});
+ const kill=describeKill(data,config.id);if(!kill)return;
+ // Persist eliminations independently from Discord delivery, even if the feed is disabled.
+ const p=current?.engine.players.find(p=>p.name===kill.victim);
+ if(p&&p.alive&&current){p.alive=false;log(current.engine,'game-event',p.name+' eliminated.');try{await checkpoint(current.engine);}catch{paused=true;}}
+ if(!snapshot.entitled||quitting||!snapshot.modules.killfeed)return;
+ const id=snapshot.bot.config.killfeedChannelId||snapshot.bot.config.announcementChannelId;if(!id)return;
+ try{
+  const channel=await eventChannel(id);
+  await channel.send({embeds:[{title:kill.title,description:kill.description,color:kill.color,footer:{text:'WIPESIDE · '+String(snapshot.bot.config.serverName||config.id).slice(0,100)},timestamp:new Date().toISOString()}],allowedMentions:{parse:[]}});
+ }catch(e){if(Date.now()-lastKillfeedError>60000){lastKillfeedError=Date.now();await audit('killfeed.delivery_failed',eventFailure(e)).catch(()=>{});}}
+});
 rce.manager.on('playerSuicide',async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(!p||!p.alive)return;p.alive=false;await checkpoint(current!.engine).catch(()=>{paused=true;});});
 rce.manager.on('playerLeft',async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(p){p.online=false;await checkpoint(current!.engine).catch(()=>{paused=true;});}});
 for(const event of ['playerJoined','playerRespawned'])rce.manager.on(event,async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(!p)return;p.online=true;if(event==='playerRespawned'){const active=current?.engine.status==='RUNNING'&&!!p.origin&&!p.returned;if(!active||current?.definition.spatial?.respawn.mode!=='disabled'&&current?.definition.spatial?.respawn.mode!==undefined){p.alive=true;if(active&&current)await respawnPlayer(current.definition,current.engine,adapter,p).catch(()=>{paused=true;});}else if(current?.definition.spatial?.spectatorOnRespawn){await respawnPlayer(current.definition,current.engine,adapter,p).catch(()=>{paused=true;});}}if(p.pendingReturn&&['NEEDS_REVIEW','CANCELLED','COMPLETED'].includes(current!.engine.status))await restoreEligible().catch(()=>{});});
