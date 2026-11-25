@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS runtime_bots (id UUID PRIMARY KEY, tenant_id TEXT NOT NULL, config JSONB NOT NULL, encrypted_secrets TEXT NOT NULL, worker_token_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'STOPPED', heartbeat TIMESTAMPTZ, discord_status TEXT NOT NULL DEFAULT 'DISCONNECTED', rcon_status TEXT NOT NULL DEFAULT 'DISCONNECTED', state JSONB, revision BIGINT NOT NULL DEFAULT 0, lease_epoch UUID NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS runtime_tenant_idx ON runtime_bots(tenant_id);
+CREATE TABLE IF NOT EXISTS runtime_nonces (nonce TEXT PRIMARY KEY, expires_at TIMESTAMPTZ NOT NULL);
+CREATE TABLE IF NOT EXISTS runtime_jobs (id UUID PRIMARY KEY,tenant_id TEXT NOT NULL,bot_id UUID NOT NULL, action TEXT NOT NULL,status TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS runtime_returns (bot_id UUID NOT NULL,run_id TEXT NOT NULL, player_id TEXT NOT NULL, tenant_id TEXT NOT NULL, position JSONB NOT NULL,status TEXT NOT NULL,destination JSONB,PRIMARY KEY(bot_id,run_id,player_id));
+CREATE TABLE IF NOT EXISTS runtime_operations (bot_id UUID NOT NULL,operation_id TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,operation_id));
+CREATE TABLE IF NOT EXISTS runtime_links (bot_id UUID NOT NULL,discord_id TEXT NOT NULL,ign TEXT NOT NULL,verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,discord_id),UNIQUE(bot_id,ign));
+CREATE TABLE IF NOT EXISTS rcon_slots (server_key TEXT PRIMARY KEY,next_at BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS runtime_audit (id BIGSERIAL PRIMARY KEY,tenant_id TEXT NOT NULL,bot_id UUID,action TEXT NOT NULL,detail TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+ALTER TABLE runtime_returns ADD COLUMN IF NOT EXISTS destination JSONB;
