@@ -1,0 +1,10 @@
+import {createHmac,timingSafeEqual,createHash} from 'node:crypto';
+import {lookup} from 'node:dns/promises';
+export function hash(value:string){return createHash('sha256').update(value).digest('hex');}
+export function verifySignature(key:string,stamp:string,nonce:string,raw:string,signature:string,now=Date.now()){if(!/^\d{13}$/.test(stamp)||Math.abs(now-Number(stamp))>60000||!/^[-a-f0-9]{36}$/i.test(nonce)||! /^[a-f0-9]{64}$/.test(signature))return false;return timingSafeEqual(Buffer.from(createHmac('sha256',key).update(`${stamp}.${nonce}.${raw}`).digest('hex')),Buffer.from(signature));}
+export function isPublicIPv4(ip:string){if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip))return false;const [a,b,c,d]=ip.split('.').map(Number);if([a,b,c,d].some(x=>x>255))return false;return !(a===0||a===10||a===127||a>=224||a===169&&b===254||a===172&&b>=16&&b<=31||a===192&&(b===168||b===0||b===2)||a===100&&b>=64&&b<=127||a===198&&(b===18||b===19||b===51)||a===203&&b===0&&c===113);}
+export async function resolveGameHost(host:string){if(!/^(?=.{1,253}$)[\w.-]+$/.test(host))throw new Error('Invalid game host.');const resolved=await lookup(host,{all:true,family:4});if(!resolved.length||resolved.some(a=>!isPublicIPv4(a.address)))throw new Error('Game host must resolve exclusively to public IPv4 addresses.');return resolved[0].address;}
+const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+export function botIdentity(tenantId:unknown,id:unknown){if(typeof tenantId!=='string'||!uuid.test(tenantId)||typeof id!=='string'||!uuid.test(id))throw new Error('Invalid tenant or bot identity.');return {tenantId,id};}
+export function safeAdmin(userId:string,guildId:string,config:{guildId:string;ownerDiscordId:string;staffIds?:string[]}){return guildId===config.guildId&&(userId===config.ownerDiscordId||!!config.staffIds?.includes(userId));}
+export class SerialQueue {private tail:Promise<unknown>=Promise.resolve();run<T>(fn:()=>Promise<T>){const next=this.tail.then(fn);this.tail=next.catch(()=>{});return next;}}
