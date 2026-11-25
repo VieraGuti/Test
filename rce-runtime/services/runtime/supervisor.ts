@@ -1,4 +1,6 @@
-import {createServer,request as httpRequest} from 'node:http';
+import {createServer} from 'node:http';
+import {spawn,type ChildProcess} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {randomBytes,randomUUID,createHmac} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {hash,verifySignature,resolveGameHost,botIdentity} from './guards.ts';
@@ -6,37 +8,53 @@ import {encrypt,decrypt} from '../../server/security.ts';
 import {connectRce} from './rce.ts';
 const pgName='pg';const {Pool}=await import(pgName);const pool=new Pool({connectionString:process.env.DATABASE_URL,max:12});
 const required=(key:string)=>{const value=process.env[key];if(!value)throw new Error(`Missing required environment variable: ${key}`);return value;};
-const signingKey=required('SUPERVISOR_KEY'),secretKey=required('RUNTIME_SECRETS_KEY'),workerImage=required('WORKER_IMAGE');
+const signingKey=required('SUPERVISOR_KEY'),secretKey=required('RUNTIME_SECRETS_KEY');
+const ownerTenant=required('OWNER_TENANT_ID');
+const internalUrl=()=>`http://127.0.0.1:${Number(process.env.PORT||8080)}`;
 const planeOrigin=required('CONTROL_PLANE_URL');if(!planeOrigin.startsWith('https://'))throw new Error('Control plane must use HTTPS.');
 await pool.query(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));
-function docker(method:string,path:string,body?:unknown){
- return new Promise<any>((resolve,reject)=>{
-  const req=httpRequest({socketPath:'/var/run/docker.sock',method,path:'/v1.45'+path,headers:body?{'Content-Type':'application/json'}:{}},res=>{
-   let data='';res.on('data',c=>data+=c);
-   res.on('end',()=>{if((res.statusCode||500)>=400)return reject(new Error(`Container operation failed (${res.statusCode}).`));try{resolve(data?JSON.parse(data):{});}catch{resolve({});}});
-  });
-  req.on('error',reject);req.setTimeout(35000,()=>req.destroy(new Error('Container API timeout.')));
-  if(body)req.write(JSON.stringify(body));req.end();
+await pool.query('ALTER TABLE runtime_bots ADD COLUMN IF NOT EXISTS desired_running boolean NOT NULL DEFAULT false');
+const supervisorLease=await pool.connect();
+if(!(await supervisorLease.query('SELECT pg_try_advisory_lock(74123981) AS locked')).rows[0].locked)throw new Error('Another supervisor is active.');
+supervisorLease.on('error',()=>process.exit(1));
+// Free-tier evaluation runtime: one owner bot, isolated subprocess, no Docker socket.
+const children=new Map<string,ChildProcess>();
+let shuttingDown=false;
+function launch(id:string,epoch:string,token:string){
+ if(shuttingDown||children.size||children.has(id))throw new Error('Free runtime capacity is occupied.');
+ const child=spawn(process.execPath,['--experimental-strip-types',fileURLToPath(new URL('./worker.ts',import.meta.url))],{env:{PATH:process.env.PATH,NODE_ENV:'production',BOT_ID:id,LEASE_EPOCH:epoch,WORKER_TOKEN:token,SUPERVISOR_INTERNAL_URL:internalUrl()},stdio:['ignore','ignore','ignore']});
+ children.set(id,child);
+ const failed=()=>{if(children.get(id)!==child)return;children.delete(id);void pool.query("UPDATE runtime_bots SET status=CASE WHEN status IN ('STOPPED','SUSPENDED') THEN status ELSE 'ERROR' END, discord_status='DISCONNECTED',rcon_status='DISCONNECTED',updated_at=now() WHERE id=$1 AND lease_epoch=$2",[id,epoch]).catch(()=>{});};
+ child.once('error',failed);child.once('exit',failed);
+}
+async function stopChild(id:string){
+ const child=children.get(id);if(!child)return;
+ await new Promise<void>((resolve,reject)=>{
+  const t=setTimeout(()=>{child.kill('SIGKILL');},10000);
+  const hard=setTimeout(()=>{clearTimeout(t);reject(new Error('Worker did not exit.'));},13000);
+  child.once('exit',()=>{clearTimeout(t);clearTimeout(hard);resolve();});
+  child.once('error',()=>{clearTimeout(t);clearTimeout(hard);reject(new Error('Worker shutdown failed.'));});
+  child.kill('SIGTERM');
  });
 }
-async function plane(tenantId:string,botId:string,action:string,extra:Record<string,unknown>={}){const raw=JSON.stringify({tenantId,botId,action,...extra}),stamp=String(Date.now()),nonce=randomUUID();const signature=createHmac('sha256',required('CONTROL_PLANE_KEY')).update(`${stamp}.${nonce}.${raw}`).digest('hex');const r=await fetch(planeOrigin+'/api/runtime',{method:'POST',headers:{'Content-Type':'application/json','X-RCE-Timestamp':stamp,'X-RCE-Nonce':nonce,'X-RCE-Signature':signature,'OAI-Sites-Authorization':'Bearer '+required('SITES_SERVICE_TOKEN')},body:raw,signal:AbortSignal.timeout(15000),redirect:'error'});if(!r.ok)throw new Error('Control plane did not authorize the operation.');return r.json() as Promise<any>;}
+async function plane(tenantId:string,botId:string,action:string,extra:Record<string,unknown>={}){const raw=JSON.stringify({tenantId,botId,action,...extra}),stamp=String(Date.now()),nonce=randomUUID();const signature=createHmac('sha256',signingKey).update(`${stamp}.${nonce}.${raw}`).digest('hex');const r=await fetch(planeOrigin+'/api/runtime',{method:'POST',headers:{'Content-Type':'application/json','X-RCE-Timestamp':stamp,'X-RCE-Nonce':nonce,'X-RCE-Signature':signature},body:raw,signal:AbortSignal.timeout(15000),redirect:'error'});if(!r.ok)throw new Error('Control plane did not authorize the operation.');return r.json() as Promise<any>;}
 async function reserve(serverKey:string){const now=Date.now();const r=await pool.query('INSERT INTO rcon_slots(server_key,next_at) VALUES($1,$2) ON CONFLICT(server_key) DO UPDATE SET next_at=greatest(rcon_slots.next_at,$3)+750 RETURNING next_at',[serverKey,now+750,now]);const delay=Math.max(0,Number(r.rows[0].next_at)-750-now);if(delay>15000)throw new Error('Server RCON queue saturated.');await new Promise(r=>setTimeout(r,delay));}
-async function control(tenantId:string,action:string,p:any){const{id}=botIdentity(tenantId,p.id);if(action==='test-rcon'){const host=await resolveGameHost(p.host);const started=Date.now();const rce=await connectRce({id,host,port:p.port,password:p.password},()=>reserve(hash(host+':'+p.port)));try{return {connected:true,info:await rce.info(),latency:Date.now()-started};}finally{rce.close();}}
- const client=await pool.connect();try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[id]);let row=(await client.query('SELECT * FROM runtime_bots WHERE id=$1',[id])).rows[0];if(row&&row.tenant_id!==tenantId)throw new Error('Tenant mismatch.');
+async function control(tenantId:string,action:string,p:any){const{id}=botIdentity(tenantId,p.id);if(tenantId!==ownerTenant)throw new Error('Free runtime is restricted to the platform owner.');if(action==='test-rcon'){const host=await resolveGameHost(p.host);const started=Date.now();const rce=await connectRce({id,host,port:p.port,password:p.password},()=>reserve(hash(host+':'+p.port)));try{return {connected:true,info:await rce.info(),latency:Date.now()-started};}finally{rce.close();}}
+ const client=await pool.connect();try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[id]);let launchAfterCommit:{token:string;epoch:string}|null=null;let row=(await client.query('SELECT * FROM runtime_bots WHERE id=$1',[id])).rows[0];if(row&&row.tenant_id!==tenantId)throw new Error('Tenant mismatch.');
  if(p.jobId){const exists=await client.query('SELECT * FROM runtime_jobs WHERE id=$1',[p.jobId]);if(exists.rows.length){if(exists.rows[0].tenant_id!==tenantId||exists.rows[0].bot_id!==id)throw new Error('Job identity mismatch.');await client.query('ROLLBACK');return{status:row?.status||'STARTING',idempotent:true};}}
  if(!['start','stop','restart','reconnect','refresh'].includes(action))throw new Error('Unsupported lifecycle action.');
- if(action==='stop'||action==='restart'){if(!row)throw new Error('Bot is not provisioned.');await docker('POST',`/containers/rcec-${id}/stop?t=30`).catch(async()=>{const x=await docker('GET',`/containers/rcec-${id}/json`);if(x.State.Running)throw new Error('Could not stop previous instance.');});if(action==='restart')await docker('DELETE',`/containers/rcec-${id}`);}
+ if(action==='stop'||action==='restart'){if(!row)throw new Error('Bot is not provisioned.');await stopChild(id);}
  if(action==='start'||action==='restart'){
   const snapshot=await plane(tenantId,id,'snapshot');if(!snapshot.entitled||!snapshot.ownerDiscordId)throw new Error('Active entitlement and Discord ownership are required.');
   const token=randomBytes(32).toString('hex'),epoch=randomUUID();const host=await resolveGameHost(p.host);const credentials=await encrypt(JSON.stringify({discordToken:p.discordToken,password:p.password}),secretKey,`${tenantId}:${id}`);const config={id,tenantId,host,port:Number(p.port),applicationId:p.applicationId,guildId:p.guildId,serverKey:hash(host+':'+p.port)};
-  // Do not replace an active instance behind its worker. Docker's unique name is an additional exclusion lock.
-  if(action==='start'&&row){const old=await docker('GET',`/containers/rcec-${id}/json`).catch(()=>null);if(old?.State?.Running)throw new Error('Instance already running.');if(old)await docker('DELETE',`/containers/rcec-${id}`);}
-  await client.query('INSERT INTO runtime_bots(id,tenant_id,config,encrypted_secrets,worker_token_hash,status,lease_epoch) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET config=$3,encrypted_secrets=$4,worker_token_hash=$5,status=$6,lease_epoch=$7,updated_at=now()',[id,tenantId,config,credentials,hash(token),'STARTING',epoch]);
-  await docker('POST',`/containers/create?name=rcec-${id}`,{Image:workerImage,User:'1000:1000',Env:[`BOT_ID=${id}`,`WORKER_TOKEN=${token}`,`LEASE_EPOCH=${epoch}`,`SUPERVISOR_INTERNAL_URL=${required('WORKER_SUPERVISOR_URL')}`],Labels:{'rcec.managed':'true','rcec.tenant':tenantId,'rcec.bot':id},HostConfig:{Memory:268435456,NanoCpus:500000000,PidsLimit:64,ReadonlyRootfs:true,CapDrop:['ALL'],SecurityOpt:['no-new-privileges:true'],Tmpfs:{'/tmp':'rw,noexec,nosuid,size=32m'},RestartPolicy:{Name:'unless-stopped'},NetworkMode:required('DOCKER_NETWORK'),LogConfig:{Type:'json-file',Config:{'max-size':'5m','max-file':'2'}}}});
-  await docker('POST',`/containers/rcec-${id}/start`);
- }else if(action==='stop'){await client.query("UPDATE runtime_bots SET status='STOPPED',worker_token_hash=$2,updated_at=now() WHERE id=$1",[id,hash(randomBytes(32).toString('hex'))]);}
+  // Commit the lease before a subprocess can bootstrap. Never run two bots on the free service.
+   if(children.size)throw new Error('Free runtime already has an active bot.');
+   if(!Number.isInteger(config.port)||config.port<1||config.port>65535||typeof p.discordToken!=='string'||typeof p.password!=='string'||!p.discordToken||!p.password)throw new Error('Invalid bot credentials.');
+   await client.query("INSERT INTO runtime_bots(id,tenant_id,config,encrypted_secrets,worker_token_hash,status,lease_epoch,desired_running) VALUES($1,$2,$3,$4,$5,$6,$7,true) ON CONFLICT(id) DO UPDATE SET config=$3,encrypted_secrets=$4,worker_token_hash=$5,status=$6,lease_epoch=$7,desired_running=true,updated_at=now()",[id,tenantId,config,credentials,hash(token),'STARTING',epoch]);
+   launchAfterCommit={token,epoch};
+  }else if(action==='stop'){await client.query("UPDATE runtime_bots SET status='STOPPED',desired_running=false,discord_status='DISCONNECTED',rcon_status='DISCONNECTED',worker_token_hash=$2,updated_at=now() WHERE id=$1",[id,hash(randomBytes(32).toString('hex'))]);}
  else {if(!row)throw new Error('Bot is not provisioned.');await client.query("UPDATE runtime_bots SET config=jsonb_set(config,'{requestedAction}',$2::jsonb) WHERE id=$1",[id,JSON.stringify(action)]);}
- if(p.jobId)await client.query('INSERT INTO runtime_jobs(id,tenant_id,bot_id,action,status) VALUES($1,$2,$3,$4,$5)',[p.jobId,tenantId,id,action,'ACCEPTED']);await client.query('COMMIT');return{status:action==='stop'?'STOPPED':action==='refresh'||action==='reconnect'?row.status:'STARTING'};
+ if(p.jobId)await client.query('INSERT INTO runtime_jobs(id,tenant_id,bot_id,action,status) VALUES($1,$2,$3,$4,$5)',[p.jobId,tenantId,id,action,'ACCEPTED']);await client.query('COMMIT');if(launchAfterCommit)launch(id,launchAfterCommit.epoch,launchAfterCommit.token);return{status:action==='stop'?'STOPPED':action==='refresh'||action==='reconnect'?row.status:'STARTING'};
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}
 async function workerCall(path:string,token:string,b:any){if(!/^[-a-f0-9]{36}$/.test(b.botId||'')||!token)throw new Error('Invalid worker identity.');const row=(await pool.query('SELECT * FROM runtime_bots WHERE id=$1 AND worker_token_hash=$2 AND lease_epoch=$3',[b.botId,hash(token),b.epoch])).rows[0];if(!row)throw new Error('Worker lease is invalid or revoked.');
  if(path==='/v1/runtime/bootstrap'){const secrets=JSON.parse(await decrypt(row.encrypted_secrets,secretKey,`${row.tenant_id}:${row.id}`));return {config:row.config,secrets,state:row.state,revision:Number(row.revision),snapshot:await plane(row.tenant_id,row.id,'snapshot')};}
@@ -45,7 +63,7 @@ async function workerCall(path:string,token:string,b:any){if(!/^[-a-f0-9]{36}$/.
  }
  if(path==='/v1/runtime/rate'){await reserve(row.config.serverKey);return{ok:true};}
  if(path==='/v1/runtime/heartbeat'){
-  const snapshot=await plane(row.tenant_id,row.id,'snapshot');await plane(row.tenant_id,row.id,'heartbeat',{status:b.status,discordStatus:b.discordStatus,rconStatus:b.rconStatus});await pool.query('UPDATE runtime_bots SET heartbeat=now(),status=$2,discord_status=$3,rcon_status=$4 WHERE id=$1 AND lease_epoch=$5',[row.id,b.status,b.discordStatus,b.rconStatus,b.epoch]);const action=row.config.requestedAction;await pool.query("UPDATE runtime_bots SET config=config-'requestedAction' WHERE id=$1 AND lease_epoch=$2",[row.id,b.epoch]);return{snapshot,action};
+  const snapshot=await plane(row.tenant_id,row.id,'snapshot');await plane(row.tenant_id,row.id,'heartbeat',{status:b.status,discordStatus:b.discordStatus,rconStatus:b.rconStatus});await pool.query('UPDATE runtime_bots SET heartbeat=now(),status=$2,discord_status=$3,rcon_status=$4,desired_running=CASE WHEN $2='SUSPENDED' THEN false ELSE desired_running END WHERE id=$1 AND lease_epoch=$5',[row.id,b.status,b.discordStatus,b.rconStatus,b.epoch]);const action=row.config.requestedAction;await pool.query("UPDATE runtime_bots SET config=config-'requestedAction' WHERE id=$1 AND lease_epoch=$2",[row.id,b.epoch]);return{snapshot,action};
  }
  if(path==='/v1/runtime/link'){if(!/^\d{17,20}$/.test(b.discordId)||typeof b.ign!=='string'||b.ign.length>64)throw new Error('Invalid identity link.');await pool.query('INSERT INTO runtime_links(bot_id,discord_id,ign) VALUES($1,$2,$3) ON CONFLICT(bot_id,discord_id) DO UPDATE SET ign=$3,verified_at=now()',[row.id,b.discordId,b.ign]);return{ok:true};}
  if(path==='/v1/runtime/links'){return{links:(await pool.query('SELECT discord_id,ign FROM runtime_links WHERE bot_id=$1',[row.id])).rows};}
@@ -55,11 +73,22 @@ async function workerCall(path:string,token:string,b:any){if(!/^[-a-f0-9]{36}$/.
  throw new Error('Unsupported worker action.');
 }
 const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');try{if(req.method==='GET'&&req.url==='/healthz'){await pool.query('SELECT 1');res.end(JSON.stringify({ok:true}));return;}if(req.method!=='POST')throw new Error('Method not allowed.');let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>500000)throw new Error('Payload too large.');}if(req.url==='/webhooks/stripe'){
- const forwarded=await fetch(planeOrigin+'/api/billing?webhook=stripe',{method:'POST',headers:{'Content-Type':'application/json','Stripe-Signature':String(req.headers['stripe-signature']||''),'OAI-Sites-Authorization':'Bearer '+required('SITES_SERVICE_TOKEN')},body:raw,signal:AbortSignal.timeout(15000),redirect:'error'});
+ const forwarded=await fetch(planeOrigin+'/api/billing?webhook=stripe',{method:'POST',headers:{'Content-Type':'application/json','Stripe-Signature':String(req.headers['stripe-signature']||'')},body:raw,signal:AbortSignal.timeout(15000),redirect:'error'});
  res.statusCode=forwarded.status;res.end(await forwarded.text());return;
 }const body=JSON.parse(raw);if(req.url==='/v1/control'){
  const stamp=String(req.headers['x-rce-timestamp']||''),nonce=String(req.headers['x-rce-nonce']||''),sig=String(req.headers['x-rce-signature']||'');if(!verifySignature(signingKey,stamp,nonce,raw,sig))throw new Error('Invalid service signature.');const used=await pool.query('INSERT INTO runtime_nonces(nonce,expires_at) VALUES($1,now()+interval \'2 minutes\') ON CONFLICT DO NOTHING RETURNING nonce',[nonce]);if(!used.rows.length)throw new Error('Duplicate request.');res.end(JSON.stringify(await control(body.tenantId,body.action,body.payload)));return;}
  const token=String(req.headers.authorization||'').replace(/^Bearer /,'');res.end(JSON.stringify(await workerCall(req.url||'',token,body)));
- }catch{res.statusCode=400;res.end(JSON.stringify({error:'Runtime operation denied or unavailable.'}));}});
-server.listen(Number(process.env.PORT||8080),'0.0.0.0',()=>console.log(JSON.stringify({event:'supervisor_ready'})));
+ }catch(err){console.error(JSON.stringify({event:'runtime_operation_rejected',route:req.url?.split('?')[0],code:err instanceof Error?err.name:'Error'}));res.statusCode=400;res.end(JSON.stringify({error:'Runtime operation denied or unavailable.'}));}});
+async function recover(){
+ const result=await pool.query("SELECT * FROM runtime_bots WHERE desired_running=true AND tenant_id=$1 ORDER BY updated_at DESC LIMIT 1",[ownerTenant]);
+ const row=result.rows[0];if(!row||children.size||shuttingDown)return;
+ const snapshot=await plane(row.tenant_id,row.id,'snapshot');
+ if(!snapshot.entitled||!snapshot.ownerDiscordId){await pool.query("UPDATE runtime_bots SET desired_running=false,status='SUSPENDED' WHERE id=$1",[row.id]);return;}
+ const token=randomBytes(32).toString('hex'),epoch=randomUUID();
+ await pool.query("UPDATE runtime_bots SET worker_token_hash=$2,lease_epoch=$3,status='STARTING',discord_status='DISCONNECTED',rcon_status='DISCONNECTED' WHERE id=$1",[row.id,hash(token),epoch]);
+ launch(row.id,epoch,token);
+}
+server.listen(Number(process.env.PORT||8080),'0.0.0.0',()=>{console.log(JSON.stringify({event:'supervisor_ready'}));void recover().catch(()=>console.error(JSON.stringify({event:'recovery_failed'})));});
+async function shutdown(){if(shuttingDown)return;shuttingDown=true;await Promise.allSettled([...children.keys()].map(stopChild));server.close();supervisorLease.release();await pool.end();process.exit(0);}
+process.on('SIGTERM',()=>void shutdown());process.on('SIGINT',()=>void shutdown());
 setInterval(()=>pool.query("DELETE FROM runtime_nonces WHERE expires_at<now()").catch(()=>{}),60000).unref();
