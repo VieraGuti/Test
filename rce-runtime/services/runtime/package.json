@@ -1,0 +1,19 @@
+{
+  "name": "rce-event-cloud-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "supervisor": "node --experimental-strip-types supervisor.ts",
+    "worker": "node --experimental-strip-types worker.ts",
+    "test": "node --experimental-strip-types --test ../../tests/runtime.test.ts"
+  },
+  "dependencies": {
+    "discord.js": "14.25.1",
+    "pg": "8.16.3",
+    "rce.js": "4.6.1"
+  }
+}

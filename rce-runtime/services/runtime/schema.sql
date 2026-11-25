@@ -1,0 +1,18 @@
+CREATE TABLE IF NOT EXISTS runtime_bots (id UUID PRIMARY KEY, tenant_id TEXT NOT NULL, config JSONB NOT NULL, encrypted_secrets TEXT NOT NULL, worker_token_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'STOPPED', heartbeat TIMESTAMPTZ, discord_status TEXT NOT NULL DEFAULT 'DISCONNECTED', rcon_status TEXT NOT NULL DEFAULT 'DISCONNECTED', state JSONB, revision BIGINT NOT NULL DEFAULT 0, lease_epoch UUID NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS runtime_tenant_idx ON runtime_bots(tenant_id);
+CREATE TABLE IF NOT EXISTS runtime_nonces (nonce TEXT PRIMARY KEY, expires_at TIMESTAMPTZ NOT NULL);
+CREATE TABLE IF NOT EXISTS runtime_jobs (id UUID PRIMARY KEY,tenant_id TEXT NOT NULL,bot_id UUID NOT NULL, action TEXT NOT NULL,status TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS runtime_returns (bot_id UUID NOT NULL,run_id TEXT NOT NULL, player_id TEXT NOT NULL, tenant_id TEXT NOT NULL, position JSONB NOT NULL,status TEXT NOT NULL,destination JSONB,PRIMARY KEY(bot_id,run_id,player_id));
+CREATE TABLE IF NOT EXISTS runtime_operations (bot_id UUID NOT NULL,operation_id TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,operation_id));
+CREATE TABLE IF NOT EXISTS runtime_links (bot_id UUID NOT NULL,discord_id TEXT NOT NULL,ign TEXT NOT NULL,verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,discord_id),UNIQUE(bot_id,ign));
+CREATE TABLE IF NOT EXISTS rcon_slots (server_key TEXT PRIMARY KEY,next_at BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS runtime_audit (id BIGSERIAL PRIMARY KEY,tenant_id TEXT NOT NULL,bot_id UUID,action TEXT NOT NULL,detail TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+ALTER TABLE runtime_returns ADD COLUMN IF NOT EXISTS destination JSONB;
+CREATE TABLE IF NOT EXISTS runtime_pvp_kills (bot_id UUID NOT NULL,tenant_id TEXT NOT NULL,server_key TEXT NOT NULL,event_id UUID NOT NULL,killer TEXT NOT NULL,victim TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,server_key,event_id));
+CREATE INDEX IF NOT EXISTS runtime_pvp_scope_idx ON runtime_pvp_kills(bot_id,tenant_id,server_key);
+CREATE TABLE IF NOT EXISTS runtime_leaderboard_messages (bot_id UUID NOT NULL,tenant_id TEXT NOT NULL,server_key TEXT NOT NULL,channel_id TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(bot_id,server_key,channel_id));
+
+CREATE TABLE IF NOT EXISTS runtime_shop_wallets (bot_id UUID NOT NULL,tenant_id TEXT NOT NULL,server_key TEXT NOT NULL,discord_id TEXT NOT NULL,balance BIGINT NOT NULL CHECK(balance>=0),PRIMARY KEY(bot_id,tenant_id,server_key,discord_id));
+CREATE TABLE IF NOT EXISTS runtime_shop_orders (bot_id UUID NOT NULL,tenant_id TEXT NOT NULL,server_key TEXT NOT NULL,order_id TEXT NOT NULL,discord_id TEXT NOT NULL,ign TEXT NOT NULL,product_id TEXT NOT NULL,product JSONB NOT NULL,price BIGINT NOT NULL CHECK(price>=0),status TEXT NOT NULL CHECK(status IN ('PENDING','DELIVERING','DELIVERED','REVIEW','REFUNDED')),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,tenant_id,server_key,order_id));
+CREATE INDEX IF NOT EXISTS runtime_shop_orders_player_idx ON runtime_shop_orders(bot_id,tenant_id,server_key,discord_id,created_at);
+CREATE TABLE IF NOT EXISTS runtime_shop_ledger (bot_id UUID NOT NULL,tenant_id TEXT NOT NULL,server_key TEXT NOT NULL,entry_id TEXT NOT NULL,discord_id TEXT NOT NULL,delta BIGINT NOT NULL,reason TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(bot_id,tenant_id,server_key,entry_id));

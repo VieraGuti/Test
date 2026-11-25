@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: rce-event-cloud-runtime
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./rce-runtime/Dockerfile
+    dockerContext: ./rce-runtime
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rce-event-cloud-runtime-db
+          property: connectionString
+      - key: SUPERVISOR_KEY
+        generateValue: true
+      - key: RUNTIME_SECRETS_KEY
+        generateValue: true
+      - key: OWNER_TENANT_ID
+        value: b1ec2e45-ba38-4300-9c80-bec2c2ab7400
+      - key: CONTROL_PLANE_URL
+        value: https://rce-event-cloud.vercel.app
+databases:
+  - name: rce-event-cloud-runtime-db
+    plan: free
+    region: frankfurt
+    databaseName: rce_event_cloud_runtime_db
+    user: rce_event_cloud_runtime_db_user
+    postgresMajorVersion: "17"
+    ipAllowList: []
