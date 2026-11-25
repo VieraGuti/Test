@@ -1,0 +1,2045 @@
+[
+  {
+    "schemaVersion": 1,
+    "name": "KING OF THE ARENA",
+    "category": "PvP",
+    "maxPlayers": 20,
+    "description": "Last survivor wins after 5 minutes. No respawn. Set the arena and verify the arena kit before publishing.",
+    "arena": {
+      "x": 0,
+      "y": 20,
+      "z": 0
+    },
+    "spatial": {
+      "teams": 1,
+      "entry": [
+        {
+          "id": "entry-1",
+          "name": "Entry 1",
+          "slot": 1,
+          "position": {
+            "x": 55,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-2",
+          "name": "Entry 2",
+          "slot": 2,
+          "position": {
+            "x": 52.3,
+            "y": 20,
+            "z": 17
+          }
+        },
+        {
+          "id": "entry-3",
+          "name": "Entry 3",
+          "slot": 3,
+          "position": {
+            "x": 44.5,
+            "y": 20,
+            "z": 32.3
+          }
+        },
+        {
+          "id": "entry-4",
+          "name": "Entry 4",
+          "slot": 4,
+          "position": {
+            "x": 32.3,
+            "y": 20,
+            "z": 44.5
+          }
+        },
+        {
+          "id": "entry-5",
+          "name": "Entry 5",
+          "slot": 5,
+          "position": {
+            "x": 17,
+            "y": 20,
+            "z": 52.3
+          }
+        },
+        {
+          "id": "entry-6",
+          "name": "Entry 6",
+          "slot": 6,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": 55
+          }
+        },
+        {
+          "id": "entry-7",
+          "name": "Entry 7",
+          "slot": 7,
+          "position": {
+            "x": -17,
+            "y": 20,
+            "z": 52.3
+          }
+        },
+        {
+          "id": "entry-8",
+          "name": "Entry 8",
+          "slot": 8,
+          "position": {
+            "x": -32.3,
+            "y": 20,
+            "z": 44.5
+          }
+        },
+        {
+          "id": "entry-9",
+          "name": "Entry 9",
+          "slot": 9,
+          "position": {
+            "x": -44.5,
+            "y": 20,
+            "z": 32.3
+          }
+        },
+        {
+          "id": "entry-10",
+          "name": "Entry 10",
+          "slot": 10,
+          "position": {
+            "x": -52.3,
+            "y": 20,
+            "z": 17
+          }
+        },
+        {
+          "id": "entry-11",
+          "name": "Entry 11",
+          "slot": 11,
+          "position": {
+            "x": -55,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-12",
+          "name": "Entry 12",
+          "slot": 12,
+          "position": {
+            "x": -52.3,
+            "y": 20,
+            "z": -17
+          }
+        },
+        {
+          "id": "entry-13",
+          "name": "Entry 13",
+          "slot": 13,
+          "position": {
+            "x": -44.5,
+            "y": 20,
+            "z": -32.3
+          }
+        },
+        {
+          "id": "entry-14",
+          "name": "Entry 14",
+          "slot": 14,
+          "position": {
+            "x": -32.3,
+            "y": 20,
+            "z": -44.5
+          }
+        },
+        {
+          "id": "entry-15",
+          "name": "Entry 15",
+          "slot": 15,
+          "position": {
+            "x": -17,
+            "y": 20,
+            "z": -52.3
+          }
+        },
+        {
+          "id": "entry-16",
+          "name": "Entry 16",
+          "slot": 16,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": -55
+          }
+        },
+        {
+          "id": "entry-17",
+          "name": "Entry 17",
+          "slot": 17,
+          "position": {
+            "x": 17,
+            "y": 20,
+            "z": -52.3
+          }
+        },
+        {
+          "id": "entry-18",
+          "name": "Entry 18",
+          "slot": 18,
+          "position": {
+            "x": 32.3,
+            "y": 20,
+            "z": -44.5
+          }
+        },
+        {
+          "id": "entry-19",
+          "name": "Entry 19",
+          "slot": 19,
+          "position": {
+            "x": 44.5,
+            "y": 20,
+            "z": -32.3
+          }
+        },
+        {
+          "id": "entry-20",
+          "name": "Entry 20",
+          "slot": 20,
+          "position": {
+            "x": 52.3,
+            "y": 20,
+            "z": -17
+          }
+        }
+      ],
+      "respawn": {
+        "mode": "disabled",
+        "gates": [],
+        "kit": ""
+      },
+      "exit": {
+        "mode": "original",
+        "gates": []
+      },
+      "spectators": []
+    },
+    "nodes": [
+      {
+        "kind": "event.started",
+        "label": "Event started",
+        "params": {},
+        "id": "n1",
+        "position": {
+          "x": 100,
+          "y": 80
+        }
+      },
+      {
+        "kind": "registration.open",
+        "label": "Open registration",
+        "params": {
+          "seconds": 90
+        },
+        "id": "n2",
+        "position": {
+          "x": 410,
+          "y": 80
+        }
+      },
+      {
+        "kind": "positions.save",
+        "label": "Save original positions",
+        "params": {},
+        "id": "n3",
+        "position": {
+          "x": 720,
+          "y": 80
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n4",
+        "position": {
+          "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "kits.give",
+        "label": "Give event kit",
+        "params": {
+          "kit": "arena"
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "zone.create",
+        "label": "Create arena zone",
+        "params": {
+          "radius": 100,
+          "radiation": 0,
+          "pvp": true
+        },
+        "id": "n6",
+        "position": {
+          "x": 720,
+          "y": 250
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "⚔️ {event.name} — five minutes. Last survivor wins."
+        },
+        "id": "n7",
+        "position": {
+          "x": 100,
+          "y": 420
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Wait / countdown",
+        "params": {
+          "seconds": 300
+        },
+        "id": "n8",
+        "position": {
+          "x": 410,
+          "y": 420
+        }
+      },
+      {
+        "kind": "winner.announce",
+        "label": "Announce results",
+        "params": {},
+        "id": "n9",
+        "position": {
+          "x": 720,
+          "y": 420
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n10",
+        "position": {
+          "x": 100,
+          "y": 590
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n11",
+        "position": {
+          "x": 410,
+          "y": 590
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e0",
+        "source": "n1",
+        "target": "n2"
+      },
+      {
+        "id": "e1",
+        "source": "n2",
+        "target": "n3"
+      },
+      {
+        "id": "e2",
+        "source": "n3",
+        "target": "n4"
+      },
+      {
+        "id": "e3",
+        "source": "n4",
+        "target": "n5"
+      },
+      {
+        "id": "e4",
+        "source": "n5",
+        "target": "n6"
+      },
+      {
+        "id": "e5",
+        "source": "n6",
+        "target": "n7"
+      },
+      {
+        "id": "e6",
+        "source": "n7",
+        "target": "n8"
+      },
+      {
+        "id": "e7",
+        "source": "n8",
+        "target": "n9"
+      },
+      {
+        "id": "e8",
+        "source": "n9",
+        "target": "n10"
+      },
+      {
+        "id": "e9",
+        "source": "n10",
+        "target": "n11"
+      }
+    ],
+    "embed": {
+      "title": "👑 KING OF THE ARENA",
+      "description": "Last survivor wins after 5 minutes. No respawn. Set the arena and verify the arena kit before publishing.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "color": "#e6a63b",
+      "footer": "RCE EVENT CLOUD • Your server. Your rules.",
+      "image": "",
+      "thumbnail": ""
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "name": "BIG NODE MADNESS",
+    "category": "Farming",
+    "maxPlayers": 20,
+    "description": "Three minutes of peaceful farming. Starter load: 20 sulfur, 10 metal, 10 stone nodes. Scale only after live spawn tests; resources may remain.",
+    "arena": {
+      "x": 0,
+      "y": 20,
+      "z": 0
+    },
+    "spatial": {
+      "teams": 1,
+      "entry": [
+        {
+          "id": "entry-1",
+          "name": "Entry 1",
+          "slot": 1,
+          "position": {
+            "x": 30,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-2",
+          "name": "Entry 2",
+          "slot": 2,
+          "position": {
+            "x": 28.5,
+            "y": 20,
+            "z": 9.3
+          }
+        },
+        {
+          "id": "entry-3",
+          "name": "Entry 3",
+          "slot": 3,
+          "position": {
+            "x": 24.3,
+            "y": 20,
+            "z": 17.6
+          }
+        },
+        {
+          "id": "entry-4",
+          "name": "Entry 4",
+          "slot": 4,
+          "position": {
+            "x": 17.6,
+            "y": 20,
+            "z": 24.3
+          }
+        },
+        {
+          "id": "entry-5",
+          "name": "Entry 5",
+          "slot": 5,
+          "position": {
+            "x": 9.3,
+            "y": 20,
+            "z": 28.5
+          }
+        },
+        {
+          "id": "entry-6",
+          "name": "Entry 6",
+          "slot": 6,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": 30
+          }
+        },
+        {
+          "id": "entry-7",
+          "name": "Entry 7",
+          "slot": 7,
+          "position": {
+            "x": -9.3,
+            "y": 20,
+            "z": 28.5
+          }
+        },
+        {
+          "id": "entry-8",
+          "name": "Entry 8",
+          "slot": 8,
+          "position": {
+            "x": -17.6,
+            "y": 20,
+            "z": 24.3
+          }
+        },
+        {
+          "id": "entry-9",
+          "name": "Entry 9",
+          "slot": 9,
+          "position": {
+            "x": -24.3,
+            "y": 20,
+            "z": 17.6
+          }
+        },
+        {
+          "id": "entry-10",
+          "name": "Entry 10",
+          "slot": 10,
+          "position": {
+            "x": -28.5,
+            "y": 20,
+            "z": 9.3
+          }
+        },
+        {
+          "id": "entry-11",
+          "name": "Entry 11",
+          "slot": 11,
+          "position": {
+            "x": -30,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-12",
+          "name": "Entry 12",
+          "slot": 12,
+          "position": {
+            "x": -28.5,
+            "y": 20,
+            "z": -9.3
+          }
+        },
+        {
+          "id": "entry-13",
+          "name": "Entry 13",
+          "slot": 13,
+          "position": {
+            "x": -24.3,
+            "y": 20,
+            "z": -17.6
+          }
+        },
+        {
+          "id": "entry-14",
+          "name": "Entry 14",
+          "slot": 14,
+          "position": {
+            "x": -17.6,
+            "y": 20,
+            "z": -24.3
+          }
+        },
+        {
+          "id": "entry-15",
+          "name": "Entry 15",
+          "slot": 15,
+          "position": {
+            "x": -9.3,
+            "y": 20,
+            "z": -28.5
+          }
+        },
+        {
+          "id": "entry-16",
+          "name": "Entry 16",
+          "slot": 16,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": -30
+          }
+        },
+        {
+          "id": "entry-17",
+          "name": "Entry 17",
+          "slot": 17,
+          "position": {
+            "x": 9.3,
+            "y": 20,
+            "z": -28.5
+          }
+        },
+        {
+          "id": "entry-18",
+          "name": "Entry 18",
+          "slot": 18,
+          "position": {
+            "x": 17.6,
+            "y": 20,
+            "z": -24.3
+          }
+        },
+        {
+          "id": "entry-19",
+          "name": "Entry 19",
+          "slot": 19,
+          "position": {
+            "x": 24.3,
+            "y": 20,
+            "z": -17.6
+          }
+        },
+        {
+          "id": "entry-20",
+          "name": "Entry 20",
+          "slot": 20,
+          "position": {
+            "x": 28.5,
+            "y": 20,
+            "z": -9.3
+          }
+        }
+      ],
+      "respawn": {
+        "mode": "disabled",
+        "gates": [],
+        "kit": ""
+      },
+      "exit": {
+        "mode": "original",
+        "gates": []
+      },
+      "spectators": []
+    },
+    "nodes": [
+      {
+        "kind": "event.started",
+        "label": "Event started",
+        "params": {},
+        "id": "n1",
+        "position": {
+          "x": 100,
+          "y": 80
+        }
+      },
+      {
+        "kind": "registration.open",
+        "label": "Open registration",
+        "params": {
+          "seconds": 90
+        },
+        "id": "n2",
+        "position": {
+          "x": 410,
+          "y": 80
+        }
+      },
+      {
+        "kind": "positions.save",
+        "label": "Save original positions",
+        "params": {},
+        "id": "n3",
+        "position": {
+          "x": 720,
+          "y": 80
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n4",
+        "position": {
+          "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "kits.give",
+        "label": "Give event kit",
+        "params": {
+          "kit": "farmer"
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "zone.create",
+        "label": "Create arena zone",
+        "params": {
+          "radius": 80,
+          "radiation": 0,
+          "pvp": false
+        },
+        "id": "n6",
+        "position": {
+          "x": 720,
+          "y": 250
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn sulfur-ore",
+        "params": {
+          "entity": "sulfur-ore",
+          "count": 40,
+          "layout": "big-node",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 12,
+          "stone": 10,
+          "sulfur": 20,
+          "metal": 10
+        },
+        "id": "n7",
+        "position": {
+          "x": 100,
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "⛏️ Farm for three minutes. Keep what you collect, subject to server inventory rules."
+        },
+        "id": "n8",
+        "position": {
+          "x": 410,
+          "y": 420
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Wait / countdown",
+        "params": {
+          "seconds": 180
+        },
+        "id": "n9",
+        "position": {
+          "x": 720,
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "Time is up! Returning all participants."
+        },
+        "id": "n10",
+        "position": {
+          "x": 100,
+          "y": 590
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n11",
+        "position": {
+          "x": 410,
+          "y": 590
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n12",
+        "position": {
+          "x": 720,
+          "y": 590
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e0",
+        "source": "n1",
+        "target": "n2"
+      },
+      {
+        "id": "e1",
+        "source": "n2",
+        "target": "n3"
+      },
+      {
+        "id": "e2",
+        "source": "n3",
+        "target": "n4"
+      },
+      {
+        "id": "e3",
+        "source": "n4",
+        "target": "n5"
+      },
+      {
+        "id": "e4",
+        "source": "n5",
+        "target": "n6"
+      },
+      {
+        "id": "e5",
+        "source": "n6",
+        "target": "n7"
+      },
+      {
+        "id": "e6",
+        "source": "n7",
+        "target": "n8"
+      },
+      {
+        "id": "e7",
+        "source": "n8",
+        "target": "n9"
+      },
+      {
+        "id": "e8",
+        "source": "n9",
+        "target": "n10"
+      },
+      {
+        "id": "e9",
+        "source": "n10",
+        "target": "n11"
+      },
+      {
+        "id": "e10",
+        "source": "n11",
+        "target": "n12"
+      }
+    ],
+    "embed": {
+      "title": "⛏️ BIG NODE MADNESS",
+      "description": "Three minutes of peaceful farming. Starter load: 20 sulfur, 10 metal, 10 stone nodes. Scale only after live spawn tests; resources may remain.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "color": "#eab308",
+      "footer": "RCE EVENT CLOUD • Your server. Your rules.",
+      "image": "",
+      "thumbnail": ""
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "name": "TOXIC NIGHTMARE",
+    "category": "Survival",
+    "maxPlayers": 20,
+    "description": "Survive 120 seconds in radiation with a limited medical kit, six wolves and two bears. No respawns.",
+    "arena": {
+      "x": 0,
+      "y": 20,
+      "z": 0
+    },
+    "spatial": {
+      "teams": 1,
+      "entry": [
+        {
+          "id": "entry-1",
+          "name": "Entry 1",
+          "slot": 1,
+          "position": {
+            "x": 20,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-2",
+          "name": "Entry 2",
+          "slot": 2,
+          "position": {
+            "x": 19,
+            "y": 20,
+            "z": 6.2
+          }
+        },
+        {
+          "id": "entry-3",
+          "name": "Entry 3",
+          "slot": 3,
+          "position": {
+            "x": 16.2,
+            "y": 20,
+            "z": 11.8
+          }
+        },
+        {
+          "id": "entry-4",
+          "name": "Entry 4",
+          "slot": 4,
+          "position": {
+            "x": 11.8,
+            "y": 20,
+            "z": 16.2
+          }
+        },
+        {
+          "id": "entry-5",
+          "name": "Entry 5",
+          "slot": 5,
+          "position": {
+            "x": 6.2,
+            "y": 20,
+            "z": 19
+          }
+        },
+        {
+          "id": "entry-6",
+          "name": "Entry 6",
+          "slot": 6,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": 20
+          }
+        },
+        {
+          "id": "entry-7",
+          "name": "Entry 7",
+          "slot": 7,
+          "position": {
+            "x": -6.2,
+            "y": 20,
+            "z": 19
+          }
+        },
+        {
+          "id": "entry-8",
+          "name": "Entry 8",
+          "slot": 8,
+          "position": {
+            "x": -11.8,
+            "y": 20,
+            "z": 16.2
+          }
+        },
+        {
+          "id": "entry-9",
+          "name": "Entry 9",
+          "slot": 9,
+          "position": {
+            "x": -16.2,
+            "y": 20,
+            "z": 11.8
+          }
+        },
+        {
+          "id": "entry-10",
+          "name": "Entry 10",
+          "slot": 10,
+          "position": {
+            "x": -19,
+            "y": 20,
+            "z": 6.2
+          }
+        },
+        {
+          "id": "entry-11",
+          "name": "Entry 11",
+          "slot": 11,
+          "position": {
+            "x": -20,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-12",
+          "name": "Entry 12",
+          "slot": 12,
+          "position": {
+            "x": -19,
+            "y": 20,
+            "z": -6.2
+          }
+        },
+        {
+          "id": "entry-13",
+          "name": "Entry 13",
+          "slot": 13,
+          "position": {
+            "x": -16.2,
+            "y": 20,
+            "z": -11.8
+          }
+        },
+        {
+          "id": "entry-14",
+          "name": "Entry 14",
+          "slot": 14,
+          "position": {
+            "x": -11.8,
+            "y": 20,
+            "z": -16.2
+          }
+        },
+        {
+          "id": "entry-15",
+          "name": "Entry 15",
+          "slot": 15,
+          "position": {
+            "x": -6.2,
+            "y": 20,
+            "z": -19
+          }
+        },
+        {
+          "id": "entry-16",
+          "name": "Entry 16",
+          "slot": 16,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": -20
+          }
+        },
+        {
+          "id": "entry-17",
+          "name": "Entry 17",
+          "slot": 17,
+          "position": {
+            "x": 6.2,
+            "y": 20,
+            "z": -19
+          }
+        },
+        {
+          "id": "entry-18",
+          "name": "Entry 18",
+          "slot": 18,
+          "position": {
+            "x": 11.8,
+            "y": 20,
+            "z": -16.2
+          }
+        },
+        {
+          "id": "entry-19",
+          "name": "Entry 19",
+          "slot": 19,
+          "position": {
+            "x": 16.2,
+            "y": 20,
+            "z": -11.8
+          }
+        },
+        {
+          "id": "entry-20",
+          "name": "Entry 20",
+          "slot": 20,
+          "position": {
+            "x": 19,
+            "y": 20,
+            "z": -6.2
+          }
+        }
+      ],
+      "respawn": {
+        "mode": "disabled",
+        "gates": [],
+        "kit": ""
+      },
+      "exit": {
+        "mode": "original",
+        "gates": []
+      },
+      "spectators": []
+    },
+    "nodes": [
+      {
+        "kind": "event.started",
+        "label": "Event started",
+        "params": {},
+        "id": "n1",
+        "position": {
+          "x": 100,
+          "y": 80
+        }
+      },
+      {
+        "kind": "registration.open",
+        "label": "Open registration",
+        "params": {
+          "seconds": 90
+        },
+        "id": "n2",
+        "position": {
+          "x": 410,
+          "y": 80
+        }
+      },
+      {
+        "kind": "positions.save",
+        "label": "Save original positions",
+        "params": {},
+        "id": "n3",
+        "position": {
+          "x": 720,
+          "y": 80
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n4",
+        "position": {
+          "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "kits.give",
+        "label": "Give event kit",
+        "params": {
+          "kit": "medic"
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "zone.create",
+        "label": "Create arena zone",
+        "params": {
+          "radius": 65,
+          "radiation": 20,
+          "pvp": false
+        },
+        "id": "n6",
+        "position": {
+          "x": 720,
+          "y": 250
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn wolf",
+        "params": {
+          "entity": "wolf",
+          "count": 6,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 35,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n7",
+        "position": {
+          "x": 100,
+          "y": 420
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn bear",
+        "params": {
+          "entity": "bear",
+          "count": 2,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 48,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n8",
+        "position": {
+          "x": 410,
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "☣️ Survive the radiation and animals for two minutes."
+        },
+        "id": "n9",
+        "position": {
+          "x": 720,
+          "y": 420
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Wait / countdown",
+        "params": {
+          "seconds": 120
+        },
+        "id": "n10",
+        "position": {
+          "x": 100,
+          "y": 590
+        }
+      },
+      {
+        "kind": "winner.announce",
+        "label": "Announce results",
+        "params": {},
+        "id": "n11",
+        "position": {
+          "x": 410,
+          "y": 590
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n12",
+        "position": {
+          "x": 720,
+          "y": 590
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n13",
+        "position": {
+          "x": 100,
+          "y": 760
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e0",
+        "source": "n1",
+        "target": "n2"
+      },
+      {
+        "id": "e1",
+        "source": "n2",
+        "target": "n3"
+      },
+      {
+        "id": "e2",
+        "source": "n3",
+        "target": "n4"
+      },
+      {
+        "id": "e3",
+        "source": "n4",
+        "target": "n5"
+      },
+      {
+        "id": "e4",
+        "source": "n5",
+        "target": "n6"
+      },
+      {
+        "id": "e5",
+        "source": "n6",
+        "target": "n7"
+      },
+      {
+        "id": "e6",
+        "source": "n7",
+        "target": "n8"
+      },
+      {
+        "id": "e7",
+        "source": "n8",
+        "target": "n9"
+      },
+      {
+        "id": "e8",
+        "source": "n9",
+        "target": "n10"
+      },
+      {
+        "id": "e9",
+        "source": "n10",
+        "target": "n11"
+      },
+      {
+        "id": "e10",
+        "source": "n11",
+        "target": "n12"
+      },
+      {
+        "id": "e11",
+        "source": "n12",
+        "target": "n13"
+      }
+    ],
+    "embed": {
+      "title": "☣️ TOXIC NIGHTMARE",
+      "description": "Survive 120 seconds in radiation with a limited medical kit, six wolves and two bears. No respawns.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "color": "#84cc16",
+      "footer": "RCE EVENT CLOUD • Your server. Your rules.",
+      "image": "",
+      "thumbnail": ""
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "name": "LOOT RUSH",
+    "category": "PvP / Loot",
+    "maxPlayers": 20,
+    "description": "90-second loot rush with PvP. No automatic loot-value ranking; return participants when time expires. Verify crate prefab names and inventory rules.",
+    "arena": {
+      "x": 0,
+      "y": 20,
+      "z": 0
+    },
+    "spatial": {
+      "teams": 1,
+      "entry": [
+        {
+          "id": "entry-1",
+          "name": "Entry 1",
+          "slot": 1,
+          "position": {
+            "x": 60,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-2",
+          "name": "Entry 2",
+          "slot": 2,
+          "position": {
+            "x": 57.1,
+            "y": 20,
+            "z": 18.5
+          }
+        },
+        {
+          "id": "entry-3",
+          "name": "Entry 3",
+          "slot": 3,
+          "position": {
+            "x": 48.5,
+            "y": 20,
+            "z": 35.3
+          }
+        },
+        {
+          "id": "entry-4",
+          "name": "Entry 4",
+          "slot": 4,
+          "position": {
+            "x": 35.3,
+            "y": 20,
+            "z": 48.5
+          }
+        },
+        {
+          "id": "entry-5",
+          "name": "Entry 5",
+          "slot": 5,
+          "position": {
+            "x": 18.5,
+            "y": 20,
+            "z": 57.1
+          }
+        },
+        {
+          "id": "entry-6",
+          "name": "Entry 6",
+          "slot": 6,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": 60
+          }
+        },
+        {
+          "id": "entry-7",
+          "name": "Entry 7",
+          "slot": 7,
+          "position": {
+            "x": -18.5,
+            "y": 20,
+            "z": 57.1
+          }
+        },
+        {
+          "id": "entry-8",
+          "name": "Entry 8",
+          "slot": 8,
+          "position": {
+            "x": -35.3,
+            "y": 20,
+            "z": 48.5
+          }
+        },
+        {
+          "id": "entry-9",
+          "name": "Entry 9",
+          "slot": 9,
+          "position": {
+            "x": -48.5,
+            "y": 20,
+            "z": 35.3
+          }
+        },
+        {
+          "id": "entry-10",
+          "name": "Entry 10",
+          "slot": 10,
+          "position": {
+            "x": -57.1,
+            "y": 20,
+            "z": 18.5
+          }
+        },
+        {
+          "id": "entry-11",
+          "name": "Entry 11",
+          "slot": 11,
+          "position": {
+            "x": -60,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "entry-12",
+          "name": "Entry 12",
+          "slot": 12,
+          "position": {
+            "x": -57.1,
+            "y": 20,
+            "z": -18.5
+          }
+        },
+        {
+          "id": "entry-13",
+          "name": "Entry 13",
+          "slot": 13,
+          "position": {
+            "x": -48.5,
+            "y": 20,
+            "z": -35.3
+          }
+        },
+        {
+          "id": "entry-14",
+          "name": "Entry 14",
+          "slot": 14,
+          "position": {
+            "x": -35.3,
+            "y": 20,
+            "z": -48.5
+          }
+        },
+        {
+          "id": "entry-15",
+          "name": "Entry 15",
+          "slot": 15,
+          "position": {
+            "x": -18.5,
+            "y": 20,
+            "z": -57.1
+          }
+        },
+        {
+          "id": "entry-16",
+          "name": "Entry 16",
+          "slot": 16,
+          "position": {
+            "x": 0,
+            "y": 20,
+            "z": -60
+          }
+        },
+        {
+          "id": "entry-17",
+          "name": "Entry 17",
+          "slot": 17,
+          "position": {
+            "x": 18.5,
+            "y": 20,
+            "z": -57.1
+          }
+        },
+        {
+          "id": "entry-18",
+          "name": "Entry 18",
+          "slot": 18,
+          "position": {
+            "x": 35.3,
+            "y": 20,
+            "z": -48.5
+          }
+        },
+        {
+          "id": "entry-19",
+          "name": "Entry 19",
+          "slot": 19,
+          "position": {
+            "x": 48.5,
+            "y": 20,
+            "z": -35.3
+          }
+        },
+        {
+          "id": "entry-20",
+          "name": "Entry 20",
+          "slot": 20,
+          "position": {
+            "x": 57.1,
+            "y": 20,
+            "z": -18.5
+          }
+        }
+      ],
+      "respawn": {
+        "mode": "disabled",
+        "gates": [],
+        "kit": ""
+      },
+      "exit": {
+        "mode": "original",
+        "gates": []
+      },
+      "spectators": []
+    },
+    "nodes": [
+      {
+        "kind": "event.started",
+        "label": "Event started",
+        "params": {},
+        "id": "n1",
+        "position": {
+          "x": 100,
+          "y": 80
+        }
+      },
+      {
+        "kind": "registration.open",
+        "label": "Open registration",
+        "params": {
+          "seconds": 90
+        },
+        "id": "n2",
+        "position": {
+          "x": 410,
+          "y": 80
+        }
+      },
+      {
+        "kind": "positions.save",
+        "label": "Save original positions",
+        "params": {},
+        "id": "n3",
+        "position": {
+          "x": 720,
+          "y": 80
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n4",
+        "position": {
+          "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "kits.give",
+        "label": "Give event kit",
+        "params": {
+          "kit": "loot"
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "zone.create",
+        "label": "Create arena zone",
+        "params": {
+          "radius": 90,
+          "radiation": 0,
+          "pvp": true
+        },
+        "id": "n6",
+        "position": {
+          "x": 720,
+          "y": 250
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn crate_basic",
+        "params": {
+          "entity": "crate_basic",
+          "count": 12,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 28,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n7",
+        "position": {
+          "x": 100,
+          "y": 420
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn crate_elite",
+        "params": {
+          "entity": "crate_elite",
+          "count": 4,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 12,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n8",
+        "position": {
+          "x": 410,
+          "y": 420
+        }
+      },
+      {
+        "kind": "entity.spawn",
+        "label": "Spawn crate_medical",
+        "params": {
+          "entity": "crate_medical",
+          "count": 4,
+          "layout": "ring",
+          "useArena": true,
+          "x": 0,
+          "y": 20,
+          "z": 0,
+          "radius": 42,
+          "stone": 0,
+          "sulfur": 0,
+          "metal": 0
+        },
+        "id": "n9",
+        "position": {
+          "x": 720,
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "💰 Collect loot and survive for 90 seconds. No loot ranking."
+        },
+        "id": "n10",
+        "position": {
+          "x": 100,
+          "y": 590
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Wait / countdown",
+        "params": {
+          "seconds": 90
+        },
+        "id": "n11",
+        "position": {
+          "x": 410,
+          "y": 590
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "Loot Rush has ended. Returning players."
+        },
+        "id": "n12",
+        "position": {
+          "x": 720,
+          "y": 590
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n13",
+        "position": {
+          "x": 100,
+          "y": 760
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n14",
+        "position": {
+          "x": 410,
+          "y": 760
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e0",
+        "source": "n1",
+        "target": "n2"
+      },
+      {
+        "id": "e1",
+        "source": "n2",
+        "target": "n3"
+      },
+      {
+        "id": "e2",
+        "source": "n3",
+        "target": "n4"
+      },
+      {
+        "id": "e3",
+        "source": "n4",
+        "target": "n5"
+      },
+      {
+        "id": "e4",
+        "source": "n5",
+        "target": "n6"
+      },
+      {
+        "id": "e5",
+        "source": "n6",
+        "target": "n7"
+      },
+      {
+        "id": "e6",
+        "source": "n7",
+        "target": "n8"
+      },
+      {
+        "id": "e7",
+        "source": "n8",
+        "target": "n9"
+      },
+      {
+        "id": "e8",
+        "source": "n9",
+        "target": "n10"
+      },
+      {
+        "id": "e9",
+        "source": "n10",
+        "target": "n11"
+      },
+      {
+        "id": "e10",
+        "source": "n11",
+        "target": "n12"
+      },
+      {
+        "id": "e11",
+        "source": "n12",
+        "target": "n13"
+      },
+      {
+        "id": "e12",
+        "source": "n13",
+        "target": "n14"
+      }
+    ],
+    "embed": {
+      "title": "💰 LOOT RUSH",
+      "description": "90-second loot rush with PvP. No automatic loot-value ranking; return participants when time expires. Verify crate prefab names and inventory rules.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "color": "#38bdf8",
+      "footer": "RCE EVENT CLOUD • Your server. Your rules.",
+      "image": "",
+      "thumbnail": ""
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "name": "RED VS BLUE",
+    "category": "Team PvP",
+    "maxPlayers": 20,
+    "description": "Two teams of ten, independent entry gates, team respawns and identical kit. Five-minute timed match. Team score and automatic winner not yet supported; no false winner.",
+    "arena": {
+      "x": 0,
+      "y": 20,
+      "z": 0
+    },
+    "spatial": {
+      "teams": 2,
+      "entry": [
+        {
+          "id": "red",
+          "name": "Red entry",
+          "team": 0,
+          "position": {
+            "x": -55,
+            "y": 20,
+            "z": 0
+          }
+        },
+        {
+          "id": "blue",
+          "name": "Blue entry",
+          "team": 1,
+          "position": {
+            "x": 55,
+            "y": 20,
+            "z": 0
+          }
+        }
+      ],
+      "respawn": {
+        "mode": "entry",
+        "gates": [],
+        "kit": "team"
+      },
+      "exit": {
+        "mode": "original",
+        "gates": []
+      },
+      "spectators": []
+    },
+    "nodes": [
+      {
+        "kind": "event.started",
+        "label": "Event started",
+        "params": {},
+        "id": "n1",
+        "position": {
+          "x": 100,
+          "y": 80
+        }
+      },
+      {
+        "kind": "registration.open",
+        "label": "Open registration",
+        "params": {
+          "seconds": 90
+        },
+        "id": "n2",
+        "position": {
+          "x": 410,
+          "y": 80
+        }
+      },
+      {
+        "kind": "positions.save",
+        "label": "Save original positions",
+        "params": {},
+        "id": "n3",
+        "position": {
+          "x": 720,
+          "y": 80
+        }
+      },
+      {
+        "kind": "players.teleport",
+        "label": "Teleport to entry gates",
+        "params": {},
+        "id": "n4",
+        "position": {
+          "x": 100,
+          "y": 250
+        }
+      },
+      {
+        "kind": "kits.give",
+        "label": "Give event kit",
+        "params": {
+          "kit": "team"
+        },
+        "id": "n5",
+        "position": {
+          "x": 410,
+          "y": 250
+        }
+      },
+      {
+        "kind": "zone.create",
+        "label": "Create arena zone",
+        "params": {
+          "radius": 120,
+          "radiation": 0,
+          "pvp": true
+        },
+        "id": "n6",
+        "position": {
+          "x": 720,
+          "y": 250
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "🔴 RED VS BLUE 🔵 — five-minute team battle. Team result is determined manually."
+        },
+        "id": "n7",
+        "position": {
+          "x": 100,
+          "y": 420
+        }
+      },
+      {
+        "kind": "timer.wait",
+        "label": "Wait / countdown",
+        "params": {
+          "seconds": 300
+        },
+        "id": "n8",
+        "position": {
+          "x": 410,
+          "y": 420
+        }
+      },
+      {
+        "kind": "discord.send",
+        "label": "Send Discord message",
+        "params": {
+          "message": "Match finished. Staff confirm the team result; returning participants."
+        },
+        "id": "n9",
+        "position": {
+          "x": 720,
+          "y": 420
+        }
+      },
+      {
+        "kind": "players.return",
+        "label": "Restore players",
+        "params": {},
+        "id": "n10",
+        "position": {
+          "x": 100,
+          "y": 590
+        }
+      },
+      {
+        "kind": "event.end",
+        "label": "End & clean up",
+        "params": {},
+        "id": "n11",
+        "position": {
+          "x": 410,
+          "y": 590
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e0",
+        "source": "n1",
+        "target": "n2"
+      },
+      {
+        "id": "e1",
+        "source": "n2",
+        "target": "n3"
+      },
+      {
+        "id": "e2",
+        "source": "n3",
+        "target": "n4"
+      },
+      {
+        "id": "e3",
+        "source": "n4",
+        "target": "n5"
+      },
+      {
+        "id": "e4",
+        "source": "n5",
+        "target": "n6"
+      },
+      {
+        "id": "e5",
+        "source": "n6",
+        "target": "n7"
+      },
+      {
+        "id": "e6",
+        "source": "n7",
+        "target": "n8"
+      },
+      {
+        "id": "e7",
+        "source": "n8",
+        "target": "n9"
+      },
+      {
+        "id": "e8",
+        "source": "n9",
+        "target": "n10"
+      },
+      {
+        "id": "e9",
+        "source": "n10",
+        "target": "n11"
+      }
+    ],
+    "embed": {
+      "title": "🔴 RED VS BLUE",
+      "description": "Two teams of ten, independent entry gates, team respawns and identical kit. Five-minute timed match. Team score and automatic winner not yet supported; no false winner.\n\nJoin **{event.players}/{event.max_players}** participants.",
+      "color": "#6366f1",
+      "footer": "RCE EVENT CLOUD • Your server. Your rules.",
+      "image": "",
+      "thumbnail": ""
+    }
+  }
+]
