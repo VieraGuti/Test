@@ -1,3 +1,4 @@
+import {validatePhaseMedia} from './embed-media.ts';
 import {validateRegistration} from './participation.ts';
 import {validateSpatial,spawnLayout} from './spatial.ts';
 import {ACTIONS,ENTITIES} from './catalog.ts';
@@ -53,6 +54,7 @@ export function validateDefinition(d:Definition):string[] {
  if(d.nodes.filter(n=>['timer.wait','registration.open'].includes(n.kind)).reduce((sum,n)=>sum+Number(n.params?.seconds||0),0)>7200)errors.push('Total configured waits cannot exceed two hours.');
  if(!d.embed||typeof d.embed.title!=='string'||d.embed.title.length>256||typeof d.embed.description!=='string'||d.embed.description.length>4000||typeof d.embed.footer!=='string'||d.embed.footer.length>512||!/^#[0-9a-f]{6}$/i.test(d.embed.color))errors.push('Embed exceeds Discord limits or contains an invalid color.');
  for(const url of [d.embed?.image,d.embed?.thumbnail])if(url&&(!/^https:\/\//.test(url)||url.length>1500))errors.push('Embed images must use HTTPS URLs.');
+ if(!validatePhaseMedia(d.embed?.mediaByPhase))errors.push('Invalid event phase artwork.');
  if(!errors.length)for(const n of d.nodes.filter(n=>n.kind==='entity.spawn'))if(spawnLayout(n,d).some(e=>[e.position.x,e.position.y,e.position.z].some(v=>Math.abs(v)>10000)))errors.push('Spawn distribution exceeds supported world coordinates.');
  return [...new Set(errors)];
 }
