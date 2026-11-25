@@ -64,11 +64,40 @@ const botCommand=new discord.SlashCommandBuilder().setName('bot').setDescription
 for(const name of ['status','restart','reconnect','panel','modules'])botCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name==='status'?'Show connection status':name+' the hosted bot'));
 const eventCommand=new discord.SlashCommandBuilder().setName('event').setDescription('Manage community events').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
 for(const name of ['list','status','participants','stop','pause','resume'])eventCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name+' event'));
-eventCommand.addSubcommand((s:any)=>s.setName('start').setDescription('Start a published event').addStringOption((o:any)=>o.setName('id').setDescription('Published event ID from /event list').setRequired(true)));
+eventCommand.addSubcommand((s:any)=>s.setName('start').setDescription('Start a published event').addStringOption((o:any)=>o.setName('event').setDescription('Search and select a published event by name').setRequired(true).setAutocomplete(true)));
 const linkCommand=new discord.SlashCommandBuilder().setName('link').setDescription('Verify your in-game identity').addStringOption((o:any)=>o.setName('name').setDescription('Your exact in-game name').setRequired(true));
 async function authorized(i:any){if(!safeAdmin(i.user.id,i.guildId,{guildId:config.guildId,ownerDiscordId:snapshot.ownerDiscordId,staffIds:snapshot.bot.config.staffIds||[]}))throw new Error('Workspace owner or authorized staff required.');const member=await i.guild.members.fetch(i.user.id);if(!member.permissions.has(discord.PermissionFlagsBits.ManageGuild)&&i.user.id!==snapshot.ownerDiscordId)throw new Error('Manage Server permission required.');}
+function publishedChoices(query=''){
+ const q=query.trim().toLowerCase();const events=Array.isArray(snapshot.events)?snapshot.events:[];
+ return events.filter((e:any)=>!q||String(e.definition.name).toLowerCase().includes(q)).slice(0,25).map((e:any)=>{
+ const same=events.filter((v:any)=>v.definition.name===e.definition.name&&v.version===e.version).length;
+ return {name:(e.definition.name+' · v'+e.version+(same>1?' · '+e.id.slice(0,6):'')).slice(0,100),value:e.id};
+ });
+}
+async function startPublished(i:any,id:string){
+ if(!snapshot.entitled)throw new Error('An active hosting entitlement is required.');
+ if(current&&(engineRunning||current.engine.players.some(p=>p.pendingReturn)||current.engine.status==='NEEDS_REVIEW'&&current.engine.zones.length))throw new Error('Finish or reconcile the active event and pending returns/zones first.');
+ const e=snapshot.events.find((e:any)=>e.id===id);if(!e)throw new Error('Published event not found. Select a published event.');
+ const errors=validateDefinition(e.definition);if(errors.length)throw new Error('Published workflow is invalid.');
+ if(e.definition.nodes.some((n:WorkflowNode)=>n.kind==='entity.spawn')&&!snapshot.modules.entitySpawning)throw new Error('Enable entity spawning before starting this workflow.');
+ const channelId=snapshot.bot.config.announcementChannelId||i.channelId;await eventChannel(channelId);
+ current={definition:structuredClone(e.definition),engine:initialState(e.definition,'live'),channelId,eventId:e.id,version:e.version};
+ await checkpoint(current.engine);await i.editReply({content:'Event accepted. Opening registration in <#'+channelId+'> using the published version.',components:[]});
+ const runId=current.engine.runId;void run().then(async()=>{if(current?.engine.runId===runId&&current.engine.status==='NEEDS_REVIEW'){const last=current.engine.logs.filter(l=>l.level==='error').at(-1);await i.followUp({content:'Event stopped: '+(last?eventFailure(new Error(last.message)):'Manual reconciliation required.'),flags:64}).catch(()=>{});}});
+}
 client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config.guildId)return;try{
+ if(i.isAutocomplete()){
+  if(i.commandName!=='event')return;
+  if(!safeAdmin(i.user.id,i.guildId,{guildId:config.guildId,ownerDiscordId:snapshot.ownerDiscordId,staffIds:snapshot.bot.config.staffIds||[]})){await i.respond([]);return;}
+  await i.respond(publishedChoices(String(i.options.getFocused()||'')));return;
+ }
+ if(i.isStringSelectMenu()&&i.customId.startsWith('event-pick:')){
+  if(i.customId.split(':')[1]!==i.user.id)throw new Error('This event menu belongs to another administrator.');await authorized(i);
+  const selected=snapshot.events.find((e:any)=>e.id===i.values[0]);if(!selected)throw new Error('Published event not found.');
+  await i.update({content:'Start **'+selected.definition.name+'** (v'+selected.version+') in the configured announcement channel?',components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('event-launch:'+i.user.id+':'+selected.id).setLabel('Start event').setStyle(discord.ButtonStyle.Success))]});return;
+ }
  if(i.isButton()){
+  if(i.customId.startsWith('event-launch:')){const [,actor,id]=i.customId.split(':');if(actor!==i.user.id)throw new Error('This confirmation belongs to another administrator.');await authorized(i);await i.deferUpdate();await startPublished(i,id);return;}
   if(i.customId.startsWith('module:')){await authorized(i);await i.deferReply({flags:64});const module=i.customId.slice(7);if(!['registration','accountLinking','killfeed','positionTracking','entitySpawning'].includes(module))throw new Error('Unknown module.');const result=await call('module',{actor:i.user.id,guildId:i.guildId,module,enabled:!snapshot.modules[module]});snapshot.modules=result.modules;await i.editReply(module+' is now '+(snapshot.modules[module]?'enabled':'disabled')+'.');return;}
  if(i.customId.startsWith('confirm-restart:')){await authorized(i);if(i.customId.split(':')[1]!==i.user.id)throw new Error('This confirmation belongs to another administrator.');await i.update({content:'Restart accepted. The supervisor owns the lifecycle operation.',components:[]});await call('action',{actor:i.user.id,guildId:i.guildId,action:'restart'});return;}
   const [kind,runId]=i.customId.split(':');if(!['join','leave'].includes(kind))return;await i.deferReply({flags:64});if(!current||current.engine.runId!==runId||!current.engine.registrationOpen||!snapshot.modules.registration)throw new Error('Registration is closed.');const s=current.engine;
@@ -90,12 +119,9 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
   if(sub==='reconnect'){await call('action',{actor:i.user.id,guildId:i.guildId,action:'reconnect'});await i.editReply('Reconnect requested through the supervisor.');return;}
  }
  if(i.commandName==='event'){
-  if(sub==='list'){await i.editReply(snapshot.events.map((e:any)=>`${e.definition.name} · v${e.version}\n${e.id}`).join('\n\n').slice(0,1900)||'No published events. Publish a successful simulated version in Event Studio.');return;}
+  if(sub==='list'){const options=publishedChoices();if(!options.length){await i.editReply('No published events. Publish a successful simulated version in Event Studio.');return;}await i.editReply({content:'Choose a published event below. You can also use /event start and search by name.'+(snapshot.events.length>25?' Showing the first 25; use autocomplete for the rest.':''),components:[new discord.ActionRowBuilder().addComponents(new discord.StringSelectMenuBuilder().setCustomId('event-pick:'+i.user.id).setPlaceholder('Select an event').addOptions(options.map((o:any)=>({label:o.name,value:o.value}))))]});return;}
   if(sub==='status'||sub==='participants'){const last=current?.engine.logs.filter(l=>l.level==='error').at(-1);await i.editReply(current?(`${current.definition.name} · ${current.engine.status}\n`+(last?'Last error: '+eventFailure(new Error(last.message))+'\n':'')+current.engine.players.map(p=>`${p.name}: ${p.returned?'returned':p.pendingReturn?'return pending':p.alive?'alive':'eliminated'}`).join('\n')).slice(0,1900):'No active event.');return;}
-  if(sub==='start'){
-   if(!snapshot.entitled)throw new Error('An active hosting entitlement is required.');if(current&&(engineRunning||current.engine.players.some(p=>p.pendingReturn)))throw new Error('Finish the active event and recover pending returns first.');const e=snapshot.events.find((e:any)=>e.id===i.options.getString('id'));if(!e)throw new Error('Published event not found.');const errors=validateDefinition(e.definition);if(errors.length)throw new Error('Published workflow is invalid.');if(e.definition.nodes.some((n:WorkflowNode)=>n.kind==='entity.spawn')&&!snapshot.modules.entitySpawning)throw new Error('Enable the entity spawning module before starting this workflow.');
-   const channelId=snapshot.bot.config.announcementChannelId||i.channelId;await eventChannel(channelId);current={definition:structuredClone(e.definition),engine:initialState(e.definition,'live'),channelId,eventId:e.id,version:e.version};await checkpoint(current.engine);await i.editReply('Event accepted. Opening registration in <#'+channelId+'> using the published version.');void run().then(async()=>{if(current?.engine.status==='NEEDS_REVIEW'){const last=current.engine.logs.filter(l=>l.level==='error').at(-1);await i.followUp({content:'Event stopped: '+(last?eventFailure(new Error(last.message)):'Manual reconciliation required.'),flags:64}).catch(()=>{});}});return;
-  }
+  if(sub==='start'){await startPublished(i,i.options.getString('event')||i.options.getString('id')||'');return;}
   if(!current)throw new Error('No event is active.');
   if(sub==='pause'){paused=true;await i.editReply('Workflow execution paused. The Rust game world continues.');return;}
   if(sub==='resume'){if(current.engine.status==='NEEDS_REVIEW')throw new Error('Reconcile interrupted operations before resuming.');paused=false;await i.editReply('Workflow execution resumed.');return;}
