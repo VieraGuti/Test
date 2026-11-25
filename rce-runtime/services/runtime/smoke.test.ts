@@ -13,3 +13,7 @@ test('event engine completes a bounded safe simulation',async()=>{const d={schem
 import {readFile} from 'node:fs/promises';
 import {validateDefinition} from '../../core/validation.ts';
 test('five event templates validate and complete simulated return paths',async()=>{const templates=JSON.parse(await readFile(new URL('../../core/event-templates.json',import.meta.url),'utf8'));assert.equal(templates.length,5);for(const d of templates){assert.deepEqual(validateDefinition(d),[],d.name);const result=await simulate(d,{seed:42,players:Math.min(4,d.maxPlayers)});assert.equal(result.report.passed,true,d.name+': '+result.report.errors.join('; '));assert.equal(result.report.pending,0,d.name);}});
+
+import {NODE_PRESETS,presetNode,searchNodePresets} from '../../core/node-library.ts';
+import {ACTIONS} from '../../core/catalog.ts';
+test('node library presets are unique, searchable, and use supported parameters',()=>{assert.equal(new Set(NODE_PRESETS.map(p=>p.id)).size,NODE_PRESETS.length);assert.equal(new Set(NODE_PRESETS.map(p=>p.kind)).size,ACTIONS.length);for(const p of NODE_PRESETS){const n=presetNode(p.id,'test-node',{x:0,y:0});const action=ACTIONS.find(a=>a.kind===n.kind)!;assert(action);assert.deepEqual(Object.keys(n.params).sort(),Object.keys(action.params).sort());}assert(searchNodePresets('wolf').some(p=>p.id==='wolves'));assert(searchNodePresets('medical kit').some(p=>p.id==='medic-kit'));assert.equal(searchNodePresets('zzzzzzzzz').length,0);});
