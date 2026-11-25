@@ -1,7 +1,7 @@
 import {discordMedia,type EmbedScope} from '../../core/embed-media.ts';
 import {readRoutes,resolveRoute,CHANNEL_CATALOG,SETUP_GROUPS,routeName} from './channel-routing.ts';
 import {describeKill} from './killfeed.ts';
-import {randomInt} from 'node:crypto';
+import {randomInt,randomUUID} from 'node:crypto';
 import {registrationSettings,quickChatAction,emoteLabel,safeSay} from '../../core/participation.ts';
 import {initialState,stepEngine,restorePlayers,respawnPlayer,log,renderVariables} from '../../core/engine.ts';
 import type {Adapter} from '../../core/engine.ts';
@@ -85,6 +85,7 @@ rce.manager.on('noteEdit',async(data:any)=>{const pending=challenges.get(data.pl
 let lastKillfeedError=0;
 rce.manager.on('playerKill',async(data:any)=>{
  const kill=describeKill(data,config.id);if(!kill)return;
+ if(snapshot.entitled&&!quitting&&kill.kind==='Player'&&!kill.suicide)await call('pvp-kill',{eventId:randomUUID(),killer:kill.killer,victim:kill.victim}).catch(()=>audit('leaderboard.record_failed','A PvP observation could not be saved.').catch(()=>{}));
  // Persist eliminations independently from Discord delivery, even if the feed is disabled.
  const p=current?.engine.players.find(p=>p.name===kill.victim);
  if(p&&p.alive&&current){p.alive=false;log(current.engine,'game-event',p.name+' eliminated.');try{await checkpoint(current.engine);}catch{paused=true;}}
@@ -100,7 +101,7 @@ rce.manager.on('playerLeft',async(data:any)=>{const p=current?.engine.players.fi
 for(const event of ['playerJoined','playerRespawned'])rce.manager.on(event,async(data:any)=>{const p=current?.engine.players.find(p=>p.name===data.player?.ign);if(!p)return;p.online=true;if(event==='playerRespawned'){const active=current?.engine.status==='RUNNING'&&!!p.origin&&!p.returned;if(!active||current?.definition.spatial?.respawn.mode!=='disabled'&&current?.definition.spatial?.respawn.mode!==undefined){p.alive=true;if(active&&current)await respawnPlayer(current.definition,current.engine,adapter,p).catch(()=>{paused=true;});}else if(current?.definition.spatial?.spectatorOnRespawn){await respawnPlayer(current.definition,current.engine,adapter,p).catch(()=>{paused=true;});}}if(p.pendingReturn&&['NEEDS_REVIEW','CANCELLED','COMPLETED'].includes(current!.engine.status))await restoreEligible().catch(()=>{});});
 rce.manager.on('error',()=>{rconConnected=false;});
 let channelSetupBusy=false;
-async function saveRoute(type:string,id:string,actor:string){await eventChannel(id);const result=await call('channel',{actor,guildId:config.guildId,type,channelId:id});channelRoutes=readRoutes(result.channels);}
+async function saveRoute(type:string,id:string,actor:string){const channel=await eventChannel(id);if(SETUP_GROUPS.find(g=>g.name.endsWith('STAFF'))?.keys.some(k=>k===type)&&channel.permissionsFor(channel.guild.roles.everyone)?.has(discord.PermissionFlagsBits.ViewChannel))throw Error('Staff channel must be private.');const result=await call('channel',{actor,guildId:config.guildId,type,channelId:id});channelRoutes=readRoutes(result.channels);}
 async function createChannels(actor:string){
  if(channelSetupBusy)throw Error('A channel setup is already running.');channelSetupBusy=true;
  const results:{type:string;status:string}[]=[];
@@ -132,6 +133,21 @@ async function processChannelJob(job:any){if(channelSetupBusy||!job||!['PENDING'
  await call('channel-job',{jobId:job.id,status:result.some(x=>x.status==='needs review')?'PARTIAL':'COMPLETED',result});
  }catch{await call('channel-job',{jobId:job.id,status:'FAILED',result:[]}).catch(()=>{});}
 }
+let leaderboardBusy=false,lastLeaderboard=0;
+async function updateLeaderboard(){
+ if(leaderboardBusy||quitting||!snapshot.entitled||!channelRoutes.leaderboard)return false;
+ leaderboardBusy=true;lastLeaderboard=Date.now();try{
+  const channelId=channelRoutes.leaderboard,channel=await eventChannel(channelId);
+  const data=await call('leaderboard',{channelId});
+  const rows=Array.isArray(data.rows)?data.rows:[];
+  const clean=(v:unknown)=>String(v).replace(/[\\`*_~|<>\[\]]/g,'\\const setupCommand=new discord.SlashCommandBuilder()').slice(0,90);
+  const description=rows.length?rows.map((r:any,i:number)=>'**'+(i+1)+'.** '+clean(r.name)+' — '+Number(r.kills)+' K / '+Number(r.deaths)+' D · K/D '+(Number(r.kills)/Math.max(1,Number(r.deaths))).toFixed(2)).join('\n'):'No PvP kills have been recorded since tracking started.';
+  const payload={embeds:[{title:'WIPESIDE · PvP leaderboard',description:description+'\n\nObserved PvP kills and deaths only. Updates every 5 minutes.',color:0xf2ad73,timestamp:new Date().toISOString(),...discordMedia(snapshot.bot.config.embedMedia,'default')}],allowedMentions:{parse:[]}};
+  let message:any;if(data.messageId){try{message=await channel.messages.fetch(data.messageId);}catch(e){if(Number((e as any)?.code)!==10008)throw e;}}
+  if(message){if(message.author.id!==client.user.id)throw Error('Leaderboard message belongs to a different author.');await message.edit(payload);}else{message=await channel.send(payload);await call('leaderboard-message',{channelId,messageId:message.id});}return true;
+ }finally{leaderboardBusy=false;}
+}
+const leaderboardCommand=new discord.SlashCommandBuilder().setName('leaderboard').setDescription('Refresh the PvP leaderboard').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
 const setupCommand=new discord.SlashCommandBuilder().setName('setup').setDescription('Create the Wipeside channel structure').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageChannels);
 const botCommand=new discord.SlashCommandBuilder().setName('bot').setDescription('Hosted bot controls').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
 for(const name of ['status','restart','reconnect','panel','modules'])botCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name==='status'?'Show connection status':name+' the hosted bot'));
@@ -188,7 +204,7 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
   // This is an administrative self-link, not a proof of ownership for other users.
   if(i.user.id===snapshot.ownerDiscordId){await authorized(i);await call('link',{discordId:i.user.id,ign:name});await audit('player.owner_self_linked','Platform owner saved a self-declared Rust identity without a note challenge.');await i.editReply('Linked to '+name+'. No note required and you can link while offline. Join an event when your Rust character is connected; the bot must confirm your position before any teleport.');return;}
   if(challenges.has(name)&&challenges.get(name)!.expires>Date.now())throw new Error('A verification challenge already exists for this name.');const code='RCE-'+randomInt(100000,999999);challenges.set(name,{discordId:i.user.id,code,expires:Date.now()+300000});await i.editReply(`Edit an in-game note to contain exactly: ${code}\nThe challenge expires in five minutes. No Discord user token is needed.`);return;}
- await authorized(i);if(i.commandName==='setup'){if(i.user.id!==snapshot.ownerDiscordId)throw Error('Owner required.');await i.editReply({content:'Create or reuse '+CHANNEL_CATALOG.length+' channels in WIPESIDE categories? Existing channels are not deleted or moved. Planned modules will not be activated.',components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('ws-setup:'+i.user.id).setLabel('Create channels').setStyle(discord.ButtonStyle.Success))]});return;}const sub=i.options.getSubcommand();
+ await authorized(i);if(i.commandName==='leaderboard'){const updated=await updateLeaderboard();await i.editReply(updated?'Leaderboard updated.':'Configure the leaderboard channel first or wait for its current refresh.');return;}if(i.commandName==='setup'){if(i.user.id!==snapshot.ownerDiscordId)throw Error('Owner required.');await i.editReply({content:'Create or reuse '+CHANNEL_CATALOG.length+' channels in WIPESIDE categories? Existing channels are not deleted or moved. Planned modules will not be activated.',components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('ws-setup:'+i.user.id).setLabel('Create channels').setStyle(discord.ButtonStyle.Success))]});return;}const sub=i.options.getSubcommand();
  if(i.commandName==='bot'){
   if(sub==='channels'){const kill=resolveRoute(channelRoutes,'kills',snapshot.bot.config.killfeedChannelId||snapshot.bot.config.announcementChannelId);const events=resolveRoute(channelRoutes,'events',snapshot.bot.config.announcementChannelId);await i.editReply({embeds:[{...discordMedia(snapshot.bot.config.embedMedia,'bot-channels'),title:'WIPESIDE · Channel routing',description:'Killfeed: '+(kill?'<#'+kill+'>':'Not configured')+'\nEvents: '+(events?'<#'+events+'>':'Command channel')+'\n\nUse /bot channel to change a destination.',color:0xf2ad73}],allowedMentions:{parse:[]}});return;}
   if(sub==='channel'){if(i.user.id!==snapshot.ownerDiscordId)throw new Error('Only the workspace owner can change channel routing.');const type=i.options.getString('module',true);const channel=i.options.getChannel('channel',true);await eventChannel(channel.id);const result=await call('channel',{actor:i.user.id,guildId:i.guildId,type,channelId:channel.id});channelRoutes=readRoutes(result.channels);await i.editReply({content:'Saved '+type+' → <#'+channel.id+'> for this bot.',allowedMentions:{parse:[]}});return;}
@@ -207,9 +223,9 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
   if(sub==='stop'){paused=false;quitting=true;await i.editReply('Stopping workflow actions. Eligible returns are being recovered.');while(engineRunning)await new Promise(r=>setTimeout(r,100));quitting=false;current.engine.status='CANCELLED';await restoreEligible();await checkpoint(current.engine);await audit('event.cancelled','Owner cancelled event; return records retained.');return;}
  }
  }catch(e){const safe=e instanceof Error?e.message:'Operation failed.';if(i.deferred||i.replied)await i.editReply({content:safe.slice(0,1800),components:[]}).catch(()=>{});else await i.reply({content:safe.slice(0,1800),flags:64}).catch(()=>{});}});
-client.once('clientReady',async()=>{try{await client.application.commands.set([botCommand.toJSON(),eventCommand.toJSON(),linkCommand.toJSON(),setupCommand.toJSON()],config.guildId);await audit('runtime.started','Discord Gateway connected. Application commands registered.');if(current&&['RUNNING','READY'].includes(current.engine.status)){current.engine.status='NEEDS_REVIEW';log(current.engine,'recovery','Restart loaded persisted state. Live workflow awaits manual reconciliation.','warning');await checkpoint(current.engine);await restoreEligible();}}catch{console.error(JSON.stringify({event:'runtime_initialization_failed',botId}));}});
+client.once('clientReady',async()=>{try{await client.application.commands.set([botCommand.toJSON(),eventCommand.toJSON(),linkCommand.toJSON(),setupCommand.toJSON(),leaderboardCommand.toJSON()],config.guildId);await audit('runtime.started','Discord Gateway connected. Application commands registered.');if(current&&['RUNNING','READY'].includes(current.engine.status)){current.engine.status='NEEDS_REVIEW';log(current.engine,'recovery','Restart loaded persisted state. Live workflow awaits manual reconciliation.','warning');await checkpoint(current.engine);await restoreEligible();}}catch{console.error(JSON.stringify({event:'runtime_initialization_failed',botId}));}});
 await client.login(boot.secrets.discordToken);
-let polling=false;const heartbeat=setInterval(async()=>{if(polling||quitting)return;polling=true;try{try{verifiedInfo=await rce.info();rconConnected=true;}catch{rconConnected=false;}const response=await call('heartbeat',{status:client.isReady()&&rconConnected?'ONLINE':'DEGRADED',discordStatus:client.isReady()?'CONNECTED':'DISCONNECTED',rconStatus:rconConnected?'CONNECTED':'DISCONNECTED'});snapshot=response.snapshot;channelRoutes=readRoutes(response.channels);if(!snapshot.entitled){quitting=true;await shutdown('SUSPENDED');return;}if(response.channelJob)await processChannelJob(response.channelJob);if(response.action==='reconnect'){// Restart the process through the supervisor; no additional RCON sessions.
+let polling=false;const heartbeat=setInterval(async()=>{if(polling||quitting)return;polling=true;try{try{verifiedInfo=await rce.info();rconConnected=true;}catch{rconConnected=false;}const response=await call('heartbeat',{status:client.isReady()&&rconConnected?'ONLINE':'DEGRADED',discordStatus:client.isReady()?'CONNECTED':'DISCONNECTED',rconStatus:rconConnected?'CONNECTED':'DISCONNECTED'});snapshot=response.snapshot;channelRoutes=readRoutes(response.channels);if(!snapshot.entitled){quitting=true;await shutdown('SUSPENDED');return;}if(response.channelJob)await processChannelJob(response.channelJob);if(channelRoutes.leaderboard&&Date.now()-lastLeaderboard>=300000)await updateLeaderboard().catch(()=>audit('leaderboard.refresh_failed','Leaderboard update failed. Check channel permissions.').catch(()=>{}));if(response.action==='reconnect'){// Restart the process through the supervisor; no additional RCON sessions.
  await call('action',{actor:snapshot.ownerDiscordId,guildId:config.guildId,action:'restart'});
  }if(current&&snapshot.modules.positionTracking){for(const p of current.engine.players.filter(p=>p.online&&p.alive).slice(0,20)){try{const pos=await adapter.readPosition(p);p.trail.push(p.position);p.trail=p.trail.slice(-60);p.position=pos;}catch{}}await checkpoint(current.engine);}
  }catch{rconConnected=false;}finally{polling=false;}},15000);
