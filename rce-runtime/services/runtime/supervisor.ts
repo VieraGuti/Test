@@ -14,9 +14,8 @@ const internalUrl=()=>`http://127.0.0.1:${Number(process.env.PORT||8080)}`;
 const planeOrigin=required('CONTROL_PLANE_URL');if(!planeOrigin.startsWith('https://'))throw new Error('Control plane must use HTTPS.');
 await pool.query(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));
 await pool.query('ALTER TABLE runtime_bots ADD COLUMN IF NOT EXISTS desired_running boolean NOT NULL DEFAULT false');
-const supervisorLease=await pool.connect();
-if(!(await supervisorLease.query('SELECT pg_try_advisory_lock(74123981) AS locked')).rows[0].locked)throw new Error('Another supervisor is active.');
-supervisorLease.on('error',()=>process.exit(1));
+let supervisorLease:any=null;
+let leaseReady=false;
 // Free-tier evaluation runtime: one owner bot, isolated subprocess, no Docker socket.
 const children=new Map<string,ChildProcess>();
 let shuttingDown=false;
@@ -39,7 +38,7 @@ async function stopChild(id:string){
 }
 async function plane(tenantId:string,botId:string,action:string,extra:Record<string,unknown>={}){const raw=JSON.stringify({tenantId,botId,action,...extra}),stamp=String(Date.now()),nonce=randomUUID();const signature=createHmac('sha256',signingKey).update(`${stamp}.${nonce}.${raw}`).digest('hex');const r=await fetch(planeOrigin+'/api/runtime',{method:'POST',headers:{'Content-Type':'application/json','X-RCE-Timestamp':stamp,'X-RCE-Nonce':nonce,'X-RCE-Signature':signature},body:raw,signal:AbortSignal.timeout(15000),redirect:'error'});if(!r.ok)throw new Error('Control plane did not authorize the operation.');return r.json() as Promise<any>;}
 async function reserve(serverKey:string){const now=Date.now();const r=await pool.query('INSERT INTO rcon_slots(server_key,next_at) VALUES($1,$2) ON CONFLICT(server_key) DO UPDATE SET next_at=greatest(rcon_slots.next_at,$3)+750 RETURNING next_at',[serverKey,now+750,now]);const delay=Math.max(0,Number(r.rows[0].next_at)-750-now);if(delay>15000)throw new Error('Server RCON queue saturated.');await new Promise(r=>setTimeout(r,delay));}
-async function control(tenantId:string,action:string,p:any){const{id}=botIdentity(tenantId,p.id);if(tenantId!==ownerTenant)throw new Error('Free runtime is restricted to the platform owner.');if(action==='test-rcon'){const host=await resolveGameHost(p.host);const started=Date.now();const rce=await connectRce({id,host,port:p.port,password:p.password},()=>reserve(hash(host+':'+p.port)));try{return {connected:true,info:await rce.info(),latency:Date.now()-started};}finally{rce.close();}}
+async function control(tenantId:string,action:string,p:any){const{id}=botIdentity(tenantId,p.id);if(tenantId!==ownerTenant)throw new Error('Free runtime is restricted to the platform owner.');if(action==='probe'){const snapshot=await plane(tenantId,id,'snapshot');return {ok:true,entitled:snapshot.entitled===true,discordVerified:typeof snapshot.ownerDiscordId==='string'&&snapshot.ownerDiscordId.length>0};}if(action==='test-rcon'){const host=await resolveGameHost(p.host);const started=Date.now();const rce=await connectRce({id,host,port:p.port,password:p.password},()=>reserve(hash(host+':'+p.port)));try{return {connected:true,info:await rce.info(),latency:Date.now()-started};}finally{rce.close();}}
  const client=await pool.connect();try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(74123982)');await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[id]);let launchAfterCommit:{token:string;epoch:string}|null=null;let row=(await client.query('SELECT * FROM runtime_bots WHERE id=$1',[id])).rows[0];if(row&&row.tenant_id!==tenantId)throw new Error('Tenant mismatch.');
  if(p.jobId){const exists=await client.query('SELECT * FROM runtime_jobs WHERE id=$1',[p.jobId]);if(exists.rows.length){if(exists.rows[0].tenant_id!==tenantId||exists.rows[0].bot_id!==id)throw new Error('Job identity mismatch.');await client.query('ROLLBACK');return{status:row?.status||'STARTING',idempotent:true};}}
  if(!['start','stop','restart','reconnect','refresh'].includes(action))throw new Error('Unsupported lifecycle action.');
@@ -72,7 +71,7 @@ async function workerCall(path:string,token:string,b:any){if(!/^[-a-f0-9]{36}$/.
  if(path==='/v1/runtime/action'){const snapshot=await plane(row.tenant_id,row.id,'snapshot');if(b.actor!==snapshot.ownerDiscordId||b.guildId!==row.config.guildId)throw new Error('Owner authorization required.');if(!['restart','stop','reconnect','refresh'].includes(b.action))throw new Error('Invalid administration action.');const secret=JSON.parse(await decrypt(row.encrypted_secrets,secretKey,`${row.tenant_id}:${row.id}`));setTimeout(()=>control(row.tenant_id,b.action,{...row.config,...secret,jobId:randomUUID()}).catch(()=>console.error(JSON.stringify({event:'lifecycle_failed',botId:row.id}))),1500);return{accepted:true};}
  throw new Error('Unsupported worker action.');
 }
-const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');try{if(req.method==='GET'&&req.url==='/healthz'){await pool.query('SELECT 1');res.end(JSON.stringify({ok:true}));return;}if(req.method!=='POST')throw new Error('Method not allowed.');let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>500000)throw new Error('Payload too large.');}if(req.url==='/webhooks/stripe'){
+const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');try{if(req.method==='GET'&&req.url==='/healthz'){await pool.query('SELECT 1');res.end(JSON.stringify({ok:true}));return;}if(!leaseReady||shuttingDown){res.statusCode=503;res.end(JSON.stringify({error:'Runtime is acquiring its active lease.'}));return;}if(req.method!=='POST')throw new Error('Method not allowed.');let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>500000)throw new Error('Payload too large.');}if(req.url==='/webhooks/stripe'){
  const forwarded=await fetch(planeOrigin+'/api/billing?webhook=stripe',{method:'POST',headers:{'Content-Type':'application/json','Stripe-Signature':String(req.headers['stripe-signature']||'')},body:raw,signal:AbortSignal.timeout(15000),redirect:'error'});
  res.statusCode=forwarded.status;res.end(await forwarded.text());return;
 }const body=JSON.parse(raw);if(req.url==='/v1/control'){
@@ -88,7 +87,31 @@ async function recover(){
  await pool.query("UPDATE runtime_bots SET worker_token_hash=$2,lease_epoch=$3,status='STARTING',discord_status='DISCONNECTED',rcon_status='DISCONNECTED' WHERE id=$1",[row.id,hash(token),epoch]);
  launch(row.id,epoch,token);
 }
-server.listen(Number(process.env.PORT||8080),'0.0.0.0',()=>{console.log(JSON.stringify({event:'supervisor_ready'}));void recover().catch(()=>console.error(JSON.stringify({event:'recovery_failed'})));});
-async function shutdown(){if(shuttingDown)return;shuttingDown=true;await Promise.allSettled([...children.keys()].map(stopChild));server.close();supervisorLease.release();await pool.end();process.exit(0);}
+async function probe(){
+ const id=process.env.PROBE_BOT_ID;if(!id)return;
+ try{
+  botIdentity(ownerTenant,id);
+  const raw=JSON.stringify({tenantId:ownerTenant,action:'probe',payload:{id}});
+  const stamp=String(Date.now()),nonce=randomUUID(),sig=createHmac('sha256',signingKey).update(stamp+'.'+nonce+'.'+raw).digest('hex');
+  const response=await fetch(internalUrl()+'/v1/control',{method:'POST',headers:{'Content-Type':'application/json','X-RCE-Timestamp':stamp,'X-RCE-Nonce':nonce,'X-RCE-Signature':sig},body:raw,signal:AbortSignal.timeout(18000)});
+  if(!response.ok)throw new Error('Control probe failed.');
+  const result=await response.json();
+  console.log(JSON.stringify({event:'control_plane_probe',ok:result.ok===true,entitled:result.entitled===true,discordVerified:result.discordVerified===true}));
+ }catch{console.error(JSON.stringify({event:'control_plane_probe_failed'}));}
+}
+async function acquireLease(){
+ const connection=await pool.connect();supervisorLease=connection;
+ connection.on('error',()=>process.exit(1));
+ while(!shuttingDown){
+  if((await connection.query('SELECT pg_try_advisory_lock(74123981) AS locked')).rows[0].locked){
+   leaseReady=true;console.log(JSON.stringify({event:'supervisor_ready'}));
+   await recover().catch(()=>console.error(JSON.stringify({event:'recovery_failed'})));
+   await probe();return;
+  }
+  await new Promise(resolve=>setTimeout(resolve,1500));
+ }
+}
+server.listen(Number(process.env.PORT||8080),'0.0.0.0',()=>{console.log(JSON.stringify({event:'supervisor_listening'}));void acquireLease().catch(()=>process.exit(1));});
+async function shutdown(){if(shuttingDown)return;shuttingDown=true;leaseReady=false;await Promise.allSettled([...children.keys()].map(stopChild));server.close();supervisorLease?.release();await pool.end();process.exit(0);}
 process.on('SIGTERM',()=>void shutdown());process.on('SIGINT',()=>void shutdown());
 setInterval(()=>pool.query("DELETE FROM runtime_nonces WHERE expires_at<now()").catch(()=>{}),60000).unref();
