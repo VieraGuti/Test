@@ -10,10 +10,10 @@ export const NODE_GUIDES:Record<WorkflowNode['kind'],NodeGuide>={
     "warning": "This is a manual workflow trigger, not an automatic schedule."
   },
   "registration.open": {
-    "effect": "Opens Discord registration, displays Join / Leave buttons and waits for the configured duration. The live bot updates the roster and closes the buttons when time runs out.",
+    "effect": "Opens registration via Discord, SERVER Quick Chat, or both. The live bot updates the roster, broadcasts optional in-game messages and closes registration when time runs out.",
     "needs": [
       "A configured Discord announcement channel and bot permissions.",
-      "Players must link their identity and have a readable in-game position."
+      "Discord participants need a linked identity; in-game registration uses the identity from the server event. All participants need a verified position."
     ],
     "example": "Event started → Open registration → Save original positions",
     "warning": "The live event stops if nobody joins. It does not teleport players by itself."
@@ -120,6 +120,7 @@ export const NODE_GUIDES:Record<WorkflowNode['kind'],NodeGuide>={
   }
 };
 export const PARAM_GUIDES:Record<string,{label:string;help:string;min?:number;max?:number}>={
+  "mode":{"label":"Registration method","help":"Choose Discord, in-game SERVER Quick Chat, or both."},"joinEmote":{"label":"Join emote","help":"Exact Quick Chat option players select in the SERVER channel."},"leaveEmote":{"label":"Leave emote","help":"Different Quick Chat option to withdraw before registration closes."},"sayMessage":{"label":"In-game opening message","help":"Use {event.name}, {join.emote}, {leave.emote}. No command syntax needed."},"sayClosedMessage":{"label":"In-game closing message","help":"Use {event.players} to show participant count."},
   "seconds": {
     "label": "Duration",
     "help": "Seconds before continuing. 1–3600.",
