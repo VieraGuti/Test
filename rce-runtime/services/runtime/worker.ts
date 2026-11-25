@@ -1,3 +1,4 @@
+import {readRoutes,resolveRoute} from './channel-routing.ts';
 import {describeKill} from './killfeed.ts';
 import {randomInt} from 'node:crypto';
 import {registrationSettings,quickChatAction,emoteLabel,safeSay} from '../../core/participation.ts';
@@ -12,7 +13,7 @@ const botId=process.env.BOT_ID!,epoch=process.env.LEASE_EPOCH!,workerToken=proce
 if(!botId||!epoch||!workerToken||!supervisor)throw new Error('Runtime identity is not configured.');
 async function call(path:string,data:Record<string,unknown>={}){const response=await fetch(supervisor+'/v1/runtime/'+path,{method:'POST',headers:{Authorization:'Bearer '+workerToken,'Content-Type':'application/json'},body:JSON.stringify({botId,epoch,...data}),signal:AbortSignal.timeout(25000)});if(!response.ok)throw new Error('Runtime persistence or authorization failed.');return response.json() as Promise<any>;}
 let boot:any;for(let i=0;i<10;i++){try{boot=await call('bootstrap');break;}catch{await new Promise(r=>setTimeout(r,1000));}}if(!boot)throw new Error('Runtime bootstrap unavailable.');
-const config=boot.config;let snapshot=boot.snapshot,revision:number=boot.revision;
+const config=boot.config;let channelRoutes=readRoutes(config.channels);let snapshot=boot.snapshot,revision:number=boot.revision;
 let current:{definition:Definition;engine:EngineState;channelId:string;eventId:string;version:number}|null=boot.state;
 const checkpointQueue=new SerialQueue();let quitting=false,engineRunning=false,paused=false,rconConnected=false;
 const discordModule='discord.js';const discord=await import(discordModule);
@@ -87,7 +88,7 @@ rce.manager.on('playerKill',async(data:any)=>{
  const p=current?.engine.players.find(p=>p.name===kill.victim);
  if(p&&p.alive&&current){p.alive=false;log(current.engine,'game-event',p.name+' eliminated.');try{await checkpoint(current.engine);}catch{paused=true;}}
  if(!snapshot.entitled||quitting||!snapshot.modules.killfeed)return;
- const id=snapshot.bot.config.killfeedChannelId||snapshot.bot.config.announcementChannelId;if(!id)return;
+ const id=resolveRoute(channelRoutes,'kills',snapshot.bot.config.killfeedChannelId||snapshot.bot.config.announcementChannelId);if(!id)return;
  try{
   const channel=await eventChannel(id);
   await channel.send({embeds:[{title:kill.title,description:kill.description,color:kill.color,footer:{text:'WIPESIDE · '+String(snapshot.bot.config.serverName||config.id).slice(0,100)},timestamp:new Date().toISOString()}],allowedMentions:{parse:[]}});
@@ -99,6 +100,8 @@ for(const event of ['playerJoined','playerRespawned'])rce.manager.on(event,async
 rce.manager.on('error',()=>{rconConnected=false;});
 const botCommand=new discord.SlashCommandBuilder().setName('bot').setDescription('Hosted bot controls').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
 for(const name of ['status','restart','reconnect','panel','modules'])botCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name==='status'?'Show connection status':name+' the hosted bot'));
+botCommand.addSubcommand((s:any)=>s.setName('channel').setDescription('Configure a module channel').addStringOption((o:any)=>o.setName('module').setDescription('Choose an active module').setRequired(true).addChoices({name:'Killfeed',value:'kills'},{name:'Events',value:'events'})).addChannelOption((o:any)=>o.setName('channel').setDescription('Select a text channel in this server').setRequired(true).addChannelTypes(discord.ChannelType.GuildText,discord.ChannelType.GuildAnnouncement)));
+botCommand.addSubcommand((s:any)=>s.setName('channels').setDescription('Show configured module channels'));
 const eventCommand=new discord.SlashCommandBuilder().setName('event').setDescription('Manage community events').setDefaultMemberPermissions(discord.PermissionFlagsBits.ManageGuild);
 for(const name of ['list','status','participants','stop','pause','resume'])eventCommand.addSubcommand((s:any)=>s.setName(name).setDescription(name+' event'));
 eventCommand.addSubcommand((s:any)=>s.setName('start').setDescription('Start a published event').addStringOption((o:any)=>o.setName('event').setDescription('Search and select a published event by name').setRequired(true).setAutocomplete(true)));
@@ -117,7 +120,7 @@ async function startPublished(i:any,id:string){
  const e=snapshot.events.find((e:any)=>e.id===id);if(!e)throw new Error('Published event not found. Select a published event.');
  const errors=validateDefinition(e.definition);if(errors.length)throw new Error('Published workflow is invalid.');
  if(e.definition.nodes.some((n:WorkflowNode)=>n.kind==='entity.spawn')&&!snapshot.modules.entitySpawning)throw new Error('Enable entity spawning before starting this workflow.');
- const channelId=snapshot.bot.config.announcementChannelId||i.channelId;await eventChannel(channelId);
+ const channelId=resolveRoute(channelRoutes,'events',snapshot.bot.config.announcementChannelId)||i.channelId;await eventChannel(channelId);
  current={definition:structuredClone(e.definition),engine:initialState(e.definition,'live'),channelId,eventId:e.id,version:e.version};
  await checkpoint(current.engine);await i.editReply({content:'Event accepted. Opening registration in <#'+channelId+'> using the published version.',components:[]});
  const runId=current.engine.runId;void run().then(async()=>{if(current?.engine.runId===runId&&current.engine.status==='NEEDS_REVIEW'){const last=current.engine.logs.filter(l=>l.level==='error').at(-1);await i.followUp({content:'Event stopped: '+(last?eventFailure(new Error(last.message)):'Manual reconciliation required.'),flags:64}).catch(()=>{});}});
@@ -150,6 +153,8 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
   if(challenges.has(name)&&challenges.get(name)!.expires>Date.now())throw new Error('A verification challenge already exists for this name.');const code='RCE-'+randomInt(100000,999999);challenges.set(name,{discordId:i.user.id,code,expires:Date.now()+300000});await i.editReply(`Edit an in-game note to contain exactly: ${code}\nThe challenge expires in five minutes. No Discord user token is needed.`);return;}
  await authorized(i);const sub=i.options.getSubcommand();
  if(i.commandName==='bot'){
+  if(sub==='channels'){const kill=resolveRoute(channelRoutes,'kills',snapshot.bot.config.killfeedChannelId||snapshot.bot.config.announcementChannelId);const events=resolveRoute(channelRoutes,'events',snapshot.bot.config.announcementChannelId);await i.editReply({embeds:[{title:'WIPESIDE · Channel routing',description:'Killfeed: '+(kill?'<#'+kill+'>':'Not configured')+'\nEvents: '+(events?'<#'+events+'>':'Command channel')+'\n\nUse /bot channel to change a destination.',color:0xf2ad73}],allowedMentions:{parse:[]}});return;}
+  if(sub==='channel'){if(i.user.id!==snapshot.ownerDiscordId)throw new Error('Only the workspace owner can change channel routing.');const type=i.options.getString('module',true);const channel=i.options.getChannel('channel',true);await eventChannel(channel.id);const result=await call('channel',{actor:i.user.id,guildId:i.guildId,type,channelId:channel.id});channelRoutes=readRoutes(result.channels);await i.editReply({content:'Saved '+type+' → <#'+channel.id+'> for this bot.',allowedMentions:{parse:[]}});return;}
   if(sub==='modules'){await i.editReply({content:'Modules are saved in your workspace. Toggle a module below.',components:[new discord.ActionRowBuilder().addComponents(...['registration','accountLinking','killfeed','positionTracking','entitySpawning'].map(module=>new discord.ButtonBuilder().setCustomId('module:'+module).setLabel(module+': '+(snapshot.modules[module]?'ON':'OFF')).setStyle(snapshot.modules[module]?discord.ButtonStyle.Success:discord.ButtonStyle.Secondary)))]});return;}
   if(sub==='status'||sub==='panel'){await i.editReply({embeds:[{title:'RCE Event Cloud',description:`Discord: ${client.isReady()?'CONNECTED':'DISCONNECTED'}\nRCON: ${rconConnected?'CONNECTED':'DISCONNECTED'}\nEvent: ${current?.engine.status||'None'}\nPlayers: ${verifiedInfo.Players}/${verifiedInfo.MaxPlayers}`,color:0xb79af7}]});return;}
   if(sub==='restart'){await i.editReply({content:'Restart this hosted bot? In-flight actions will require reconciliation.',components:[new discord.ActionRowBuilder().addComponents(new discord.ButtonBuilder().setCustomId('confirm-restart:'+i.user.id).setLabel('Confirm restart').setStyle(discord.ButtonStyle.Danger))]});return;}
@@ -167,7 +172,7 @@ client.on('interactionCreate',async(i:any)=>{if(!i.inGuild()||i.guildId!==config
  }catch(e){const safe=e instanceof Error?e.message:'Operation failed.';if(i.deferred||i.replied)await i.editReply({content:safe.slice(0,1800),components:[]}).catch(()=>{});else await i.reply({content:safe.slice(0,1800),flags:64}).catch(()=>{});}});
 client.once('clientReady',async()=>{try{await client.application.commands.set([botCommand.toJSON(),eventCommand.toJSON(),linkCommand.toJSON()],config.guildId);await audit('runtime.started','Discord Gateway connected. Application commands registered.');if(current&&['RUNNING','READY'].includes(current.engine.status)){current.engine.status='NEEDS_REVIEW';log(current.engine,'recovery','Restart loaded persisted state. Live workflow awaits manual reconciliation.','warning');await checkpoint(current.engine);await restoreEligible();}}catch{console.error(JSON.stringify({event:'runtime_initialization_failed',botId}));}});
 await client.login(boot.secrets.discordToken);
-let polling=false;const heartbeat=setInterval(async()=>{if(polling||quitting)return;polling=true;try{try{verifiedInfo=await rce.info();rconConnected=true;}catch{rconConnected=false;}const response=await call('heartbeat',{status:client.isReady()&&rconConnected?'ONLINE':'DEGRADED',discordStatus:client.isReady()?'CONNECTED':'DISCONNECTED',rconStatus:rconConnected?'CONNECTED':'DISCONNECTED'});snapshot=response.snapshot;if(!snapshot.entitled){quitting=true;await shutdown('SUSPENDED');return;}if(response.action==='reconnect'){// Restart the process through the supervisor; no additional RCON sessions.
+let polling=false;const heartbeat=setInterval(async()=>{if(polling||quitting)return;polling=true;try{try{verifiedInfo=await rce.info();rconConnected=true;}catch{rconConnected=false;}const response=await call('heartbeat',{status:client.isReady()&&rconConnected?'ONLINE':'DEGRADED',discordStatus:client.isReady()?'CONNECTED':'DISCONNECTED',rconStatus:rconConnected?'CONNECTED':'DISCONNECTED'});snapshot=response.snapshot;channelRoutes=readRoutes(response.channels);if(!snapshot.entitled){quitting=true;await shutdown('SUSPENDED');return;}if(response.action==='reconnect'){// Restart the process through the supervisor; no additional RCON sessions.
  await call('action',{actor:snapshot.ownerDiscordId,guildId:config.guildId,action:'restart'});
  }if(current&&snapshot.modules.positionTracking){for(const p of current.engine.players.filter(p=>p.online&&p.alive).slice(0,20)){try{const pos=await adapter.readPosition(p);p.trail.push(p.position);p.trail=p.trail.slice(-60);p.position=pos;}catch{}}await checkpoint(current.engine);}
  }catch{rconConnected=false;}finally{polling=false;}},15000);
