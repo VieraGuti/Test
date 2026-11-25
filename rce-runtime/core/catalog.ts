@@ -1,7 +1,8 @@
+import {DEFAULT_REGISTRATION} from './participation.ts';
 import type {ActionKind, WorkflowNode} from './types.ts';
 export const ACTIONS: {kind:ActionKind;params:WorkflowNode['params']}[] = [
 {kind:'event.started',params:{}},
-{kind:'registration.open',params:{seconds:30}},
+{kind:'registration.open',params:{...DEFAULT_REGISTRATION,seconds:30}},
 {kind:'positions.save',params:{}},
 {kind:'players.teleport',params:{}},
 {kind:'kits.give',params:{kit:'survivor'}},
