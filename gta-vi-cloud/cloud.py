@@ -4,6 +4,8 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import urlparse
 import httpx
+import unicodedata
+from datetime import datetime, timezone
 from daily_runner import DailyManager,REGIONAL_SLOTS
 from PIL import Image,ImageDraw,ImageFont,ImageFilter,ImageEnhance
 from video_branding import short_positions, short_caption_tags, video_dimensions
@@ -24,7 +26,10 @@ REVIEW_SECONDS=max(60,min(900,int(os.environ.get('SHORTS_REVIEW_SECONDS','120'))
 POLL_SECONDS=max(30,int(os.environ.get('TWITCH_POLL_SECONDS','30')))
 UPLOADS_DAY_LIMIT=max(1,min(12,int(os.environ.get('UPLOADS_DAY_LIMIT','12'))))
 MIN_UPLOAD_GAP_SECONDS=max(900,min(21600,int(os.environ.get('MIN_UPLOAD_GAP_SECONDS','3600'))))
-SHORT_LAYOUT=os.environ.get('SHORT_LAYOUT','focus').strip().lower()
+SHORT_LAYOUT=os.environ.get('SHORT_LAYOUT','single').strip().lower()
+MAX_SOURCE_AGE_SECONDS=6*3600
+SHORT_LANGUAGES={'es','en'}
+POLICY_VERSION='fresh-es-en-20261125'
 CHUNK=2800000
 state={'status':'idle','last':None,'error':None,'pollCount':0,'pollAdded':0,'lastPoll':None,'pollError':None,'monitoring':False,'autoProcessing':False}
 lock=threading.Lock()
@@ -148,8 +153,33 @@ def truthful_hook(transcript,fallback):
 def ass_time(seconds):
  n=max(0,int(round(float(seconds)*100)))
  return f'{n//360000}:{(n//6000)%60:02d}:{(n//100)%60:02d}.{n%100:02d}'
+def latin_text(value):
+ text=str(value or '')
+ out=[]
+ for ch in text:
+  if ch.isascii() or unicodedata.name(ch,'').startswith('LATIN ') or ch in '¡¿«»‘’“”–—…·':
+   out.append(ch)
+  elif ch.isspace():out.append(' ')
+  else:out.append(' ')
+ return ' '.join(''.join(out).split())
+
+def language_code(value):
+ value=str(value or '').strip().lower().replace('_','-')
+ return {'english':'en','spanish':'es','español':'es','castilian':'es'}.get(value,value.split('-')[0])
+
+def validate_source(clip,feed,now=None):
+ now=time.time() if now is None else now
+ found=next((c for c in feed if (clip.get('id') and c.get('id')==clip.get('id')) or (clip.get('url') and c.get('url')==clip.get('url'))),None)
+ if not found:raise RuntimeError('freshness_source_not_in_current_feed')
+ try: stamp=datetime.fromisoformat(str(found['createdAt']).replace('Z','+00:00')).timestamp()
+ except (KeyError,ValueError,TypeError):raise RuntimeError('freshness_timestamp_missing')
+ if not 0<=now-stamp<=MAX_SOURCE_AGE_SECONDS:raise RuntimeError('freshness_source_expired')
+ lang=language_code(found.get('language'))
+ if lang not in SHORT_LANGUAGES:raise RuntimeError('short_language_not_allowed')
+ return found
+
 def ass_escape(text):
- return re.sub(r'[\r\n]+',' ',str(text or '')).replace('\\','').replace('{','(').replace('}',')').strip()
+ return re.sub(r'[\r\n]+',' ',latin_text(text)).replace('\\','').replace('{','(').replace('}',')').strip()
 def create_ass(path,transcript,max_seconds,hook=None,context=None,creator=None,position=None):
  scale=SHORT_WIDTH/720.0
  size=lambda n:max(15,round(n*scale))
@@ -202,7 +232,13 @@ def render(source,dest,title,creator,transcript=None,context=None):
   # Focus plus context: the viewer sees a large central action area AND
   # the untouched full-width stream. Do not lose the streamer facecam or HUD.
   focus=SHORT_LAYOUT=='focus' and src_width>src_height
-  if focus:
+  if SHORT_LAYOUT=='single':
+   # One source image, no duplicate gameplay. Preserve the full stream and HUD.
+   overlay=create_ass(ass,transcript,end,hook,context,creator,{'caption_x':SHORT_WIDTH//2,'caption_y':round(SHORT_HEIGHT*.77)})
+   graph=(f'[0:v]fps={SHORT_FPS},scale={SHORT_WIDTH}:{round(SHORT_HEIGHT*.64)//2*2}:force_original_aspect_ratio=decrease:flags=lanczos,'
+          f'pad={SHORT_WIDTH}:{SHORT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=0x101827,setsar=1,format=yuv420p[composed]')
+   inputs=['-i',str(source)]
+  elif focus:
    focus_height=(round(SHORT_HEIGHT*.625)//2)*2
    wide_height=SHORT_HEIGHT-focus_height
    unit=SHORT_WIDTH/720.0
@@ -248,7 +284,7 @@ def render(source,dest,title,creator,transcript=None,context=None):
   frame.unlink(missing_ok=True)
   ass.unlink(missing_ok=True)
  if not dest.exists() or dest.stat().st_size<35000:raise RuntimeError('render_failed')
- log.info('Video quality: %dx%d / %dfps / H264 CRF20 / AAC160k / %.1fs layout=%s',SHORT_WIDTH,SHORT_HEIGHT,SHORT_FPS,end,'focus' if focus else 'legacy')
+ log.info('Video quality: %dx%d / %dfps / H264 CRF20 / AAC160k / %.1fs layout=%s',SHORT_WIDTH,SHORT_HEIGHT,SHORT_FPS,end,SHORT_LAYOUT)
 
 def merge(parts,output):
  if len(parts)==1:shutil.copy2(parts[0],output);return
@@ -328,12 +364,13 @@ def upload(job,video):
  result=None
  for retry in range(6):
   try:
-   result=api('POST','/api/youtube-upload',json={'id':job['id'],'kind':job['kind']})
+   result=api('POST','/api/youtube-upload',json={'id':job['id'],'kind':job['kind'],'policyVersion':job.get('policyVersion'),'sourceCreatedAt':job.get('sourceCreatedAt'),'language':job.get('language'),'tags':['gaming','GTA6','GTA VI','GTA 6','Rockstar Games',str(job.get('creator') or '')]})
    break
   except RuntimeError as e:
    if retry>=5 or not any(x in str(e) for x in ('rendered_mp4_not_ready','rendered_blob_missing','video_blob_not_readable')):
     raise
    time.sleep(min(10,2+retry*2))
+ if not result or not result.get('watchUrl'):raise RuntimeError('youtube_upload_not_confirmed')
  api('POST','/api/worker-queue',json={'jobId':job['jobId'],'status':'uploaded_private'})
  return result.get('watchUrl')
 def report_job_failure(job_id,error):
@@ -355,12 +392,7 @@ def run_one(kind_override=None):
  job=None
  try:
   if not ENABLED:raise RuntimeError('worker_disabled')
-  recovered=api('GET','/api/worker-recover')
-  if recovered.get('ready'):
-   log.info('Retrying already-rendered MP4 job %s',recovered['jobId'])
-   result=api('POST','/api/worker-recover',json={'jobId':recovered['jobId']})
-   state.update(status='uploaded_private',last={'jobId':recovered['jobId'],'watchUrl':result.get('watchUrl'),'reusedRender':True})
-   return
+  # Never recover pre-policy or stale rendered MP4s.
   kind=(kind_override or os.environ.get('JOB_KIND','')).strip().lower()
   kind=kind if kind in ('single','double') else ''
   item=api('GET','/api/worker-queue?claim=1'+('&kind='+kind if kind else ''));job=item.get('job')
@@ -373,6 +405,12 @@ def run_one(kind_override=None):
    base=Path(tmp);segments=[];spoken_context=[]
    clips=job.get('clips') or []
    if len(clips) not in (1,2):raise ValueError('invalid_clip_count')
+   feed=api('GET','/api/feed').get('candidates') or []
+   sources=[validate_source(c,feed) for c in clips]
+   if len({language_code(c.get('language')) for c in sources})!=1:raise RuntimeError('mixed_short_languages')
+   job['language']=language_code(sources[0]['language'])
+   job['sourceCreatedAt']=min(c['createdAt'] for c in sources)
+   job['policyVersion']=POLICY_VERSION
    for i,clip in enumerate(clips):
     raw=base/f'input{i}.mp4';out=base/f'clip{i}.mp4'
     log.info('Downloading source %d/%d',i+1,len(clips))
@@ -380,6 +418,7 @@ def run_one(kind_override=None):
     report_twitch_chat(clip,base)
     log.info('Download complete; starting FFmpeg source %d/%d',i+1,len(clips))
     transcript=transcribe_audio(raw,out)
+    if not transcript or language_code(transcript.get('language'))!=job['language'] or len(latin_text(transcript.get('text')).split())<3:raise RuntimeError('speech_language_or_caption_unverified')
     if transcript and transcript.get('text'):spoken_context.append(str(transcript['text'])[:2000])
     editorial=None
     if transcript and str(transcript.get('text') or '').strip():
@@ -418,14 +457,18 @@ def run_one(kind_override=None):
      log.info('AI context missing; using descriptive source-provided Twitch clip title')
     if re.search(r'(?i)(momento\s+[ée]pico|esto\s+es\s+viral|you\s+won.t\s+believe)',job['title']):
      raise RuntimeError('title_is_generic: hold for review')
+    job['title']=latin_text(job['title'])[:95]
+    if len(job['title'])<12:raise RuntimeError('invalid_title_glyphs')
     log.info('Verified title from transcript/visual analysis: %s',job['title'])
     if editorial and editorial.get('adultPossible'):job['ageHint']=True
     if visual and visual.get('adultPossible'):job['ageHint']=True
     note=(editorial.get('context') or '') if editorial and editorial.get('confidence') in ('medium','high') else None
+    if not visual or visual.get('confidence') not in ('medium','high') or visual.get('adultPossible') or visual.get('blocked') or visual.get('refused'):raise RuntimeError('visual_quality_unverified')
     render(raw,out,job.get('title','GTA VI'),job.get('creator','Streamer'),transcript,note)
     log.info('Rendered source %d/%d size=%d',i+1,len(clips),out.stat().st_size)
     raw.unlink(missing_ok=True);segments.append(out)
    result=base/'final.mp4';merge(segments,result)
+   for c in clips:validate_source(c,feed)
    url=upload(job,result)
    submit_groq_storyboard(job,result,' '.join(spoken_context),base)
    state.update(status='uploaded_private',last={'jobId':job['jobId'],'watchUrl':url})
